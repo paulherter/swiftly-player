@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,6 +47,7 @@ import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Texts
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -125,6 +125,16 @@ class AndroidSeerrLibrary(private val app: SwiftlyApplication) : SeerrLibrary {
         } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
     }
 
+    /** The library item's own cover; the "ist da" banner shows it before the TMDB poster. */
+    override suspend fun cover(id: String): String? {
+        if (app.kind() == ServerKind.Plex.raw) return null
+        val s = session() ?: return null
+        val base = s.optString("serverURL").trimEnd('/')
+        val token = s.optString("accessToken")
+        if (base.isEmpty() || token.isEmpty()) return null
+        return "$base/Items/$id/Images/Primary?maxHeight=360&quality=90&api_key=${java.net.URLEncoder.encode(token, "UTF-8")}"
+    }
+
     override suspend fun refresh() {
         withContext(Dispatchers.IO) {
             if (app.kind() == ServerKind.Plex.raw || runCatching { call("POST", "/Library/Refresh") }.getOrNull() == null)
@@ -167,7 +177,7 @@ object SeerrBadgeMark {
 @Composable
 fun SeerrCardTile(k: SeerrTileCard, modifier: Modifier = Modifier, perform: () -> Unit) {
     Column(modifier.reveal().tapOn(perform), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(smoothRoundedShape(Theme.cornerTile)).background(Theme.area)) {
             AsyncImage(model = tmdbImage(k.poster, 342), contentDescription = k.title, contentScale = ContentScale.Crop,
                        modifier = Modifier.fillMaxSize().alpha(if (k.onServer) 1f else 0.45f))
             k.badge?.takeIf { !k.onServer }?.let { b -> Capsule(b, Modifier.align(Alignment.BottomStart).padding(6.dp)) }
@@ -205,7 +215,7 @@ suspend fun openSeerrCard(app: SwiftlyApplication, card: SeerrTileCard, open: (D
 fun SeerrOfflineBox(retry: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(translated("Seerr antwortet gerade nicht. Deine Bibliothek läuft normal."), style = Theme.body.copy(lineHeight = 21.sp),
-             color = Theme.fontQuiet, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(Theme.corner)).background(Theme.area).padding(14.dp))
+             color = Theme.fontQuiet, modifier = Modifier.fillMaxWidth().clip(smoothRoundedShape(Theme.corner)).background(Theme.area).padding(14.dp))
         de.paulherter.swiftly.shared.SecondaryButton(translated("Erneut versuchen")) { retry() }
     }
 }
@@ -373,7 +383,7 @@ fun SeerrRequestsPage(app: SwiftlyApplication, open: (Destination) -> Unit, back
 fun ColumnScope.SeerrRequestsContent(app: SwiftlyApplication, open: (Destination) -> Unit) {
     var info by remember { mutableStateOf<SeerrRequestsInfo?>(null) }
     val run = rememberCoroutineScope()
-    LaunchedEffect(Unit) {
+    LaunchedEffect(RequestsChanged.version.intValue) {
         // The list of the last visit is there at once (the core's stash); the live read below replaces it.
         val stored = try { withContext(Dispatchers.IO) { app.seerr.lists().restoreRequests() } } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
         if (stored != null && info == null) info = stored
@@ -395,7 +405,7 @@ fun ColumnScope.SeerrRequestsContent(app: SwiftlyApplication, open: (Destination
             }
             i.quotaSummary?.let { Text(it, style = Theme.small, color = Theme.fontQuiet, modifier = Modifier.padding(horizontal = Theme.edgeSpacing)) }
             if (i.rows.isEmpty()) Text(translated("Noch nichts angefragt."), style = Theme.body, color = Theme.fontQuiet, modifier = Modifier.padding(horizontal = Theme.edgeSpacing))
-            i.rows.forEach { r -> RequestRow(r, open = { open(Destination(r.art + ":" + r.tmdb, r.title, "Seerrtitel")) },
+            i.rows.forEach { r -> RequestRow(r, open = { open(Destination(r.id.toString(), r.title, "Anfrage")) },
                 withdraw = { run.launch { info = withContext(Dispatchers.IO) { app.seerr.lists().withdraw(r.id) } } }) }
         }
     }
@@ -405,7 +415,7 @@ fun ColumnScope.SeerrRequestsContent(app: SwiftlyApplication, open: (Destination
 private fun RequestRow(r: SeerrRequestRow, open: () -> Unit, withdraw: () -> Unit) {
     Row(Modifier.fillMaxWidth().pressRow(open).padding(horizontal = Theme.edgeSpacing, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         AsyncImage(model = tmdbImage(r.poster, 185), contentDescription = r.title, contentScale = ContentScale.Crop,
-                   modifier = Modifier.size(48.dp, 72.dp).clip(RoundedCornerShape(6.dp)).background(Theme.area))
+                   modifier = Modifier.size(48.dp, 72.dp).clip(smoothRoundedShape(6.dp)).background(Theme.area))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(listOfNotNull(r.title, r.year?.let { "($it)" }).joinToString(" "), style = Theme.listTitle, color = Theme.font, maxLines = 2)
             Text(r.badge.line, style = Theme.small, color = SeerrBadgeMark.color(r.badge.kind))

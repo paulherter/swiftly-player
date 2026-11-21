@@ -1069,6 +1069,86 @@ pub enum PlayerEffectOut {
     },
 }
 
+/// Where a start stands for a host with its own engine (see `swiftly_vm::StartVeil`).
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlayerStartVeil {
+    Opening,
+    Shown,
+    Failed,
+}
+
+/// What moves a [`PlayerStartVeil`].
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlayerStartVeilEvent {
+    Picture,
+    EngineError,
+    TimedOut,
+    Retry,
+}
+
+/// The one transition table of the start veil.
+#[uniffi::export]
+pub fn player_start_veil_step(
+    state: PlayerStartVeil,
+    event: PlayerStartVeilEvent,
+) -> PlayerStartVeil {
+    use swiftly_vm::{StartVeil as V, StartVeilEvent as E};
+    let state = match state {
+        PlayerStartVeil::Opening => V::Opening,
+        PlayerStartVeil::Shown => V::Shown,
+        PlayerStartVeil::Failed => V::Failed,
+    };
+    let event = match event {
+        PlayerStartVeilEvent::Picture => E::Picture,
+        PlayerStartVeilEvent::EngineError => E::EngineError,
+        PlayerStartVeilEvent::TimedOut => E::TimedOut,
+        PlayerStartVeilEvent::Retry => E::Retry,
+    };
+    match state.step(event) {
+        V::Opening => PlayerStartVeil::Opening,
+        V::Shown => PlayerStartVeil::Shown,
+        V::Failed => PlayerStartVeil::Failed,
+    }
+}
+
+/// Seconds without a picture before a start counts as failed (the core's one start timeout).
+#[uniffi::export]
+pub fn player_start_timeout_seconds() -> f64 {
+    swiftly_vm::START_TIMEOUT_SECONDS
+}
+
+/// The words of a failed start ("Das startet nicht", the text, "Erneut versuchen", "Schließen"), German keys of the catalogue.
+#[uniffi::export]
+pub fn player_start_failure() -> PlayerFailure {
+    let f = swiftly_vm::Failure::START;
+    PlayerFailure {
+        header: f.header.to_owned(),
+        text: f.text.to_owned(),
+        primary: f.primary.to_owned(),
+        quiet: f.quiet.to_owned(),
+    }
+}
+
+/// The start veil is up (no picture yet, no failed start to show instead). Same rule as `TransportPart::veil_up`, for
+/// screens that keep the two facts themselves.
+#[uniffi::export]
+pub fn player_veil_up(picture_shown: bool, failed: bool) -> bool {
+    swiftly_vm::veil_up(picture_shown, failed)
+}
+
+/// The top bar (title, capsule, close button) is up: whenever the controls are wanted, also under the start veil
+/// (`ControlsPart::top_bar_up`).
+#[uniffi::export]
+pub fn player_top_bar_up(controls_wanted: bool) -> bool {
+    swiftly_vm::top_bar_up(controls_wanted)
+}
+
+/// The centre (play/pause, jumps) and the timeline are up: controls wanted and no start veil (`ControlsPart::middle_up`).
+#[uniffi::export]
+pub fn player_middle_up(controls_wanted: bool, veil_up: bool) -> bool {
+    swiftly_vm::middle_up(controls_wanted, veil_up)
+}
+
 /// Bits of `Change.parts`.
 #[uniffi::export]
 pub fn part_player_transport() -> u32 {
@@ -1848,6 +1928,22 @@ impl PlayerVm {
 pub struct PlayerChapter {
     pub name: String,
     pub from: f64,
+}
+
+#[cfg(test)]
+mod load_bar_rule_tests {
+    use super::*;
+
+    #[test]
+    fn the_exported_rule_is_the_cores_rule() {
+        assert!(player_veil_up(false, false));
+        assert!(!player_veil_up(true, false));
+        assert!(!player_veil_up(false, true));
+        assert!(player_top_bar_up(true) && !player_top_bar_up(false));
+        // under the veil the bar is up, the centre waits; with the picture both follow the controls
+        assert!(player_top_bar_up(true) && !player_middle_up(true, true));
+        assert!(player_middle_up(true, false) && !player_middle_up(false, false));
+    }
 }
 
 #[cfg(test)]

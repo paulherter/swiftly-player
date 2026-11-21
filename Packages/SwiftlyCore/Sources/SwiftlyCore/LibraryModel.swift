@@ -91,6 +91,10 @@ public final class LibraryModel {
         return vm.alphabet()
     }
 
+    /// The strip when the core has it without a fetch (the whole list's, or the one stored with the cached
+    /// first page); `nil` while only the loaded titles could build it. Same call as the first page's paint.
+    public func alphabetKnown() -> AlphabetPart? { vm.alphabetKnown() }
+
     /// The strip key of a loaded title, against the strip last handed out.
     public func keyOf(_ id: String) -> String? { vm.keyOf(id: id) }
 
@@ -101,6 +105,25 @@ public final class LibraryModel {
         return Int(index) < tiles.count ? tiles[Int(index)].id : nil
     }
 
+    /// Calls `changed` after every load of the grid that settled, with `grid` and `status` read again; also the
+    /// loads the core starts by itself (a delete, another device, the socket marking the lists stale), which a
+    /// host that copies the grid would otherwise never see. Returns when the calling Task is cancelled.
+    public func followSettledChanges(_ changed: @MainActor () -> Void) async {
+        let gridBit = partGrid()
+        var seen = vm.version()
+        var pending = false
+        while !Task.isCancelled {
+            guard let change = try? await vm.changed(seen: seen) else { return }
+            seen = change.version
+            if change.parts & gridBit != 0 { pending = true }
+            let current = vm.status()
+            guard pending, current.status != .loading, !current.refreshing, !current.loadingMore else { continue }
+            pending = false
+            grid = vm.grid()
+            status = current
+            changed()
+        }
+    }
     /// Asks for the next page and returns when it has arrived (or failed).
     public func loadMoreSettled() async {
         vm.send(intent: .loadMore)

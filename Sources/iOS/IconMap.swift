@@ -11,6 +11,8 @@ enum IconMap {
         "arrow.down": "icon.arrow-down",
         "arrow.down.circle": "icon.arrow-circle-down",
         "arrow.down.circle.fill": "icon.arrow-circle-down.fill",
+        "arrow.up.circle": "icon.arrow-circle-up",
+        "arrow.up.circle.fill": "icon.arrow-circle-up.fill",
         "arrow.down.right.and.arrow.up.left": "icon.arrows-in-simple",
         "arrow.up.left.and.arrow.down.right": "icon.arrows-out-simple",
         "arrow.left.and.right": "icon.arrows-left-right",
@@ -151,6 +153,7 @@ enum IconMap {
     static let outlined: Set<String> = [
         "icon.align-bottom-simple",
         "icon.arrow-circle-down",
+        "icon.arrow-circle-up",
         "icon.arrow-clockwise",
         "icon.arrow-counter-clockwise",
         "icon.back-10",

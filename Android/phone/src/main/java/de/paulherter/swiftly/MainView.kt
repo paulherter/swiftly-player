@@ -160,7 +160,8 @@ fun MainScreen(app: SwiftlyApplication) {
             app.looks.goHomeAction = { stack.clear(); section = Region.Start }
         }
         LaunchedEffect(app.support.source.value) { app.looks.syncSupporter() }
-        de.paulherter.swiftly.support.LooksWatcher(app)
+        // Only while Start is the page in view with nothing opened above it (`GiftFlow.pagesAboveStart` on Apple).
+        de.paulherter.swiftly.support.LooksWatcher(app, startBare = section == Region.Start && top.isEmpty())
         de.paulherter.swiftly.support.LookToneAnimator(app)
     }
     de.paulherter.swiftly.support.SupportPromptWatcher(app,
@@ -319,7 +320,7 @@ private fun InitialPage(app: SwiftlyApplication, section: Region, open: (Destina
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
             when (section) {
-                Region.Start -> StartPage(app, open, libraryJump)
+                Region.Start -> StartPage(app, open, libraryJump, toDownloads = { select(Region.Downloads) })
                 Region.Movies -> LibraryPage(app, "movies", translated("Filme"),
                                                  offeredFilters(listOf("alle", "angefangen", "merkliste", "ungesehen"), app.settings.watchlist), open)
                 // For series "unwatched" helps little; the same list as on iOS.
@@ -365,6 +366,7 @@ private fun Subpage(app: SwiftlyApplication, target: Destination, open: (Destina
         "Lizenzangebot" -> LicenseOfferingPage(back)
         "Seerrtitel" -> SeerrDetailPage(app, target, open, back)
         "SeerrAnfragen" -> SeerrRequestsPage(app, open, back)
+        "Anfrage" -> RequestDetailPage(app, target, back)
         "Verwaltung" -> ManagementHubPage(app, open, back)
         "Genrewahl" -> GenreSelectionPage(app, back)
         "Bibliothekswahl" -> LibrarySelectionPage(app, back)

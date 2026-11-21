@@ -8,6 +8,9 @@
 //!     [--out-rs <tokens.rs>] [--out-swift <Tokens.swift>] [--out-components <components.tsv>] [--check]
 //! ```
 //!
+//! `--semantic` switches to the second pipeline: `design/tokens.json` -> `src/tokens_generated.rs`,
+//! `Sources/Shared/Tokens.generated.swift` and the Android `Tokens.kt` (see `bin/gen_tokens/semantic.rs`).
+//!
 //! `--check` regenerates in memory and exits with status 1 when a committed file differs.
 //! The input is treated as untrusted data: only two keys of one zip entry are read, nothing is extracted.
 
@@ -17,6 +20,9 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+
+#[path = "gen_tokens/semantic.rs"]
+mod semantic;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -1280,6 +1286,9 @@ fn generate(isd_path: &Path, system_path: &Path) -> Result<(String, String, Stri
 
 fn run() -> Result<bool> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    if argv.iter().any(|a| a == "--semantic") {
+        return semantic::run(&semantic::parse_args(&argv)?);
+    }
     let args = parse_args(&argv)?;
     let (rs, swift, components, tokens) = generate(&args.isd, &args.system)?;
     if args.check {

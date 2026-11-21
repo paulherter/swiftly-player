@@ -492,3 +492,289 @@ fn the_chevron_stands_while_the_count_is_unknown_and_for_a_failed_load() {
     .unwrap();
     assert!(vm.seasons().chevron);
 }
+
+/// The scripted server behind a recorder of request depth, with the episode list held back until released. A request
+/// counts one level deeper than the deepest request that had finished before it was sent.
+struct Held {
+    inner: Arc<Script>,
+    finished: Arc<std::sync::atomic::AtomicUsize>,
+    levels: Arc<std::sync::Mutex<Vec<(usize, String)>>>,
+    release: Arc<common::Gate>,
+}
+
+impl swiftly_net::HttpTransport for Held {
+    fn send(
+        &self,
+        request: swiftly_net::HttpRequest,
+    ) -> impl std::future::Future<Output = Result<swiftly_net::HttpResponse, swiftly_net::ErrorKind>>
+    + Send {
+        let level = self.finished.load(Ordering::SeqCst) + 1;
+        let path = request.url.path().to_owned();
+        self.levels.lock().unwrap().push((level, path.clone()));
+        let finished = self.finished.clone();
+        let release = self.release.wait();
+        let answer = self.inner.send(request);
+        async move {
+            // Pending a number of passes, so that everything that starts side by side is sent before any answer.
+            let mut passes = 40;
+            std::future::poll_fn(|cx| {
+                if passes == 0 {
+                    return std::task::Poll::Ready(());
+                }
+                passes -= 1;
+                cx.waker().wake_by_ref();
+                std::task::Poll::Pending
+            })
+            .await;
+            if path.ends_with("Shows/ser/Episodes") {
+                release.await;
+            }
+            let reply = answer.await;
+            finished.fetch_max(level, Ordering::SeqCst);
+            reply
+        }
+    }
+}
+
+/// The plan of the next episode is asked as soon as the state answers: one level behind the first wave, and its
+/// answer (the "Direct Play" mark) is on the page while the episode list is still out. Before, the plan came after
+/// the state, the seasons, the series and the episode list, so a slow server added all their answer times.
+#[test]
+fn the_plan_is_asked_right_after_the_state_not_after_the_episode_list() {
+    let script = Script::new(|r| {
+        let p = r.url.path();
+        if p.ends_with("Shows/NextUp") {
+            return Some(list(&[episode(1, 1, false)], 1));
+        }
+        if p.ends_with("Shows/ser/Seasons") {
+            return Some(list(&[season(1)], 1));
+        }
+        if p.ends_with("Shows/ser/Episodes") {
+            return Some(list(&[episode(1, 1, false)], 1));
+        }
+        if p.ends_with("/Items/e1-1/PlaybackInfo") {
+            return Some(
+                serde_json::json!({"PlaySessionId": "ps", "MediaSources": [
+                    {"Id": "hd", "Container": "mp4", "SupportsDirectPlay": true}]})
+                .to_string(),
+            );
+        }
+        if p.ends_with("/Similar") || p.ends_with("/SpecialFeatures") {
+            return Some("{\"Items\":[]}".into());
+        }
+        Some("{}".into())
+    });
+    let net = Arc::new(Held {
+        inner: script,
+        finished: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        levels: Arc::new(std::sync::Mutex::new(Vec::new())),
+        release: Arc::new(common::Gate::default()),
+    });
+    // One worker thread: the tasks of a run take turns at their waiting points, so the depth is the same on every run.
+    let host = swiftly_vm::Host {
+        spawner: Arc::new(common::Pool(
+            futures_executor::ThreadPool::builder()
+                .pool_size(1)
+                .create()
+                .unwrap(),
+        )),
+        ..host()
+    };
+    let vm = SeriesVm::new(
+        net.clone(),
+        host,
+        entry(),
+        SeriesSpec::default(),
+        Some(account("TOKEN-A")),
+    )
+    .unwrap();
+    vm.send(SeriesIntent::Load);
+    let end = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !(vm.button().proof.direct_play && vm.plan().is_some()) {
+        assert!(
+            std::time::Instant::now() < end,
+            "no badge: {:?} {:?} {:?}",
+            net.levels.lock().unwrap(),
+            vm.button().proof,
+            vm.button().next_episode
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(vm.episodes().status, EpisodesStatus::Loading);
+    net.release.open();
+    wait_for("page", || {
+        vm.button().label_ready && vm.episodes().status != EpisodesStatus::Loading
+    });
+    let levels = net.levels.lock().unwrap().clone();
+    let of = |needle: &str| -> Vec<usize> {
+        levels
+            .iter()
+            .filter(|(_, p)| p.contains(needle))
+            .map(|(l, _)| *l)
+            .collect()
+    };
+    // Before: the plan came after the state, the seasons, the series and the episode list.
+    assert!(of("PlaybackInfo").iter().all(|l| *l <= 2), "{levels:?}");
+    assert!(vm.button().proof.direct_play);
+}
+
+fn stored_cache() -> swiftly_vm::ViewCache {
+    swiftly_vm::ViewCache::new(
+        swiftly_cache::EntityCache::in_memory(swiftly_cache::CacheConfig::default()).unwrap(),
+    )
+}
+
+/// Back to a series page: the year, the description and the stars of the earlier visit stand in the first state
+/// (before any answer), in the item the host reads too, and none of them drops while the load runs again.
+#[test]
+fn re_entering_a_series_keeps_year_description_and_rating_from_the_first_state() {
+    let cache = stored_cache();
+    let host_with = || swiftly_vm::Host {
+        cache: Some(cache.clone()),
+        ..host()
+    };
+    let net = server();
+    let first = SeriesVm::new(
+        net.clone(),
+        host_with(),
+        entry(),
+        SeriesSpec::default(),
+        Some(account("TOKEN-A")),
+    )
+    .unwrap();
+    first.send(SeriesIntent::Load);
+    wait_for("first visit", || ready(&first));
+    wait_for("title stored", || {
+        first.rating().community_rating == Some(8.1)
+    });
+    drop(first);
+
+    // The second visit opens from the bare list entry; the server does not answer until released.
+    let net = server();
+    net.gate.close();
+    let vm = SeriesVm::new(
+        net.clone(),
+        host_with(),
+        entry(),
+        SeriesSpec::default(),
+        Some(account("TOKEN-A")),
+    )
+    .unwrap();
+    let held = |vm: &SeriesVm<Script>| {
+        let b = vm.button();
+        let item = vm.item_json(None).unwrap();
+        assert!(
+            b.secondary_line.contains("2015"),
+            "year: {}",
+            b.secondary_line
+        );
+        assert_eq!(b.overview.as_deref(), Some("Full text."));
+        assert_eq!(vm.rating().community_rating, Some(8.1));
+        assert_eq!(vm.rating().age_rating.as_deref(), Some("TV-MA"));
+        for key in ["ProductionYear", "Overview", "CommunityRating"] {
+            assert!(item.contains(key), "{key} missing in {item}");
+        }
+    };
+    held(&vm);
+    vm.send(SeriesIntent::Load);
+    held(&vm);
+    net.gate.open();
+    wait_for("reload", || {
+        held(&vm);
+        ready(&vm)
+    });
+    held(&vm);
+}
+
+/// A later answer that is silent on year, description or stars (a lean answer) takes none of them off the page, and
+/// the item the host reads keeps them too.
+#[test]
+fn a_lean_answer_takes_no_fact_off_a_page_that_shows_it() {
+    let cache = stored_cache();
+    let host_with = || swiftly_vm::Host {
+        cache: Some(cache.clone()),
+        ..host()
+    };
+    let first = SeriesVm::new(
+        server(),
+        host_with(),
+        entry(),
+        SeriesSpec::default(),
+        Some(account("TOKEN-A")),
+    )
+    .unwrap();
+    first.send(SeriesIntent::Load);
+    wait_for("first visit", || ready(&first));
+    wait_for("title stored", || {
+        first.rating().community_rating == Some(8.1)
+    });
+    drop(first);
+
+    let lean = Script::new(|r| {
+        let p = r.url.path();
+        if p.ends_with("/Items/ser") {
+            return Some(
+                serde_json::json!({"Id": "ser", "Name": "Serie", "Type": "Series"}).to_string(),
+            );
+        }
+        if p.ends_with("Shows/ser/Seasons") {
+            return Some(list(&[season(1)], 1));
+        }
+        if p.ends_with("Shows/NextUp") || p.ends_with("Shows/ser/Episodes") {
+            return Some(list(&[episode(1, 1, false)], 1));
+        }
+        if p.ends_with("/Similar") || p.ends_with("/SpecialFeatures") {
+            return Some("{\"Items\":[]}".into());
+        }
+        Some("{}".into())
+    });
+    let vm = SeriesVm::new(
+        lean.clone(),
+        host_with(),
+        entry(),
+        SeriesSpec::default(),
+        Some(account("TOKEN-A")),
+    )
+    .unwrap();
+    vm.send(SeriesIntent::Load);
+    wait_for("lean answer", || {
+        ready(&vm) && lean.count("/Items/ser?") + lean.count("/Items/ser") > 0
+    });
+    let item = vm.item_json(None).unwrap();
+    for key in [
+        "ProductionYear",
+        "Overview",
+        "CommunityRating",
+        "OfficialRating",
+    ] {
+        assert!(item.contains(key), "{key} missing in {item}");
+    }
+    assert_eq!(vm.button().overview.as_deref(), Some("Full text."));
+    assert_eq!(vm.rating().community_rating, Some(8.1));
+    assert!(vm.button().secondary_line.contains("2015"));
+}
+
+/// The page appears again (Back from a title opened on it): `Load` on a page that finished loading refreshes in
+/// place, it does not ask for the seasons or the similar titles again.
+#[test]
+fn load_on_a_loaded_page_refreshes_in_place() {
+    let net = server();
+    let vm = vm(&net, SeriesSpec::default());
+    vm.send(SeriesIntent::Load);
+    wait_for("first load", || {
+        ready(&vm) && !vm.seasons().seasons.is_empty()
+    });
+    wait_for("similar", || net.count("/Similar") == 1);
+    let (seasons, state) = (net.count("Shows/ser/Seasons"), net.count("Shows/NextUp"));
+    assert_eq!(seasons, 1, "first load asks once");
+    vm.send(SeriesIntent::Load);
+    wait_for("state asked again", || net.count("Shows/NextUp") > state);
+    wait_for("settled", || ready(&vm));
+    assert_eq!(
+        net.count("Shows/ser/Seasons"),
+        seasons,
+        "seasons not asked again"
+    );
+    assert_eq!(net.count("/Similar"), 1, "similar not asked again");
+    assert_eq!(vm.seasons().seasons.len(), 2, "the season list stays");
+}

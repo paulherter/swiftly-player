@@ -13,7 +13,7 @@ import SwiftUI
 /// the settings rows; white stays reserved for the action buttons on the pages that follow.
 struct TVServerKindPicker: View {
     enum Purpose {
-        /// First start: the wordmark and the question, no way back.
+        /// First start: the question without a mark above it, no way back.
         case firstStart
         /// From the profile: title and sentence like "Server hinzufügen" with a way out.
         case addServer
@@ -56,11 +56,9 @@ struct TVServerKindPicker: View {
         switch purpose {
         case .firstStart:
             VStack(spacing: 0) {
-                Wordmark(height: TVSpec.serverWordmark)
                 Text("Was läuft bei dir?")
                     .font(Theme.titleLarge)
                     .foregroundStyle(Theme.font)
-                    .padding(.top, TVSpec.pickerHeadlineTop)
                 Text("Weitere Server kannst du später dazunehmen, auch gemischt.")
                     .font(Theme.body)
                     .foregroundStyle(Theme.fontQuiet)

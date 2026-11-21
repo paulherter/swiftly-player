@@ -23,12 +23,12 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -61,6 +61,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.draw.drawBehind
 import de.paulherter.swiftly.shared.Motion
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -103,6 +104,8 @@ data class Title(
     val tileImage: String? = null,
     /** The proof line's answer of an earlier visit (the core's `beleg`, seed only): `lossless`/`method` hold it and the chip shows from frame 1. */
     val proofStored: Boolean = false,
+    /** The player top bar facts of this title (the core's `kopf`), handed to the play request. */
+    val head: String? = null,
 ) {
     /** The proof chip has an answer to show: the fresh plan's, or the stored one of an earlier visit. */
     val proofShown: Boolean get() = planPresent || proofStored
@@ -116,10 +119,14 @@ data class Version(val id: String, val label: String, val isDefault: Boolean = f
  * several versions no longer asks in front of the start. The others are offered by a long press on Play
  * ([versionMenu]). A copy on the device plays as it is.
  */
-internal fun playDefault(app: SwiftlyApplication, id: String, since: Double?, beforePlay: () -> Unit = {}) {
+internal fun playDefault(app: SwiftlyApplication, id: String, since: Double?, head: String? = null, beforePlay: () -> Unit = {}) {
     beforePlay()
-    app.play.value = PlayRequest(id, since)
+    app.play.value = PlayRequest(id, since, head = head)
 }
+
+/** The versions a long press on Play offers: the title's own list when there are at least two and no copy is on the device. */
+internal fun versionsOffered(t: Title?, onDevice: Boolean): List<Version> =
+    if (onDevice) emptyList() else t?.versions.orEmpty().takeIf { it.size >= 2 }.orEmpty()
 
 /**
  * **Long press on Play: a small menu with only the versions**, the default one checked (the core's list and its
@@ -127,13 +134,13 @@ internal fun playDefault(app: SwiftlyApplication, id: String, since: Double?, be
  * does nothing, as on Apple.
  */
 internal fun versionMenu(app: SwiftlyApplication, t: Title?, id: String, since: Double?, beforePlay: () -> Unit = {}): (() -> Unit)? {
-    val versions = if (app.downloads.file(id) == null) t?.versions.orEmpty() else emptyList()
-    if (versions.size < 2) return null
+    val versions = versionsOffered(t, onDevice = app.downloads.file(id) != null)
+    if (versions.isEmpty()) return null
     return {
         app.sheet.value = SheetRequest(translated("Fassung wählen"), versions.map { Choice(it.id, it.label) },
             versions.firstOrNull { it.isDefault }?.id, longRows = true) { source ->
             beforePlay()
-            app.play.value = PlayRequest(id, since, source)
+            app.play.value = PlayRequest(id, since, source, t?.head)
         }
     }
 }
@@ -160,7 +167,7 @@ internal fun titleRead(json: String): Title = JSONObject(json).let { o ->
           }, if (o.has("kulisse")) o.fieldText("kulisse") else null,
           o.fieldText("restzeit"), o.fieldNumber("fortschritt"), o.fieldText("logo"),
           o.fieldList("fassungen") { Version(it.getString("id"), it.getString("label"), it.optBoolean("standard")) },
-          o.optBoolean("vorab"), o.fieldText("kachelbild"), o.has("beleg"))
+          o.optBoolean("vorab"), o.fieldText("kachelbild"), o.has("beleg"), o.optJSONObject("kopf")?.toString())
 }
 
 /** Frame 1 of a title page: what the core stored of the title (list entry and an earlier visit), `null` when nothing. */
@@ -264,7 +271,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
             // From here on without interruption: everything lands in the same frame.
             watchers = seen
             new?.let { title = it; app.titleCache[target.id] = it; remembered = it.remembered; watched = it.watched }
-            if (queuedPress && new != null) { queuedPress = false; playDefault(app, target.id, new.resumeFrom) { jerk(Jerk.Medium) } }
+            if (queuedPress && new != null) { queuedPress = false; playDefault(app, target.id, new.resumeFrom, new.head) { jerk(Jerk.Medium) } }
             titleDisturbed = new == null && title == null
             fieldAccept(surroundings)
             collections = rails
@@ -318,7 +325,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                 Column(Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(Theme.actionGap)) {
                 // Tap: the default version at once. Long press: only the versions (nothing with one version).
                 PlayButtons(t, lengthy = versionMenu(app, t, target.id, t?.resumeFrom) { jerk(Jerk.Medium) }) { since ->
-                    if (title == null) queuedPress = true else playDefault(app, target.id, since) { jerk(Jerk.Medium) }
+                    if (title == null) queuedPress = true else playDefault(app, target.id, since, title?.head) { jerk(Jerk.Medium) }
                 }
                 if (titleDisturbed && t == null) DisturbHint(app.serverAddress(), spacingTop = 12.dp,
                     retry = { titleDisturbed = false; section.launch { load() } })
@@ -336,24 +343,27 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                     ActionButton(if (watched) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle, translated("Gesehen"), watched, translated("Gesehen")) {
                         toggle(!watched, { watched = it }, { app.rk.watched(target.id, it).await() }) { alt, an -> alt.copy(watched = an) }
                     }
+                    // Seerr's entry of the Mehr menu (the core's title menu rule); none without a connection or the right.
+                    val reportWords by produceState<String?>(null, app.seerrStored()) { value = seerrReportEntry(app) }
+                    val deleteWords by produceState<String?>(null, app.seerrStored()) { value = seerrDeleteEntry(app) }
                     ActionButton(Glyph.More, translated("Mehr"), false, translated("Mehr")) {
-                        // `TitleActions.forMovie`.
-                        val entries = buildList {
-                            if (t != null && t.planPresent && t.resumeFrom != null) {
-                                add(Choice("vonvorn", translated("Von vorn abspielen")))
-                                add(Choice("zuruecksetzen", translated("Fortschritt zurücksetzen")))
-                            }
-                            // "Abspielen auf …": one entry per TV in reach (`TitleActions.playOn`).
-                            if (t != null && t.planPresent) app.playOnChoices().forEach { add(Choice(it.first, it.second)) }
-                            // Only with a file and the right (`TitleActions.forMovie`, `gemeinsam`).
-                            if (t != null && t.planPresent && app.gemeinsam.value.mayCreate) add(Choice("gemeinsam", translated("Gemeinsam schauen")))
-                            add(Choice("metadaten", translated("Metadaten neu einlesen")))
-                        }
-                        app.sheet.value = SheetRequest(name, entries, null,
-                            mapOf("vonvorn" to Glyph.Rewind, "zuruecksetzen" to Glyph.ResetCircle,
-                                  "gemeinsam" to Glyph.Cluster, "metadaten" to Glyph.Reload) +
-                                app.playOnChoices().associate { it.first to Glyph.Tv }) { choice ->
+                        // The core's list (`DetailVm::more_menu`): "Abspielen auf ..." first, then the rest in the core's order.
+                        val more = phoneMore(app, series = false, planKnown = t != null && t.planPresent,
+                            begun = t?.resumeFrom != null, together = app.gemeinsam.value.mayCreate)
+                        app.sheet.value = SheetRequest(name, more.choices + listOfNotNull(reportWords?.let { Choice(MORE_REPORT, it) }, deleteWords?.let { Choice(MORE_DELETE, it) }), null,
+                                more.icons + (MORE_REPORT to Glyph.Exclamation) + (MORE_DELETE to Glyph.Papierkorb),
+                                cautionary = setOf(MORE_DELETE)) { choice ->
                             if (app.playOnChosen(choice, target.id, t?.resumeFrom ?: -1.0)) return@SheetRequest
+                            if (choice == MORE_DELETE) {
+                                section.launch { kotlinx.coroutines.delay(SheetSwitch)
+                                    if (!deleteFlowOpen(app, target.id, back)) message = translated("Seerr kennt diesen Titel nicht.") }
+                                return@SheetRequest
+                            }
+                            if (choice == MORE_REPORT) {
+                                section.launch { kotlinx.coroutines.delay(SheetSwitch)
+                                    if (!reportIssueOpen(app, target.id, null)) message = translated("Dieser Titel hat keine TMDB-Nummer.") }
+                                return@SheetRequest
+                            }
                             // The next sheet once this one is out; swapping in place jumped in height.
                             if (choice == "gemeinsam") { section.launch { kotlinx.coroutines.delay(SheetSwitch); sharedCreateOpen(app, target.id, name) }; return@SheetRequest }
                             section.launch {
@@ -498,7 +508,7 @@ internal fun ProofRow(loaded: Boolean, planPresent: Boolean, lossless: Boolean, 
             val (symbolText, word, color) = own
             ProofMark(symbolText, word, color, Strength.Semibold)
         } else if (planPending && !planPresent) {
-            Box(Modifier.size(width = 104.dp, height = 26.dp).clip(RoundedCornerShape(Theme.cornerSmall)).background(Theme.fontQuiet.copy(alpha = 0.15f)))
+            Box(Modifier.size(width = 104.dp, height = 26.dp).clip(smoothRoundedShape(Theme.cornerSmall)).background(Theme.fontQuiet.copy(alpha = 0.15f)))
         } else if (planPresent) {
             // Direct play carries the checkmark in semibold, the hint the triangle in regular.
             val color = if (lossless) Theme.accent else Theme.warning
@@ -514,7 +524,7 @@ internal fun ProofRow(loaded: Boolean, planPresent: Boolean, lossless: Boolean, 
             // `Badge`: 13 medium `schriftLeise` on 15 % of the same colour, 10/4 inside, corner 8.
             // A bare number is the minimum age: "ab 12" (`String(localized: "ab \(sharing)")`).
             Text(if (it.all { c -> c.isDigit() }) translated("ab %@", it) else it, style = Theme.tile, color = Theme.fontQuiet,
-                 modifier = Modifier.clip(RoundedCornerShape(Theme.cornerSmall)).background(Theme.fontQuiet.copy(alpha = 0.15f))
+                 modifier = Modifier.clip(smoothRoundedShape(Theme.cornerSmall)).background(Theme.fontQuiet.copy(alpha = 0.15f))
                      .padding(horizontal = 10.dp, vertical = 4.dp))
         }
     }
@@ -522,35 +532,17 @@ internal fun ProofRow(loaded: Boolean, planPresent: Boolean, lossless: Boolean, 
 
 /**
  * Mirrors `primaryButton`: one button, not two: "Resume from ..." or "Play". "From the start" is
- * in the More sheet; a second button below was redundant. Below it, 9 gap, the remaining time in
- * 12 and the progress. Disabled without a plan.
+ * in the More sheet; a second button below was redundant. The progress is the thin line inside the
+ * button, the remaining time is only the accessibility value. Disabled without a plan.
  */
 @Composable
 private fun PlayButtons(t: Title?, lengthy: (() -> Unit)? = null, play: (Double?) -> Unit) {
     // Ready from frame 1: a seed has no plan yet (the player asks for it itself), a press before any title is held.
     val ready = t == null || t.seed || t.planPresent
-    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        val since = t?.resumeText
-        if (since != null) PlayButton(Glyph.Play, translated("Fortsetzen ab %@", since), ready, main = true, lengthy = lengthy) { play(t.resumeFrom) }
-        else PlayButton(Glyph.Play, translated("Abspielen"), ready, main = true, lengthy = lengthy) { play(null) }
-        ResumeSlot(t?.remainingTime, t?.progress)
-    }
-}
-
-/**
- * Mirrors `ResumeSlot`: the line under Play (remaining time of a started title, else the runtime from the core) and the
- * progress bar stand in their final height from frame 1, and the text and the bar only fade in inside it, so nothing
- * below Play moves when the title answers.
- */
-@Composable
-internal fun ResumeSlot(remaining: String?, progress: Double?) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        // The same style with a placeholder text keeps the line's height; invisible while there is nothing to say.
-        Text(remaining ?: "0", style = Theme.small, color = Theme.fontQuiet, maxLines = 1,
-             modifier = Modifier.graphicsLayer { alpha = if (remaining == null) 0f else 1f })
-        ProgressBar(progress?.takeIf { it > 0 } ?: 0.0,
-            Modifier.clip(RoundedCornerShape(2.dp)).graphicsLayer { alpha = if ((progress ?: 0.0) > 0) 1f else 0f })
-    }
+    val since = t?.resumeText
+    if (since != null) PlayButton(Glyph.Play, translated("Fortsetzen ab %@", since), ready, main = true, lengthy = lengthy,
+        progress = t.progress, remaining = t.remainingTime) { play(t.resumeFrom) }
+    else PlayButton(Glyph.Play, translated("Abspielen"), ready, main = true, lengthy = lengthy) { play(null) }
 }
 
 /** Mirrors `DescriptionSlot`: three lines of the description's height as quiet bars, while no text has arrived. */
@@ -561,7 +553,7 @@ internal fun DescriptionSlot() {
         Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             repeat(3) { line ->
                 Box(Modifier.fillMaxWidth().padding(end = if (line == 2) 120.dp else 0.dp).height(12.dp)
-                    .clip(RoundedCornerShape(4.dp)).background(Theme.fontVeryQuiet.copy(alpha = 0.15f)))
+                    .clip(smoothRoundedShape(4.dp)).background(Theme.fontVeryQuiet.copy(alpha = 0.15f)))
             }
         }
     }
@@ -577,7 +569,11 @@ internal fun PlayButton(symbol: Glyph, text: String, an: Boolean, main: Boolean,
                         /** Disabled on a sheet in `area` needs `erhoeht`; otherwise only a quiet text colour remains. */
                         lockedArea: Color = Theme.area,
                         /** Long press: the title's tile menu (`TileMenu.swift`, main button). */
-                        lengthy: (() -> Unit)? = null, perform: () -> Unit) {
+                        lengthy: (() -> Unit)? = null,
+                        /** Resume point 0..1 of the title: drawn as a thin line at the bottom edge inside the main button. */
+                        progress: Double? = null,
+                        /** Remaining time, spoken as the button's state (no longer shown as text under it). */
+                        remaining: String? = null, perform: () -> Unit) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     // `PrimaryButtonStyle`: white, 75 % pressed; `SecondaryButtonStyle`: 10 %, 16 % pressed. On immediately, 120 ms off.
@@ -585,7 +581,9 @@ internal fun PlayButton(symbol: Glyph, text: String, an: Boolean, main: Boolean,
     LaunchedEffect(pressed) { if (pressed) press.snapTo(1f) else press.animateTo(0f, Motion.release()) }
     val jerk = rememberJerk()
     val color = when { !an -> Theme.fontVeryQuiet; main -> Theme.onAccent; else -> Theme.font }
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(Theme.corner))
+    Row(Modifier.fillMaxWidth().heightIn(min = if (main) Theme.primaryHeight else 48.dp)
+            .clip(smoothRoundedShape(if (main) Theme.cornerButton else Theme.corner))
+            .semantics { remaining?.let { stateDescription = it } }
             .drawBehind {
                 drawRect(when {
                     !an -> lockedArea
@@ -594,6 +592,13 @@ internal fun PlayButton(symbol: Glyph, text: String, an: Boolean, main: Boolean,
                     main -> Color.White.copy(alpha = 1f - 0.25f * press.value)
                     else -> androidx.compose.ui.graphics.lerp(Theme.area, Theme.pressedArea, press.value)
                 })
+                // The remaining-time line: accent on a faint dark track, inside the button, cut by its corner.
+                val line = progress?.takeIf { main && an && it > 0 }
+                if (line != null) {
+                    val h = Theme.buttonProgressHeight.toPx()
+                    drawRect(Color.Black.copy(alpha = 0.08f), Offset(0f, size.height - h), Size(size.width, h)) // token-lint: allow track of the button line, no token for it yet (open in the handover)
+                    drawRect(Theme.accent, Offset(0f, size.height - h), Size((size.width * line.coerceIn(0.0, 1.0)).toFloat(), h))
+                }
             }
             .then(when {
                 !an -> Modifier
@@ -706,7 +711,7 @@ internal fun CastTile(p: WithAct, perform: () -> Unit = {}) {
 internal fun ExtraTile(e: Extra, play: () -> Unit) {
     Column(Modifier.width(210.dp).clickable(onClick = play), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         AsyncImage(model = e.image, contentDescription = null, contentScale = ContentScale.Crop,
-                   modifier = Modifier.size(210.dp, 118.dp).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area))
+                   modifier = Modifier.size(210.dp, 118.dp).clip(smoothRoundedShape(Theme.cornerTile)).background(Theme.area))
         Text(e.name, style = Theme.tile, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis)
         e.runtime?.let { Text(it, style = Theme.small, color = Theme.fontVeryQuiet, maxLines = 1) }
     }
@@ -815,7 +820,7 @@ internal fun HintStrip(text: String?, modifier: Modifier, close: () -> Unit) {
  */
 @Composable
 private fun ProofMark(symbolText: Glyph, word: String, color: Color, strength: Strength) {
-    Row(Modifier.clip(RoundedCornerShape(Theme.cornerSmall)).background(color.copy(alpha = 0.15f))
+    Row(Modifier.clip(smoothRoundedShape(Theme.cornerSmall)).background(color.copy(alpha = 0.15f))
             .padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Symbol(symbolText, 11.dp, color = color, strength = strength)

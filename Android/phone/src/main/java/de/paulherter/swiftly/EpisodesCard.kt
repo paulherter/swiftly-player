@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -81,6 +80,7 @@ import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.motionReduced
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -315,8 +315,8 @@ private fun CardImage(mediaWork: PlayItem, episode: CardsEpisode, m: CardsMetric
     Box(Modifier.offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
             .size(with(d) { r.width.toDp() }, with(d) { r.height.toDp() })
             .graphicsLayer { scaleX = mass; scaleY = mass; alpha = if (focus == null && pressed) 0.85f else 1f }
-            .shadow((17f * rest).dp, RoundedCornerShape(corner), ambientColor = Color.Black, spotColor = Color.Black.copy(alpha = 0.6f * rest))
-            .clip(RoundedCornerShape(corner)).background(Color.Black)
+            .shadow((17f * rest).dp, smoothRoundedShape(corner), ambientColor = Color.Black, spotColor = Color.Black.copy(alpha = 0.6f * rest))
+            .clip(smoothRoundedShape(corner)).background(Color.Black)
             .then(if (focus != null && operable) Modifier.focusRequester(focus) else Modifier)
             .semantics {
                 contentDescription = translated("Nächste Folge abspielen: %@", episode.abbreviation)

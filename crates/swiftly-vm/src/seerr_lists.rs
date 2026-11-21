@@ -792,7 +792,7 @@ pub struct SeerrSearchInfo {
     pub groups: Vec<SeerrSearchGroup>,
     /// Tiles in all.
     pub count: i64,
-    /// "Seerr antwortet gerade nicht" while `Offline`.
+    /// "Seerr antwortet gerade nicht. Deine Bibliothek läuft normal." while `Offline`.
     pub error: Option<String>,
     /// "Auch nicht bei Seerr" when Seerr found nothing either.
     pub nothing_line: Option<String>,
@@ -830,6 +830,15 @@ impl SeerrSearchVm {
         } else {
             ListLoad::Loading
         };
+        self.version += 1;
+    }
+
+    /// Seerr itself did not answer for `term` (the session read failed); an older term is dropped.
+    pub fn offline(&mut self, term: &str) {
+        if term.trim() != self.term {
+            return;
+        }
+        self.load = ListLoad::Offline;
         self.version += 1;
     }
 
@@ -925,8 +934,11 @@ impl SeerrSearchVm {
             block_title: self.t.t("Noch nicht auf deinem Server"),
             groups,
             count,
-            error: (self.load == ListLoad::Offline)
-                .then(|| self.t.t("Seerr antwortet gerade nicht.")),
+            // The library results above are fine, so the line says so (`SearchView.offlineBox`).
+            error: (self.load == ListLoad::Offline).then(|| {
+                self.t
+                    .t("Seerr antwortet gerade nicht. Deine Bibliothek l\u{e4}uft normal.")
+            }),
             nothing_line: (self.load == ListLoad::Empty).then(|| self.t.t("Auch nicht bei Seerr.")),
         }
     }
@@ -1312,6 +1324,29 @@ impl SeerrRequestsVm {
 
 // ---------------------------------------------------------------- home block
 
+/// A title the library has: its item id and the address of the item's own cover (`None`: it has no picture).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryHit {
+    /// The library item id.
+    pub id: String,
+    /// The address of the item's own cover.
+    pub cover: Option<String>,
+}
+
+/// The cover of an arrival banner: the library item's own picture, else the TMDB poster, else none.
+fn arrival_poster(
+    covers: &HashMap<String, String>,
+    library_id: &str,
+    tmdb_poster: Option<&str>,
+) -> Option<String> {
+    covers
+        .get(library_id)
+        .filter(|c| !c.is_empty())
+        .map(String::as_str)
+        .or(tmdb_poster)
+        .map(str::to_string)
+}
+
 /// "<Titel> ist da" with a way to play it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SeerrArrival {
@@ -1667,6 +1702,8 @@ pub struct SeerrHomeVm {
     arrival_on: bool,
     requests_on: bool,
     deck: ArrivalDeck,
+    /// The library items' own covers by library id (`arrival_covers`): they come before the TMDB poster.
+    covers: HashMap<String, String>,
     layout: ArrivalLayout,
     attention: Option<SeerrAttention>,
     available: bool,
@@ -1698,6 +1735,7 @@ impl SeerrHomeVm {
             arrival_on: true,
             requests_on: false,
             deck: ArrivalDeck::Empty,
+            covers: HashMap::new(),
             layout: ArrivalLayout::Collapsed,
             attention: None,
             available: false,
@@ -1853,6 +1891,13 @@ impl SeerrHomeVm {
             .collect()
     }
 
+    /// The library items' own cover addresses (library id, address). A banner shows the item's own cover first, the TMDB
+    /// poster only when the library has none (a poster the person can see in the library is also the one that loads).
+    pub fn arrival_covers(&mut self, covers: Vec<(String, String)>) {
+        self.covers = covers.into_iter().collect();
+        self.version += 1;
+    }
+
     /// The library has these requests' titles (candidate order, newest first): they are the stack. Dismissed ones and
     /// everything while the setting is off do not count.
     pub fn arrivals_found(&mut self, found: Vec<(i64, String)>) {
@@ -1921,7 +1966,7 @@ impl SeerrHomeVm {
                     let (title, _) = request_heading(r, Some(lite));
                     Some(SeerrArrival {
                         request_id: *id,
-                        poster: lite.poster.clone(),
+                        poster: arrival_poster(&self.covers, library_id, lite.poster.as_deref()),
                         library_id: library_id.clone(),
                         line: t.t_args("%@ ist da", &[Arg::Str(title.clone())]),
                         title,
@@ -1986,6 +2031,26 @@ impl SeerrHomeVm {
 
 #[cfg(test)]
 mod tests {
+    /// The banner's cover: the library item's own picture first, the TMDB poster only without it.
+    #[test]
+    fn an_arrival_cover_is_the_library_item_first() {
+        let mut covers = HashMap::new();
+        covers.insert("lib1".to_string(), "https://lib/1.jpg".to_string());
+        covers.insert("lib2".to_string(), String::new());
+        let tmdb = Some("https://tmdb/p.jpg");
+        assert_eq!(
+            arrival_poster(&covers, "lib1", tmdb).as_deref(),
+            Some("https://lib/1.jpg")
+        );
+        assert_eq!(
+            arrival_poster(&covers, "lib1", None).as_deref(),
+            Some("https://lib/1.jpg")
+        );
+        assert_eq!(arrival_poster(&covers, "lib2", tmdb).as_deref(), tmdb);
+        assert_eq!(arrival_poster(&covers, "lib3", tmdb).as_deref(), tmdb);
+        assert_eq!(arrival_poster(&covers, "lib3", None), None);
+    }
+
     use super::*;
     use swiftly_seerr::types::{CollectionCard, Me, PersonCard, TitleSeason};
 
@@ -2187,6 +2252,21 @@ mod tests {
             RailId::order(&[]).len(),
             5,
             "default order without settings"
+        );
+    }
+
+    #[test]
+    fn a_search_with_no_seerr_answer_says_the_library_runs() {
+        let mut vm = SeerrSearchVm::new(Locale::parse(DE), "2026-11-14");
+        vm.begin("nord");
+        vm.offline("older");
+        assert_eq!(vm.info().load, ListLoad::Loading);
+        vm.offline("nord");
+        let info = vm.info();
+        assert_eq!(info.load, ListLoad::Offline);
+        assert_eq!(
+            info.error.as_deref(),
+            Some("Seerr antwortet gerade nicht. Deine Bibliothek l\u{e4}uft normal.")
         );
     }
 

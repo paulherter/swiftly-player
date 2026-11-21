@@ -190,6 +190,7 @@ struct SeriesView: View {
     private var header: some View {
         let remembered = button?.favorite ?? false
         return DetailHeader(model: model, item: current, plan: page?.next.flatMap { page?.plan(app: model, for: $0.id) },
+                            proof: button?.proof,
                             heroTrim: 40,
                             blur: button?.imageBlurHash,
                             stand: button?.tileImages.compactMap { URL(string: $0.address) } ?? [],

@@ -714,8 +714,8 @@ struct MacDownloadRow: View {
         // Localized: German "F" for Folge, English "E" for episode. It was
         // hard-coded as "F", including in English.
         if let s = entries.season, let f = entries.episode { parts.append(String(localized: "S\(s) F\(f)")) }
-        else if let t = entries.runtimeTicks, t > 0 {
-            parts.append(runtime(Double(t) / 10_000_000))
+        else if let line = runtimeLine(entries.runtimeTicks.map { Double($0) / 10_000_000 }) {
+            parts.append(line)
         }
         switch entries.state {
         case .loads:

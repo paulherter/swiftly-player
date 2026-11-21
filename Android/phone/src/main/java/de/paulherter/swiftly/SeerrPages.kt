@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -28,6 +27,7 @@ import coil3.compose.AsyncImage
 import de.paulherter.swiftly.shared.InputField
 import de.paulherter.swiftly.shared.PrimaryButton
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -225,6 +225,8 @@ fun SeerrDetailPage(app: SwiftlyApplication, target: Destination, open: (Destina
     var screen by remember(target.id) { mutableStateOf<SeerrTitleScreen?>(null) }
     var info by remember(target.id) { mutableStateOf<SeerrTitleInfo?>(null) }
     var retry by remember { mutableIntStateOf(0) }
+    /** The season the person picked for the episode list; which one shows is the core's rule (`seerrEpisodeSeasons`). */
+    var picked by remember(target.id) { mutableStateOf<Long?>(null) }
     val run = rememberCoroutineScope()
     val jerk = rememberJerk()
     LaunchedEffect(target.id, retry) {
@@ -264,7 +266,7 @@ fun SeerrDetailPage(app: SwiftlyApplication, target: Destination, open: (Destina
                             PrimaryKind.REQUESTED, PrimaryKind.LOCKED -> HintBox(i.primary.text)
                             PrimaryKind.HIDDEN -> {}
                         }
-                        if (i.seasons.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(Theme.corner)).background(Theme.area)) {
+                        if (i.seasons.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(smoothRoundedShape(Theme.corner)).background(Theme.area)) {
                             i.seasons.forEach { r ->
                                 Row(Modifier.fillMaxWidth().heightIn(min = 46.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -277,6 +279,7 @@ fun SeerrDetailPage(app: SwiftlyApplication, target: Destination, open: (Destina
                         }
                         i.overview?.let { CollapsibleText(it) }
                     }
+                    seerrEpisodeSeasons(screen, i, picked)?.let { SeerrEpisodesBlock(it) { n -> picked = n } }
                     if (i.cast.isNotEmpty()) Segment(translated("Besetzung"), 14.dp) {
                         tilesWithKey(i.cast.take(12), { it.name + it.role }) { p -> CastTile(WithAct(p.name, p.name, p.role, tmdbImage(p.image, 185))) { open(seerrPersonTarget(p, i.title)) } }
                     }
@@ -294,5 +297,5 @@ fun SeerrDetailPage(app: SwiftlyApplication, target: Destination, open: (Destina
 @Composable
 private fun HintBox(text: String) {
     Text(text, style = Theme.body.copy(lineHeight = 21.sp), color = Theme.fontQuiet,
-         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(Theme.corner)).background(Theme.area).padding(14.dp))
+         modifier = Modifier.fillMaxWidth().clip(smoothRoundedShape(Theme.corner)).background(Theme.area).padding(14.dp))
 }

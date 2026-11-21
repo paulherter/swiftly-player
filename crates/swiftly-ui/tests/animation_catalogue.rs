@@ -369,12 +369,10 @@ fn no_screen_source_animates_with_a_curve_outside_the_catalogue() {
         "Curve::spring(",
         "bezier(",
     ];
-    // `lottie.rs` plays the easing of the Lottie file itself (the start animation), not a UI curve.
     let allowed = [
         "swiftly-ui/src/anim.rs",
         "swiftly-ui/src/feel.rs",
         "swiftly-ui/src/nav.rs",
-        "swiftly-desktop/src/lottie.rs",
     ];
     let mut offenders = Vec::new();
     for f in files {

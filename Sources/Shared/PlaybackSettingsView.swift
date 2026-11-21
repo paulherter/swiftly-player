@@ -386,6 +386,11 @@ struct RowsLayout<Right: View>: View {
         .padding(.horizontal, Theme.margin(wide: wide))
         .padding(.vertical, Theme.rowPadV)
         .frame(minHeight: Theme.rowHeight)
+        // **The row is as tall as its content, never taller.** `ToggleSwitch` takes `maxHeight:
+        // .infinity` so that its hit area fills the row; in a column that is shorter than its
+        // neighbour (Settings > General on the iPad) the stack re-proposes the taller height at
+        // placement and the whole card stretched with it.
+        .fixedSize(horizontal: false, vertical: true)
         .contentShape(Rectangle())
     }
 }

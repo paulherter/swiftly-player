@@ -38,7 +38,7 @@ private struct LicenseRow<Destination: Hashable>: View {
                 }
                 .foregroundStyle(Theme.font)
                 .padding(.horizontal, Theme.margin(wide: wide))
-                .padding(.vertical, 14)
+                .padding(.vertical, Theme.rowPadV)
                 if !last { SheetLine() }
             }
             .contentShape(Rectangle())
@@ -63,7 +63,7 @@ struct LicensesView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Swiftly Player nutzt VLCKit und libVLC von VideoLAN (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.")
+                        Text("Swiftly Player spielt mit AetherEngine und FFmpeg (Apple), Media3 (Android) und libmpv (Windows, Linux). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.")
                             .growing(15)
                             .lineSpacing(3)
                             .foregroundStyle(Theme.fontQuiet)
@@ -96,19 +96,23 @@ struct LicensesView: View {
     @ViewBuilder
     private func content(_ inventory: LicenseState) -> some View {
         let player = inventory.components(group: "player")
-        GroupsTitle(text: "VLCKit und libVLC")
+        GroupsTitle(text: "Wiedergabe")
         CardView {
             ForEach(player) { b in
                 LicenseRow(title: b.name, under: b.subline, target: LicenseRoute(id: b.id))
             }
             LicenseRow(title: String(localized: "Quelltext und schriftliches Angebot"),
-                        under: String(localized: "Woher VLCKit kommt und wie du es ersetzt"),
+                        under: String(localized: "Woher die Player-Bausteine kommen und wie du sie ersetzt"),
                         target: LicenseOfferingRoute(), last: true)
         }
+        Text("Frühere Versionen enthielten VLCKit und libVLC (LGPL 2.1 oder später). Das schriftliche Angebot für ihren Quelltext gilt weiter, siehe „Quelltext und schriftliches Angebot“.")
+            .growing(15)
+            .lineSpacing(3)
+            .foregroundStyle(Theme.fontQuiet)
+            .padding(.horizontal, Theme.margin(wide: wide))
+            .padding(.top, 10)
         Color.clear.frame(height: 22)
         group("Weitere Bausteine", inventory.components(group: "app"))
-        Color.clear.frame(height: 22)
-        group("In VLCKit eingebaut", inventory.components(group: "in-vlckit"))
     }
 
     @ViewBuilder
@@ -158,7 +162,7 @@ struct LicenseView: View {
                                 }
                             }
                             .padding(.horizontal, Theme.margin(wide: wide))
-                            .padding(.vertical, 14)
+                            .padding(.vertical, Theme.rowPadV)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         ForEach(component.texts, id: \.self) { file in
@@ -222,7 +226,7 @@ struct LicenseView: View {
             }
             .textSelection(.enabled)
             .padding(.horizontal, Theme.margin(wide: wide))
-            .padding(.vertical, 14)
+            .padding(.vertical, Theme.rowPadV)
         }
     }
 }
@@ -256,7 +260,7 @@ struct LicenseOfferingView: View {
                                     }
                                     .textSelection(.enabled)
                                     .padding(.horizontal, Theme.margin(wide: wide))
-                                    .padding(.vertical, 14)
+                                    .padding(.vertical, Theme.rowPadV)
                                 }
                                 Color.clear.frame(height: 22)
                             }
@@ -267,7 +271,7 @@ struct LicenseOfferingView: View {
                                 .padding(.horizontal, Theme.margin(wide: wide))
                         }
                     }
-                    .padding(.bottom, 40)
+                    .padding(.bottom, 40) // token-lint: allow licence page spacing as before, tokenised in the design wave
                     .frame(maxWidth: wide ? Theme.readWidth : .infinity, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }

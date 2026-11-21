@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -77,6 +76,7 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.launch
 
@@ -234,6 +234,9 @@ internal class PlayerMenuSpecs(private val menus: PlayerMenus, private val tab: 
                 val subtitles = tab == PlayerMenuTrackTab.SUBTITLES
                 val page = if (subtitles) p.subtitles else p.audio
                 val rows = page.rows.map { RowSpec.Check(key(it.action), if (it.labelIsKey) PlayerMenuWords.Key(it.label).text() else it.label, null, it.selected) }
+                    // **The bar is up before the stream answers**, so this menu can open too: with no audio track known yet, a quiet
+                    // line says the rows are coming (the same spec rebuilds when the tracks arrive; mirrors `PlayerMenuSession.swift`).
+                    .let { if (p.audio.rows.isEmpty()) it + RowSpec.Hint(translated("Spuren werden geladen …")) else it }
                 val segs = p.tabs.map { MenuCapsule(tabId(it), (if (it == PlayerMenuTrackTab.SUBTITLES) p.subtitles else p.audio).title.text()) }
                 val search = if (subtitles) page.search else null
                 if (search != null) actions["search"] = search
@@ -289,8 +292,8 @@ private val menuMargin = 12.dp
 private val menuGap = 6.dp
 private val menuPad = 12.dp
 private val menuBoxPad = 6.dp
-private val menuRadius = 16.dp
-private val menuRowRadius = 10.dp
+private val menuRadius get() = Theme.cornerCard   // token radius.card (26 on the phone)
+private val menuRowRadius get() = Theme.corner   // token radius.control (12 on the phone)
 private val menuOpenSpring = spring<Dp>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 440f)
 private val menuCloseCurve = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
 private val menuLevelCurve = CubicBezierEasing(0.77f, 0f, 0.175f, 1f)
@@ -344,8 +347,8 @@ internal fun PlayerMenuLayer(session: PlayerMenuSession, menus: () -> PlayerMenu
                     alpha = shown.value.coerceIn(0f, 1f)
                     transformOrigin = TransformOrigin(originX, 0f)
                 }
-                .clip(RoundedCornerShape(menuRadius)).background(Theme.raised)
-                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), RoundedCornerShape(menuRadius))
+                .clip(smoothRoundedShape(menuRadius)).background(if (Theme.tvMode) Theme.raised else Theme.groupsArea)
+                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), smoothRoundedShape(menuRadius))
                 .pointerInput(Unit) { detectTapGestures { } }) {
             AnimatedContent(targetState = Slot(kind, level, session.stack.size), modifier = Modifier.padding(menuBoxPad),
                 transitionSpec = {
@@ -395,7 +398,7 @@ private sealed class Act {
 private fun LevelView(spec: LevelSpec, rowHeight: Dp, maxHeight: Dp, act: (Act) -> Unit) {
     Column(Modifier.fillMaxWidth().heightIn(max = maxHeight)) {
         spec.backTitle?.let { t ->
-            Row(Modifier.fillMaxWidth().height(rowHeight).clip(RoundedCornerShape(menuRowRadius)).pressRow { act(Act.Back) }.padding(horizontal = menuPad)
+            Row(Modifier.fillMaxWidth().height(rowHeight).clip(smoothRoundedShape(menuRowRadius)).pressRow { act(Act.Back) }.padding(horizontal = menuPad)
                     .semantics { contentDescription = t },
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Symbol(Glyph.AngleDown, 14.dp, Modifier.rotate(90f), color = Theme.fontQuiet, strength = Strength.Semibold)
@@ -420,15 +423,15 @@ private fun LevelView(spec: LevelSpec, rowHeight: Dp, maxHeight: Dp, act: (Act) 
         spec.fixedRows.forEach { RowView(it, rowHeight, act) }
         if (spec.footer.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             spec.footer.forEach { f ->
-                Box(Modifier.weight(1f).height(rowHeight).clip(RoundedCornerShape(menuRowRadius)).background(Theme.area).pressRow { act(Act.Select(f.id)) },
-                    contentAlignment = Alignment.Center) { Text16(f.label, if (f.quiet) Theme.fontVeryQuiet else Theme.font, semibold = true, size = 15) }
+                Box(Modifier.weight(1f).height(minOf(rowHeight, Theme.buttonHeight - 4.dp)).clip(smoothRoundedShape(menuRowRadius)).pressRow { act(Act.Select(f.id)) },
+                    contentAlignment = Alignment.Center) { Text16(f.label, if (f.quiet) Theme.fontVeryQuiet else Theme.font, semibold = true, size = 13) }
             }
         }
     }
 }
 
 @Composable
-internal fun Text16(text: String, color: Color, modifier: Modifier = Modifier, semibold: Boolean = false, size: Int = 16, lines: Int = 1) {
+internal fun Text16(text: String, color: Color, modifier: Modifier = Modifier, semibold: Boolean = false, size: Int = 15, lines: Int = 1) {
     androidx.compose.material3.Text(text, style = Theme.listTitle.copy(fontSize = size.sp, fontWeight = if (semibold) FontWeight.SemiBold else FontWeight.Normal),
         color = color, maxLines = lines, overflow = TextOverflow.Ellipsis, modifier = modifier)
 }
@@ -444,13 +447,13 @@ private fun CapsuleChip(label: String, on: Boolean, modifier: Modifier = Modifie
 @Composable
 private fun RowView(spec: RowSpec, h: Dp, act: (Act) -> Unit) {
     when (spec) {
-        is RowSpec.Value -> Row(Modifier.fillMaxWidth().height(h).clip(RoundedCornerShape(menuRowRadius)).pressRow { act(Act.Select(spec.id)) }.padding(horizontal = menuPad),
+        is RowSpec.Value -> Row(Modifier.fillMaxWidth().height(h).clip(smoothRoundedShape(menuRowRadius)).pressRow { act(Act.Select(spec.id)) }.padding(horizontal = menuPad),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text16(spec.label, Theme.font, Modifier.weight(1f))
+            Text16(spec.label, Theme.font, Modifier.weight(1f), semibold = true)
             spec.value?.let { Text16(it, Theme.fontVeryQuiet, size = 15) }
             Symbol(Glyph.AngleDown, 12.dp, Modifier.rotate(-90f), color = Theme.fontVeryQuiet, strength = Strength.Semibold)
         }
-        is RowSpec.Check -> Row(Modifier.fillMaxWidth().heightIn(min = h).clip(RoundedCornerShape(menuRowRadius)).pressRow { act(Act.Select(spec.id)) }
+        is RowSpec.Check -> Row(Modifier.fillMaxWidth().heightIn(min = h).clip(smoothRoundedShape(menuRowRadius)).pressRow { act(Act.Select(spec.id)) }
                 .padding(horizontal = menuPad, vertical = 6.dp).semantics { contentDescription = spec.label },
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.width(18.dp)) { if (spec.selected) Symbol(Glyph.Checkmark, 14.dp, color = Theme.font, strength = Strength.Semibold) }
@@ -467,7 +470,7 @@ private fun RowView(spec: RowSpec, h: Dp, act: (Act) -> Unit) {
                 spec.items.forEach { i -> CapsuleChip(i.label, i.id == spec.selected) { act(Act.Capsule(spec.id, i.id)) } }
             }
         }
-        is RowSpec.Device -> Row(Modifier.fillMaxWidth().heightIn(min = h).clip(RoundedCornerShape(menuRowRadius))
+        is RowSpec.Device -> Row(Modifier.fillMaxWidth().heightIn(min = h).clip(smoothRoundedShape(menuRowRadius))
                 .pressRow { if (spec.enabled) act(Act.Select(spec.id)) }.padding(horizontal = menuPad, vertical = 6.dp).graphicsLayer { alpha = if (spec.enabled) 1f else 0.4f },
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Symbol(Glyph.Tv, 17.dp, color = Theme.font)
@@ -483,7 +486,7 @@ private fun RowView(spec: RowSpec, h: Dp, act: (Act) -> Unit) {
             Text16(spec.name, Theme.font, Modifier.weight(1f))
             Text16(spec.status, Theme.fontVeryQuiet, size = 13)
         }
-        is RowSpec.Action -> Row(Modifier.fillMaxWidth().height(h).clip(RoundedCornerShape(menuRowRadius)).pressRow { act(Act.Select(spec.id)) }.padding(horizontal = menuPad),
+        is RowSpec.Action -> Row(Modifier.fillMaxWidth().height(h).clip(smoothRoundedShape(menuRowRadius)).pressRow { act(Act.Select(spec.id)) }.padding(horizontal = menuPad),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Symbol(Glyph.SignOut, 14.dp, color = if (spec.destructive) Theme.accent else Theme.font)
             Text16(spec.label, if (spec.destructive) Theme.accent else Theme.font)
@@ -504,7 +507,7 @@ private fun StepView(s: StepSpec, act: (Act) -> Unit) {
             CapsuleChip(s.later, false, Modifier.weight(1f)) { act(Act.Step(1)) }
         }
         Text16(s.caption, Theme.fontVeryQuiet, size = 13)
-        if (s.canReset) Text16(s.reset, Theme.accent, Modifier.clip(RoundedCornerShape(menuRowRadius)).pressRow { act(Act.Reset) }.padding(8.dp), semibold = true, size = 15)
+        if (s.canReset) Text16(s.reset, Theme.accent, Modifier.clip(smoothRoundedShape(menuRowRadius)).pressRow { act(Act.Reset) }.padding(8.dp), semibold = true, size = 15)
     }
 }
 
@@ -518,7 +521,7 @@ private fun Modifier.barGlass(shape: androidx.compose.ui.graphics.Shape) =
 
 @Composable
 private fun BarGlyph(glyph: Glyph, label: String, width: Dp, open: Boolean, active: Boolean, modifier: Modifier = Modifier, perform: () -> Unit) {
-    Box(modifier.size(width, 40.dp).clip(RoundedCornerShape(20.dp)).background(if (open) Color.White.copy(alpha = 0.16f) else Color.Transparent)
+    Box(modifier.size(width, 40.dp).clip(smoothRoundedShape(20.dp)).background(if (open) Color.White.copy(alpha = 0.16f) else Color.Transparent)
             .then(if (active) Modifier.pressRow(perform) else Modifier).semantics { contentDescription = label },
         contentAlignment = Alignment.Center) {
         Symbol(glyph, 19.dp, color = Color.White, strength = Strength.Medium)
@@ -540,14 +543,23 @@ internal fun BarCapsule(showFolgen: Boolean, folgenOpen: Boolean, showHandoff: B
             BarGlyph(Glyph.SliderControl, translated("Einstellungen"), 44.dp, open == MenuKind.Settings, active, Modifier.anchor(MenuKind.Settings)) { session.open(MenuKind.Settings) }
             if (showHandoff) BarGlyph(Glyph.Tv, translated("Übergeben an …"), 44.dp, open == MenuKind.Handoff, active, Modifier.anchor(MenuKind.Handoff)) { session.open(MenuKind.Handoff) }
         }
-        BarGlyph(Glyph.Cross, translated("Player schließen"), 40.dp, false, active, Modifier.barGlass(CircleShape), close)
+        PlayerCloseButton(active, close = close)
     }
+}
+
+/**
+ * **The one close button of the player** (`PlayerCloseButton` on the iPhone): glass circle, 40 dp. The bar and the layers'
+ * header use this same component, so the X does not change when loading ends or a layer opens.
+ */
+@Composable
+internal fun PlayerCloseButton(active: Boolean, modifier: Modifier = Modifier, close: () -> Unit) {
+    BarGlyph(Glyph.Cross, translated("Player schließen"), 40.dp, false, active, modifier.barGlass(CircleShape), close)
 }
 
 /** The "Staffel N ⌄" button of the Folgen panel; its frame is where the season box hangs from. */
 @Composable
 internal fun SeasonButton(label: String, session: PlayerMenuSession, perform: () -> Unit) {
-    Row(Modifier.height(32.dp).clip(RoundedCornerShape(16.dp)).pressRow(perform).padding(horizontal = 10.dp)
+    Row(Modifier.height(32.dp).clip(smoothRoundedShape(16.dp)).pressRow(perform).padding(horizontal = 10.dp)
             .onGloballyPositioned { session.anchors[MenuKind.Seasons] = it.boundsInRoot() },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Text16(label, Theme.font, semibold = true, size = 15)
@@ -596,7 +608,7 @@ internal fun playerMenus(app: SwiftlyApplication, mediaWork: PlayItem, session: 
 /** A press the box did not handle itself: the player's own intents go to the Media3 player, the rest to the app. */
 internal fun playerMenuPress(app: SwiftlyApplication, mediaWork: PlayItem, session: PlayerMenuSession, run: kotlinx.coroutines.CoroutineScope,
                              close: () -> Unit, targets: List<PlayOutputChoice>, season: (String) -> Unit, search: () -> Unit,
-                             action: PlayerMenuAction) {
+                             lock: () -> Unit, action: PlayerMenuAction, report: () -> Unit = {}) {
     val e = app.settings
     when (action) {
         is PlayerMenuAction.Player -> when (val i = action.intent) {
@@ -623,6 +635,10 @@ internal fun playerMenuPress(app: SwiftlyApplication, mediaWork: PlayItem, sessi
         is PlayerMenuAction.SearchSubtitles -> { session.close(); search() }
         is PlayerMenuAction.SelectSeason -> { season(action.id); session.close() }
         is PlayerMenuAction.LeaveGroup -> mediaWork.finish(close)
+        // Closes the menu, hides the controls and puts the lock overlay over everything (iOS `.lockScreen`).
+        is PlayerMenuAction.LockScreen -> { session.close(); lock() }
+        // Closes the menu and opens the report sheet (the core's `ReportIssueFlow`) with the position.
+        is PlayerMenuAction.ReportProblem -> { session.close(); report() }
         is PlayerMenuAction.Handoff -> targets.firstOrNull { it.deviceID == action.sessionId }?.let { t ->
             session.handoffBusy = t.deviceID
             run.launch { mediaWork.handOver(t, close); session.handoffBusy = null }

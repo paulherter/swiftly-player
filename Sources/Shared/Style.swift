@@ -22,7 +22,30 @@ extension Theme {
 /// out four times in the curves below: one role, four places, and anyone
 /// writing a fifth curve would type it a fifth time. (`toggle` has its own,
 /// shorter fade of 0.10; it belongs to a switch, not to a page change.)
+#if os(iOS)
+static let fadeReduced: Animation = .token(SwiftlyDesignTokens.Touch.motionReducedCurve, SwiftlyDesignTokens.Touch.motionReducedDuration)   // token motion.reduced
+#else
 static let fadeReduced: Animation = .linear(duration: 0.14)
+#endif
+
+/// Opacity of a pressed button: token `state.pressed-opacity` (1.0, the press only scales); the other platforms keep 0.85.
+#if os(iOS)
+static let pressedOpacity: Double = SwiftlyDesignTokens.Touch.statePressedOpacity
+#else
+static let pressedOpacity: Double = 0.85
+#endif
+/// Release of a press: token `motion.press`; the other platforms keep easeOut 0.12.
+#if os(iOS)
+static let pressRelease: Animation = .token(SwiftlyDesignTokens.Touch.motionPressCurve, SwiftlyDesignTokens.Touch.motionPressDuration)
+#else
+static let pressRelease: Animation = .easeOut(duration: 0.12)
+#endif
+/// Dimming layer behind a sheet: token `surface.overlay` alpha (0.5); the other platforms keep 0.55.
+#if os(iOS)
+static let sheetScrimAlpha: Double = Double(SwiftlyDesignTokens.Palette.surfaceOverlay & 0xFF) / 255
+#else
+static let sheetScrimAlpha: Double = 0.55
+#endif
 
     /// How a section changes: the content arrives from slightly too small a
 /// scale and fades in.
@@ -89,7 +112,7 @@ static var progressTravel: Animation? {
     /// may be soft. `nil` here explicitly means "no animation", not "default".
     static func pressCurve(_ pressed: Bool) -> Animation? {
         // easeOut, not linear: the release should run out, not stop abruptly.
-        pressed ? nil : .easeOut(duration: 0.12)
+        pressed ? nil : Theme.pressRelease
     }
 
     struct PressRow: ButtonStyle {
@@ -122,7 +145,7 @@ static var progressTravel: Animation? {
         func makeBody(configuration: Configuration) -> some View {
             configuration.label
                 .scaleEffect(configuration.isPressed && !motionReduced ? 0.97 : 1)
-                .opacity(configuration.isPressed ? 0.85 : 1)
+                .opacity(configuration.isPressed ? Theme.pressedOpacity : 1)
                 .animation(Theme.pressCurve(configuration.isPressed),
                            value: configuration.isPressed)
                 .onChange(of: configuration.isPressed) { _, down in
@@ -200,11 +223,23 @@ static var progressTravel: Animation? {
     ///
     /// Button and tile therefore carry the **same** corner: both are small objects,
     /// and the hierarchy only starts above them.
+    #if os(iOS)
+    static let corner: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.radiusControl)   // token radius.control
+    #else
     static let corner: CGFloat = 10
+    #endif
     /// Posters and tiles: the same corner as a button.
+    #if os(iOS)
+    static let cornerTile: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.radiusTile)   // token radius.tile
+    #else
     static let cornerTile: CGFloat = 10
+    #endif
     /// Search and input fields.
+    #if os(iOS)
+    static let cornerField: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.radiusField)   // token radius.field
+    #else
     static let cornerField: CGFloat = 10
+    #endif
     /// **Width of the audio and subtitle columns in the player.** "Russian · AC-3 · 5.1"
     /// and "English · Forced · SRT · File" fit; 210 cut them after the codec. Two
     /// columns of 300 stand side by side in a landscape iPhone. The Mac has its own
@@ -221,20 +256,37 @@ static var progressTravel: Animation? {
     /// **Not the sheet from below**: that takes `cornerSheet` (28) and used to be
     /// listed here as an example anyway. Whoever read the note instead of looking at
     /// the building block built a sheet with 16.
+    #if os(iOS)
+    static let cornerArea: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.radiusArea)   // token radius.area
+    #else
     static let cornerArea: CGFloat = 16
+    #endif
 
     /// **The card: 14.** It used to carry `eckeFlaeche` (16) and was therefore as
     /// round as a sheet: two kinds of object with one corner. 14 stands in the
     /// ladder for cards and groups.
+    #if os(iOS)
+    static let cornerCard: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.radiusCard)   // token radius.card
+    #else
     static let cornerCard: CGFloat = 16
+    #endif
 
     /// **The sheet from below: 28.** It carried 16 and so looked more angular than
     /// every system sheet next to it.
+    #if os(iOS)
+    static let cornerSheet: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.radiusSheet)   // token radius.sheet (iPhone value: screen corner minus 8)
+    #else
     static let cornerSheet: CGFloat = 28
+    #endif
     /// **One side margin per sheet**: heading, groups, buttons and texts start and end on
     /// this line (the row of look icons may sit further out on purpose).
     static let sheetInset: CGFloat = 24
+    /// Side margin of a page. iPhone/iPad: token `space.page` (touch set, 20); the other Apple platforms keep their own 18 until their migration.
+    #if os(iOS)
+    static let edgeSpacing: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.spacePage)
+    #else
     static let edgeSpacing: CGFloat = 18
+    #endif
     static let tileSpacing: CGFloat = 12
     static let railsSpacing: CGFloat = 40
 
@@ -249,13 +301,24 @@ static var progressTravel: Animation? {
     /// Height of the navigation bar without the home-indicator area.
     static let stripHeight: CGFloat = 54
     // Round 2 system sizes.
+    #if os(iOS)
+    static let controlHeight: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.sizeControlHeight)   // token size.control-height
+    static let primaryHeight: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.sizePrimaryHeight)   // token size.primary-height
+    #else
     static let controlHeight: CGFloat = 56
-    static let rowHeight: CGFloat = 60
+    #endif
+    static let rowHeight: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.sizeRowHeight)
     static let rowIconWidth: CGFloat = 26
     static let rowTitleSize: CGFloat = 17
     static let chevronSize: CGFloat = 13
     static let rowSymbolSize: CGFloat = 20
-    static let rowPadV: CGFloat = 10
+    /// Vertical padding of every settings row (Profile, Settings, all sub pages). Design prototype "Prototyp": 14 above and below
+    /// (2-line row 66, 1-line row 21 + 28); the same constant in every row type so no page drifts.
+    static let rowPadV: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.spaceRowPadV)
+    /// Radius of the detail page's main button: token `radius.button` (16).
+    static let primaryDetailCorner: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.radiusButton)
+    /// Thin watched line inside the detail page's main button (token `size.button-progress`, 3 pt; accent on a black 8 % track).
+    static let primaryProgressHeight: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.sizeButtonProgress)
     static let gridRowGap: CGFloat = 32
     static let groupTop: CGFloat = 48
     static let firstGroupTrim: CGFloat = 20
@@ -338,7 +401,7 @@ static var progressTravel: Animation? {
     /// row wider than 1036 pt puts the checkmark half a meter from the title.
     /// Galleries and grids still use the full width; they are for skimming, not
     /// reading.
-    static let readWidth: CGFloat = 700
+    static let readWidth: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.sizeReadWidth)   // token size.read-width
 
     static func margin(wide: Bool) -> CGFloat { wide ? edgePageWide : edgeSpacing }
 
@@ -360,7 +423,11 @@ static var progressTravel: Animation? {
     /// The same value the wordmark in the sidebar uses; otherwise heading and
     /// wordmark sit at different heights, which is immediately visible: the page
     /// starts at the top, the sidebar next to it a bit lower.
+    #if os(iOS)
+    static let headerTop: CGFloat = CGFloat(SwiftlyDesignTokens.Touch.spaceHeaderTop)   // token space.header-top
+    #else
     static let headerTop: CGFloat = 28
+    #endif
 
     /// Tile dimensions of the rows on the home page.
     ///
@@ -379,6 +446,15 @@ static var progressTravel: Animation? {
     /// the same ratio as on iPhone (236 to 112) and on the TV (448 to 208).
     static func railsLandscapeWidth(wide: Bool) -> CGFloat { wide ? 280 : heroRowWidth }
     static func railsLandscapeHeight(wide: Bool) -> CGFloat { wide ? 158 : heroRowHeight }
+    /// Height of the title line of a home row. The real title (20 pt) and its skeleton bar both sit
+    /// at the top of this line.
+    static let railTitleLine: CGFloat = 28
+    /// **One height for a home row, loaded or not.** Title line, 12 spacing, tiles, 8 spacing, text block
+    /// (34). `Rail` and `RailsPlaceholder` both take it from here, so the skeleton rows sit exactly where
+    /// the loaded rows go and nothing slides down when the content arrives.
+    static func railBlockHeight(landscape: Bool, wide: Bool) -> CGFloat {
+        railTitleLine + 12 + (landscape ? railsLandscapeHeight(wide: wide) : railsHeight(wide: wide)) + 8 + 34
+    }
 
     /// From this window width on, the play button and the action row sit side by
     /// side. Poster 168 + 32 spacing + about 620 button row + twice the margin make
@@ -443,11 +519,19 @@ static var progressTravel: Animation? {
     // Scale taken from Plex, the exact values are in the canvas under "Maßstab".
     // Ten steps, no more. The ladder is defined in the brand document, section 2;
     // Mac and iPad carry the same one, the TV double.
+    #if os(iOS)
+    static let titleLarge = Font.app(size: CGFloat(SwiftlyDesignTokens.Touch.textTitleLargeSize), weight: .bold)   // token title.large
+    #else
     static let titleLarge  = Font.app(size: 34, weight: .bold)
+    #endif
     /// **The same size as `titleLarge`.** The title above a hero image *is* the page
     /// title; a second step for the same role only means the wrong one will apply
     /// somewhere eventually. It used to be 27.
+    #if os(iOS)
+    static let title = Font.app(size: CGFloat(SwiftlyDesignTokens.Touch.textTitleLargeSize), weight: .bold)   // token title.large
+    #else
     static let title       = Font.app(size: 34, weight: .bold)
+    #endif
     /// **Subpage title.** It was in the ladder but had no token; the
     /// `SubpageHeader` set 22 Semibold as a literal.
     static let subpageTitle = Font.app(size: 28, weight: .bold)
@@ -493,14 +577,34 @@ static var progressTravel: Animation? {
     //
     // Every value is the em value from the type scale times the point size.
     /// 28 · −0,021 em
+    #if os(iOS)
+    static let lockTitle = SwiftlyDesignTokens.Touch.textTitleLargeTracking
+    #else
     static let lockTitle      = -0.7
+    #endif
     /// 22 · −0,014 em
+    #if os(iOS)
+    static let lockSubpage = SwiftlyDesignTokens.Touch.textTitleSubpageTracking
+    #else
     static let lockSubpage = -0.4
+    #endif
     /// 20 · −0,012 em
+    #if os(iOS)
+    static let lockRail = SwiftlyDesignTokens.Touch.textHeadingRailTracking
+    #else
     static let lockRail      = -0.24
+    #endif
+    #if os(iOS)
+    static let lockSection = SwiftlyDesignTokens.Touch.textHeadingSectionTracking
+    #else
     static let lockSection = -0.484
+    #endif
     /// 17 · −0,008 em
+    #if os(iOS)
+    static let lockCategory = SwiftlyDesignTokens.Touch.textHeadingCategoryTracking
+    #else
     static let lockCategory     = -0.136
+    #endif
     /// 11 · +0,14 em
     static let lockGroup     = 1.54
     /// Badge tracking: +0.10 em at 10 pt is 1.0.
@@ -619,6 +723,13 @@ struct PrimaryButtonStyle: ButtonStyle {
     /// (load selection).
     var lockedArea: Color = Theme.area
 
+    /// Corner radius; the detail page's main button passes `Theme.primaryDetailCorner` (16), the rest keep `Theme.corner`.
+    var corner: CGFloat = Theme.corner
+
+    /// Share already watched (0...1), drawn as a thin line inside the bottom edge of the button (prototype variant A:
+    /// no text and no second bar under the button). `nil` draws nothing.
+    var progress: Double?
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             // Primary button: 17 semibold. 16 is on no ladder; 17 is the sheet heading's
@@ -626,9 +737,24 @@ struct PrimaryButtonStyle: ButtonStyle {
             .font(.app(size: 17, weight: .semibold))
             .foregroundStyle(released ? Theme.onAccent : Theme.fontVeryQuiet)
             .padding(.horizontal, stretches ? 0 : 28)
-            .frame(maxWidth: stretches ? .infinity : nil, minHeight: Theme.controlHeight)
-            .background(area(pressed: configuration.isPressed),
-                        in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+            .frame(maxWidth: stretches ? .infinity : nil, minHeight: Theme.primaryHeight)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+                ZStack(alignment: .bottom) {
+                    shape.fill(area(pressed: configuration.isPressed))
+                    if released, let progress, progress > 0 {
+                        Rectangle().fill(Color.black.opacity(0.08))
+                            .frame(height: Theme.primaryProgressHeight)
+                            .overlay(alignment: .leading) {
+                                GeometryReader { box in
+                                    Rectangle().fill(Theme.accent)
+                                        .frame(width: box.size.width * min(max(progress, 0), 1))
+                                }
+                            }
+                    }
+                }
+                .clipShape(shape)
+            }
             // **The primary button shrinks too.** It used to signal the press only through
             // its surface, which made it the only button without a scale effect. The surface
             // stays: a white surface that darkens reads more clearly under the finger than a
@@ -1800,9 +1926,15 @@ extension Theme {
     /// Switching between two states, such as play and pause.
     ///
     /// 0.10 `easeOut`, not `snappy`: a switch doesn't spring, it flips.
+    #if os(iOS)
+    static var toggle: Animation {
+        motionReduced ? .linear(duration: 0.1) : .token(SwiftlyDesignTokens.Touch.motionToggleCurve, SwiftlyDesignTokens.Touch.motionToggleDuration)   // token motion.toggle
+    }
+    #else
     static var toggle: Animation {
         motionReduced ? .linear(duration: 0.1) : .easeOut(duration: 0.1)
     }
+    #endif
 }
 
 
@@ -2344,7 +2476,7 @@ struct HeaderTargets<Front: View>: View {
                     Image(icon: "bookmark.fill", size: Theme.actionSymbol)
                         .font(.app(size: Theme.actionSymbol))
                         .foregroundStyle(Theme.font)
-                        .headerSlot(width: 14)
+                        .headerSlot(width: 16)
                 }
                 .buttonStyle(Theme.PressButton())
                 .accessibilityLabel(Text("Merkliste"))
@@ -2368,10 +2500,33 @@ extension EnvironmentValues {
 }
 
 extension View {
-    /// Lays the view out at `width` (the visible glyph width) but keeps a 44 pt tap target.
-    func headerSlot(width: CGFloat) -> some View {
-        frame(width: width, height: 44)
-            .contentShape(Rectangle().inset(by: -max(44 - width, 0) / 2))
+    /// **The one rule for every header button** (heart, watchlist, profile, the offer badge,
+    /// the edit pencil): `width` is the visible width of its glyph.
+    ///
+    /// In the row of ``HeaderTargets`` the button is laid out at exactly that width, so the
+    /// row's spacing of 16 is the visible gap between two glyphs, and the 44 pt tap target
+    /// reaches beyond the layout frame (`contentShape`) without taking room. Anywhere else
+    /// (the sidebar, the detail header, a lone button) it is a 44 x 44 slot.
+    ///
+    /// **No header button sets its own 44 frame.** A fixed 44 inside the row put 10 pt of
+    /// empty frame around a 22 pt pencil and made its gap to the heart 27 pt instead of 16.
+    func headerSlot(width: CGFloat) -> some View { modifier(HeaderSlot(width: width)) }
+}
+
+private struct HeaderSlot: ViewModifier {
+    let width: CGFloat
+    @Environment(\.compactHeaderRow) private var compact
+
+    func body(content: Content) -> some View {
+        if compact {
+            content
+                .frame(width: width, height: 44)
+                .contentShape(Rectangle().inset(by: -max(44 - width, 0) / 2))
+        } else {
+            content
+                .frame(width: max(width, 44), height: 44)
+                .contentShape(Rectangle())
+        }
     }
 }
 
@@ -2630,10 +2785,11 @@ private struct SectionBar: ViewModifier {
 /// Same icons, same sizes, same accent, same glass as `NavBar`; only the
 /// hairline sits on the right instead of the top.
 ///
-/// Wordmark and profile icon move in here. On iPhone they sit in each page's
-/// header; that costs nothing there because the header exists anyway. Side gain:
-/// the profile is thus reachable from **all four** areas for the first time; in
-/// search it was missing.
+/// The profile icon moves in here. On iPhone it sits in each page's header; that
+/// costs nothing there because the header exists anyway. Side gain: the profile is
+/// thus reachable from **all four** areas for the first time; in search it was
+/// missing. There is no logo in the bar: the first row starts under the window
+/// buttons.
 ///
 /// It does **not** retreat on subpages, unlike the bottom one on iPhone. There,
 /// retreating gives back 54 pt of height; here it would give back 88 pt of width
@@ -2663,9 +2819,7 @@ struct Sidebar: View {
             if onRight {
                 Color.clear.frame(height: Theme.duoStatusColumn)
             } else {
-                Wordmark(height: 20)
-                    .padding(.top, Theme.headerTop + (windowButtons ? WindowButtons.height : 0))
-                    .padding(.bottom, 32)
+                Color.clear.frame(height: Theme.headerTop + (windowButtons ? WindowButtons.height : 0))
             }
 
             ForEach(Region.visibleOnes(downloads: downloads.an, wide: true,
@@ -3882,7 +4036,7 @@ struct ValuePill: View {
             .padding(.horizontal, 12)
             // `minHeight`: the pill carries text, and a fixed height clips it as soon as the
             // system font grows.
-            .frame(minHeight: 30)
+            .frame(minHeight: Theme.pillMinHeight)
             // **Fill without border.** They were the only buttons in the app with an outline
             // and therefore looked like a foreign kind. Feedback on "All" and "A-Z": "they
             // look so different, they have this outline that nothing else has." The surface
@@ -3985,7 +4139,7 @@ struct SelectionChip: View {
                 .padding(.horizontal, 12)
                 // `minHeight`: a fixed height plus text is the trap that already struck at
                 // `Schalter`.
-                .frame(minHeight: 30)
+                .frame(minHeight: Theme.pillMinHeight)
                 // **No second primary button.**
                 //
                 // Selected used `Theme.font` as surface with `reason` as text: character for
@@ -4101,7 +4255,7 @@ struct SheetModifier<SheetContent: View>: ViewModifier {
             Rectangle()
                 // The scrim opens with the pull: pulling the sheet down already brightens the
                 // page behind it.
-                .fill(.black.opacity(present && dimmed ? 0.55 * (1 - share) : 0))
+                .fill(.black.opacity(present && dimmed ? Theme.sheetScrimAlpha * (1 - share) : 0))
                 .ignoresSafeArea()
                 // **The same curve as the card.** It hung only on the card, not on the scrim, and
                 // the scrim was therefore set hard: on opening it was there at once while the
@@ -4141,7 +4295,8 @@ struct SheetModifier<SheetContent: View>: ViewModifier {
                 // bottom edge, the content underneath would flash through at that moment. "The
                 // bounce on opening is great."
                 UnevenRoundedRectangle(topLeadingRadius: Theme.cornerSheet,
-                                       topTrailingRadius: Theme.cornerSheet)
+                                       topTrailingRadius: Theme.cornerSheet,
+                                       style: .continuous)
                     .fill(Theme.area)
                     .overlay(alignment: .top) {
                         if let light {
@@ -4149,12 +4304,14 @@ struct SheetModifier<SheetContent: View>: ViewModifier {
                         }
                     }
                     .clipShape(UnevenRoundedRectangle(topLeadingRadius: Theme.cornerSheet,
-                                                      topTrailingRadius: Theme.cornerSheet))
+                                                      topTrailingRadius: Theme.cornerSheet,
+                                                      style: .continuous))
                     // Hairline (UI kit 2026-11-05). **No shadow:** the card is 400 pt taller than the
                     // screen, and a 30 pt blur on it was redrawn every frame of the slide-in (choppy).
                     .overlay {
                         UnevenRoundedRectangle(topLeadingRadius: Theme.cornerSheet,
-                                               topTrailingRadius: Theme.cornerSheet)
+                                               topTrailingRadius: Theme.cornerSheet,
+                                               style: .continuous)
                             .strokeBorder(Theme.margin, lineWidth: 1)
                     }
                     .padding(.bottom, -400)
@@ -4384,11 +4541,17 @@ struct SheetLine: View {
 
 /// The Cancel row at the foot of a sheet.
 struct SheetCancel: View {
+    /// The word, when the core gives it (the report sheet); `nil` keeps the app's own "Abbrechen".
+    var text: String?
     let perform: () -> Void
+
+    private var cancelWord: Text {
+        text.map { Text(verbatim: $0) } ?? Text("Abbrechen")
+    }
 
     var body: some View {
         Button(action: perform) {
-            Text("Abbrechen")
+            cancelWord
                 // Cancel is a secondary button: 15 semibold. Before 16.
                 .font(.app(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.fontQuiet)
@@ -4669,6 +4832,8 @@ struct DisturbHint: View {
     /// wrong troubleshooting: the own Jellyfin would be checked while Jellyseerr was
     /// down.
     var address: String?
+    /// A retry is on its way: the button waits instead of vanishing, so the block keeps its height.
+    var loads = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -4694,6 +4859,7 @@ struct DisturbHint: View {
             if let retry {
                 Button("Erneut versuchen", action: retry)
                     .buttonStyle(PrimaryButtonStyle())
+                    .disabled(loads)
                     .padding(.top, 22)
             }
         }
@@ -4941,8 +5107,10 @@ struct RailsPlaceholder: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Same 24 pt line the real title (20 pt) occupies at the top of the row, bar centered in it.
             LoadField(corner: 4)
                 .frame(width: 148, height: 18)
+                .frame(height: 24)
                 .padding(.horizontal, Theme.margin(wide: wide))
             // **As an overlay, not as content.** Four tiles side by side are about 1000
             // points wide, and that is how wide the whole home page including the bar became
@@ -4967,8 +5135,22 @@ struct RailsPlaceholder: View {
                 }
                 .clipped()
         }
+        // The full height of a real row (`Theme.railBlockHeight`), top-aligned like `Rail`.
+        .frame(height: Theme.railBlockHeight(landscape: landscape, wide: wide), alignment: .top)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Lädt")
     }
 }
 
+
+extension View {
+    /// **Running content stops at `size.read-width` on the wide layout.**
+    ///
+    /// Text, the main button and episode rows are for reading; stretched over an iPad's
+    /// full width they become lines of 140 characters. `inset` is the horizontal padding
+    /// that sits inside the frame (episode rows carry their own), so the text itself still
+    /// gets the token width. Narrow layouts are not touched.
+    func readColumn(wide: Bool, inset: CGFloat = 0) -> some View {
+        frame(maxWidth: wide ? Theme.readWidth + 2 * inset : .infinity, alignment: .leading)
+    }
+}

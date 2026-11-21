@@ -8,7 +8,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -44,6 +43,7 @@ import de.paulherter.swiftly.AccountSwitchTransition
 import de.paulherter.swiftly.SwiftlyApplication
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.motionReduced
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.delay
 import org.json.JSONArray
@@ -123,7 +123,7 @@ internal fun AskAtLaunchRow(app: SwiftlyApplication) {
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-fun TvProfilePicker(app: SwiftlyApplication, entered: Boolean, close: () -> Unit, notice: (String) -> Unit) {
+fun TvProfilePicker(app: SwiftlyApplication, close: () -> Unit, notice: (String) -> Unit) {
     val accounts = remember { ProfilePickerRule.accounts(app) }
     val count = accounts.size
     val size = ProfilePickerRule.size(count)
@@ -136,7 +136,8 @@ fun TvProfilePicker(app: SwiftlyApplication, entered: Boolean, close: () -> Unit
     val waits = AccountSwitchTransition.waits
     val context = LocalContext.current
     var shown by remember { mutableStateOf(false) }
-    LaunchedEffect(entered) { if (entered) shown = true }
+    // Staged in from the first frame on: nothing covers the page at launch any more.
+    LaunchedEffect(Unit) { shown = true }
     LaunchedEffect(Unit) { delay(2 * TvTheme.focusDeadline); runCatching { requesters[lastAvatar]?.requestFocus() } }
     // The press: the still image lies on top by now, the picker goes away underneath it.
     val backState = remember { AccountSwitchTransition.back }
@@ -234,7 +235,7 @@ fun TvProfilePicker(app: SwiftlyApplication, entered: Boolean, close: () -> Unit
                 down = FocusRequester.Cancel; left = FocusRequester.Cancel; right = FocusRequester.Cancel
             }) {
                 FocusArea(magnifier = 1f, perform = { if (!waits) { asks = !asks; ProfilePickerRule.set(app, asks) } }) { focus ->
-                    Row(Modifier.height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
+                    Row(Modifier.height(TvTheme.rowsHeight).clip(smoothRoundedShape(TvTheme.corner))
                             .background(if (focus) TvTheme.focusArea else Color.Transparent).padding(horizontal = 13.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(translated("Immer fragen"), style = TvTheme.body, color = Theme.fontQuiet, maxLines = 1)

@@ -32,7 +32,7 @@ swiftly-model = { path = "../swiftly-model" }
 swiftly-rules = { path = "../swiftly-rules" }
 swiftly-jellyfin = { path = "../swiftly-jellyfin", default-features = false }
 swiftly-library = { path = "../swiftly-library" }
-swiftly-l10n = { path = "../swiftly-l10n" }
+swiftly-l10n = { path = "../swiftly-l10n", features = ["supporter-key"] }
 swiftly-images = { path = "../swiftly-images" }
 swiftly-plex = { path = "../swiftly-plex", default-features = false }
 swiftly-cache = { path = "../swiftly-cache" }

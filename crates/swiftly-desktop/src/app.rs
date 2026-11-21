@@ -39,13 +39,8 @@ impl From<accesskit_winit::Event> for UserEvent {
     }
 }
 
-/// The ground colour behind everything (`colour::REASON`).
-const CLEAR: Color = Color {
-    r: 0.0627451,
-    g: 0.0627451,
-    b: 0.0627451,
-    a: 1.0,
-};
+/// The ground colour behind everything (`surface.base`, from the design tokens).
+const CLEAR: Color = swiftly_ui::components::GROUND;
 
 /// The ground behind the player: the film's own black.
 const PLAYER_GROUND: Color = Color {
@@ -293,6 +288,14 @@ impl Gpu {
     }
 }
 
+/// Shows the window and gives it the keyboard (not the off-screen test window, which must never take focus).
+fn reveal(window: &Window, offscreen: bool) {
+    window.set_visible(true);
+    if !offscreen {
+        window.focus_window();
+    }
+}
+
 struct Running {
     window: Arc<Window>,
     gpu: Gpu,
@@ -326,6 +329,10 @@ struct Running {
     cursor_hidden: bool,
     /// The system's media widgets (SMTC, MPRIS); only in the real app.
     media: Option<crate::media_keys::MediaSync<crate::os_media::OsMedia>>,
+    /// The Discord presence worker (the real app only, and only where it can run).
+    discord: Option<crate::discord_link::Presence>,
+    /// When the presence was last looked at without another reason to draw (ms, app clock).
+    discord_at: f64,
     /// Addresses whose activation token the compositor has not answered yet (`browser_open`).
     opening: crate::browser_open::Waiting<winit::event_loop::AsyncRequestSerial>,
 }
@@ -340,6 +347,17 @@ fn hwnd_of(window: &Window) -> Option<*mut std::ffi::c_void> {
 }
 
 impl Running {
+    /// The one way out of the window loop for everything the user or a script starts (close button, Ctrl+Q, the window's
+    /// own close, `--quit-after`, a script's `quit`): a running player stops and reports its position and the stop
+    /// first. The report is a task on the runtime, so the loop gives it a moment. A path that only called `exit` left
+    /// the server with a film that never stopped (a quit while paused sent Playing and Progress, no Stopped).
+    fn leave(&mut self, event_loop: &ActiveEventLoop, now: f64) {
+        if self.shell.window_closing(now) {
+            std::thread::sleep(std::time::Duration::from_millis(800));
+        }
+        event_loop.exit();
+    }
+
     /// Opens an address in the browser with this window's activation token, so an already running browser comes to
     /// the front (Wayland/X11, see `browser_open`); where there is no token the opener starts at once.
     fn open_url(&mut self, url: String, now_ms: f64) {
@@ -489,6 +507,14 @@ impl App {
             for intent in m.intents() {
                 run.shell.player_intent(intent, now_ms);
             }
+        }
+        // The Discord presence: what plays, when the switch is on; nothing is sent while it is off.
+        if let Some(d) = run.discord.as_mut() {
+            let unix = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0.0, |t| t.as_secs_f64());
+            let playing = run.shell.now_playing();
+            d.update(playing.as_ref(), run.shell.discord_allowed(), unix);
         }
         if run.shell.take_fullscreen_request() {
             crate::window_rules::set_fullscreen(&run.window, run.window.fullscreen().is_none());
@@ -710,7 +736,7 @@ impl App {
         run.ime.sync(&run.window, run.shell.ime_state());
         run.shell.set_maximized(run.window.is_maximized());
         if run.shell.quit_asked() {
-            event_loop.exit();
+            run.leave(event_loop, now);
         }
         // A connected screen reader gets the new tree when the picture settles, and every 150 ms while it moves.
         if run.a11y_active && (!more || now - run.a11y_at >= 150.0) {
@@ -724,11 +750,14 @@ impl App {
     }
 
     fn command(&mut self, event_loop: &ActiveEventLoop, cmd: Command) {
+        let now = self.now();
         if cmd == Command::Quit {
-            event_loop.exit();
+            match self.run.as_mut() {
+                Some(run) => run.leave(event_loop, now),
+                None => event_loop.exit(),
+            }
             return;
         }
-        let now = self.now();
         if let Some(run) = self.run.as_mut() {
             run.shell.command(cmd, now);
             run.window.request_redraw();
@@ -747,7 +776,7 @@ impl App {
         match action {
             W::Minimize => run.window.set_minimized(true),
             W::ToggleMaximize => toggle(&run.window),
-            W::Close => event_loop.exit(),
+            W::Close => run.leave(event_loop, now_ms),
             W::MoveWindow => {
                 if crate::window_rules::system_drag_allowed(self.synthetic) {
                     let _ = run.window.drag_window();
@@ -879,19 +908,20 @@ impl ApplicationHandler<UserEvent> for App {
         }
         // A strip that opens while the window is dragged larger shows the theme's ground, never white.
         #[cfg(target_os = "windows")]
-        crate::win_backdrop::set(&window, 0x10_10_10);
+        crate::win_backdrop::set(&window, crate::window_rules::GROUND_RGB);
         let adapter = accesskit_winit::Adapter::with_event_loop_proxy(
             event_loop,
             &window,
             self.proxy.clone(),
         );
-        window.set_visible(true);
+        // Windows: the window stays hidden until the first frame is on the swap chain (below, after the shell exists), so
+        // the first thing the screen ever shows is the finished Start, not an empty window. Elsewhere it is shown here:
+        // Wayland maps a window only with its first buffer anyway, so it never shows an empty frame.
+        #[cfg(not(target_os = "windows"))]
+        reveal(&window, self.opts.offscreen);
         // The input method stays closed until a text field has the keyboard (`crate::ime::ImeSync` opens it after the
         // frame); `WindowEvent::Ime` is routed to `Shell::ime`.
         window.set_ime_allowed(false);
-        if !self.opts.offscreen {
-            window.focus_window();
-        }
         window.set_theme(Some(crate::window_rules::THEME));
         {
             let proxy = self.proxy.clone();
@@ -1015,11 +1045,32 @@ impl ApplicationHandler<UserEvent> for App {
             ime: crate::ime::ImeSync::default(),
             cursor_hidden: false,
             media,
+            discord: (self.opts.live && !self.opts.offscreen && crate::discord_link::AVAILABLE)
+                .then(crate::discord_link::Presence::real),
+            discord_at: 0.0,
             opening: crate::browser_open::Waiting::default(),
             video_wake: false,
             other: false,
             held: None,
         });
+        // Windows: draw the first frame now, in the hidden window, and show the window only after it. (A hidden window
+        // gets no `RedrawRequested` there, so the frame is asked for directly.) If that frame could not be presented
+        // the window still opens, empty, as before; it never stays invisible.
+        #[cfg(target_os = "windows")]
+        {
+            self.redraw(event_loop);
+            if let Some(run) = self.run.as_ref() {
+                if self.verbose_events {
+                    eprintln!(
+                        "swiftly-desktop: window shown at {:.1} ms, after the first frame",
+                        self.now()
+                    );
+                }
+                reveal(&run.window, self.opts.offscreen);
+                // A frame that asked for the next one (a running animation) asked a window that was not shown yet.
+                run.window.request_redraw();
+            }
+        }
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
@@ -1111,12 +1162,10 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::CloseRequested => {
                 // A running player reports its position and stop before the process ends; the report is a task on
                 // the runtime, so give it a moment.
-                if let Some(run) = self.run.as_mut()
-                    && run.shell.window_closing(now)
-                {
-                    std::thread::sleep(std::time::Duration::from_millis(800));
+                match self.run.as_mut() {
+                    Some(run) => run.leave(event_loop, now),
+                    None => event_loop.exit(),
                 }
-                event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
                 if self.verbose_events {
@@ -1381,7 +1430,10 @@ impl ApplicationHandler<UserEvent> for App {
         if let Some(limit) = self.opts.quit_after {
             let at = limit * 1000.0;
             if now >= at {
-                event_loop.exit();
+                match self.run.as_mut() {
+                    Some(run) => run.leave(event_loop, now),
+                    None => event_loop.exit(),
+                }
                 return;
             }
             wake = Some(wake.map_or(at, |w| w.min(at)));
@@ -1411,6 +1463,21 @@ impl ApplicationHandler<UserEvent> for App {
                 }
             }
             let next = LAST_POLL.with(std::cell::Cell::get) + 250.0;
+            wake = Some(wake.map_or(next, |w| w.min(next)));
+        }
+        // While the profile shows something, look at the player once a second: a pause or a stop with nothing to
+        // redraw would otherwise stay unnoticed and the profile would keep counting.
+        if let Some(r) = self
+            .run
+            .as_mut()
+            .filter(|r| r.discord.as_ref().is_some_and(|d| d.is_showing()))
+        {
+            if now - r.discord_at >= 1000.0 {
+                r.discord_at = now;
+                r.idle_poll = true;
+                r.window.request_redraw();
+            }
+            let next = r.discord_at + 1000.0;
             wake = Some(wake.map_or(next, |w| w.min(next)));
         }
         event_loop.set_control_flow(match wake {
@@ -1562,6 +1629,8 @@ impl App {
             Key::Named(NamedKey::Delete) if !ctrl_or_cmd && !self.mods.alt_key() => {
                 Some(Command::Delete)
             }
+            Key::Named(NamedKey::ArrowUp) if self.mods.alt_key() => Some(Command::MoveRow(-1)),
+            Key::Named(NamedKey::ArrowDown) if self.mods.alt_key() => Some(Command::MoveRow(1)),
             Key::Named(NamedKey::ArrowLeft) if self.mods.alt_key() => Some(Command::Back),
             Key::Named(NamedKey::ArrowRight | NamedKey::BrowserForward)
                 if self.mods.alt_key() || !ctrl_or_cmd =>
@@ -1660,6 +1729,8 @@ impl App {
                         "enter" => Key::Named(NamedKey::Enter),
                         "escape" => Key::Named(NamedKey::Escape),
                         "tab" => Key::Named(NamedKey::Tab),
+                        // The player's letter keys (M mute, T tracks, F fullscreen).
+                        letter @ ("m" | "t" | "f") => Key::Character(letter.into()),
                         _ => continue,
                     };
                     crate::script::trace(&format!("script key {name}"));
@@ -1779,7 +1850,10 @@ impl App {
                         print_labels(&nodes, &filter);
                     }
                 }
-                Step::Quit => event_loop.exit(),
+                Step::Quit => match self.run.as_mut() {
+                    Some(run) => run.leave(event_loop, now),
+                    None => event_loop.exit(),
+                },
                 Step::Wait(_) | Step::UntilPlayer(_) | Step::UntilLabel(..) => {}
             }
         }

@@ -5,13 +5,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.input.ImeAction
+import de.paulherter.swiftly.shared.smoothRoundedShape
+import de.paulherter.swiftly.shared.translated
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -98,6 +104,17 @@ fun TvAdminIssuesContent(app: SwiftlyApplication, firstRow: Modifier) {
                 if (d.canResolve) TvButton(adminWords().resolve, height = 52.dp, modifier = Modifier.focusRequester(threadFocus)) { model.resolve() }
                 if (d.canReopen) TvButton(adminWords().reopen, height = 52.dp, modifier = Modifier.focusRequester(threadFocus)) { model.reopen() }
                 TvButton(adminWords().back, height = 52.dp, modifier = if (d.canResolve || d.canReopen) Modifier else Modifier.focusRequester(threadFocus)) { model.close() }
+            }
+            d.error?.let { Text(it, style = TvTheme.small, color = Theme.error) }
+            // The reply (tvOS `replyRow`): the system keyboard opens on the field, "Senden" appears once there is text and posts it.
+            if (d.canReply) {
+                var reply by remember(d.row.id) { mutableStateOf("") }
+                val send = { if (reply.isNotBlank()) { model.reply(reply); reply = "" } }
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    TvField(reply, { reply = it }, translated("Antwort schreiben …"), Modifier.width(620.dp),
+                            imeAction = ImeAction.Send, keyboardAction = send)
+                    if (reply.isNotBlank()) TvButton(translated("Senden"), height = 52.dp, perform = send)
+                }
             }
         }
         return
@@ -187,7 +204,7 @@ private fun TvAskDialog(model: ServerAdminModel) {
     if (ask is ServerAdminAsk.Nothing) return
     val first = firstFocus()
     Dialog(onDismissRequest = { model.cancel() }) {
-        Column(Modifier.clip(RoundedCornerShape(20.dp)).background(Theme.area).padding(28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.clip(smoothRoundedShape(20.dp)).background(Theme.area).padding(28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             val (title, note, action) = when (ask) {
                 is ServerAdminAsk.Restart -> Triple(ask.title, ask.note, ask.action)
                 is ServerAdminAsk.StopTask -> Triple(ask.title, null, ask.action)

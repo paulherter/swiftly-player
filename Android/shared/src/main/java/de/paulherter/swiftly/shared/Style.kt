@@ -122,6 +122,12 @@ val Inter = androidx.compose.ui.text.font.FontFamily(
     })
 
 object Theme {
+    /**
+     * Android TV keeps its own look for now (separate pass); the phone reads every colour, radius and spacing below
+     * from `DesignTokens` (touch layout, generated from `design/tokens.json`). Set once in `TvActivity.onCreate`.
+     */
+    @JvmStatic var tvMode: Boolean = false
+
     // MARK: Colors (verbatim from Colors.swift)
     //
     // **All neutral tones are truly neutral: R = G = B, chroma 0.000.** They were once at hue 285.9
@@ -131,36 +137,37 @@ object Theme {
     // Ground and surfaces are counted out pixel by pixel from a reference app: measured, not chosen.
     // Pure black exists in exactly one place: behind the picture in the player.
 
+    // Ground and the four surface steps read the palette tokens on phone and TV alike (TV had its own greys).
     /** The ground of **every** page. */
-    val reason = Color(0xFF101010)
+    val reason get() = Color(DesignTokens.Palette.SURFACE_BASE)
     /** The card on a settings page: one large, calm block. */
-    val groupsArea = Color(0xFF1E1E1E)
+    val groupsArea get() = Color(DesignTokens.Palette.SURFACE_GROUP)
     /** **Everything you can touch:** buttons, fields, pills, sheets. One tone, not two. */
-    val area = Color(0xFF262626)
+    val area get() = Color(DesignTokens.Palette.SURFACE_CONTROL)
     /** What lies on a `area`: selected chip, selected row. */
-    val raised = Color(0xFF303030)
+    val raised get() = Color(DesignTokens.Palette.SURFACE_RAISED)
     /**
      * The surface of a **pressed** secondary button. Own value, not `erhoeht.copy(alpha = 1.6f)`:
      * alpha above 1 clamps to 1.0 and the press was invisible. **Only full-strength text on it**
      * (`schriftSehrLeise` has 3.94:1 here).
      */
-    val pressedArea = Color(0xFF3A3A3A)
+    val pressedArea get() = Color(DesignTokens.Palette.SURFACE_PRESSED)
 
     /**
      * **Solid values, no alpha.** Alpha changes its effect as soon as something lies beneath: over a
      * poster "quiet" became "unreadable". Contrast on `reason`: 19.03 / 11.85 / 6.60; on `area`
      * 15.13 / 9.42 / 5.25; on `erhoeht` 13.20 / 8.22 / 4.58.
      */
-    val font = Color(0xFFFFFFFF)
-    val fontQuiet = Color(0xFFCCCCCC)
-    val fontVeryQuiet = Color(0xFF989898)
+    val font get() = if (tvMode) Color(0xFFFFFFFF) else Color(DesignTokens.Palette.TEXT_PRIMARY)
+    val fontQuiet get() = if (tvMode) Color(0xFFCCCCCC) else Color(DesignTokens.Palette.TEXT_SECONDARY)
+    val fontVeryQuiet get() = if (tvMode) Color(0xFF989898) else Color(DesignTokens.Palette.TEXT_TERTIARY)
 
     /** Hairline between rows. Alpha, because it also lies over posters. */
-    val line = Color.White.copy(alpha = 0.07f)
+    val line get() = if (tvMode) Color.White.copy(alpha = 0.07f) else Color(DesignTokens.Palette.BORDER_HAIRLINE)
     /** The few places that need an edge. **Not buttons, fields or pills.** */
-    val margin = Color.White.copy(alpha = 0.12f)
+    val margin get() = if (tvMode) Color.White.copy(alpha = 0.12f) else Color(DesignTokens.Palette.BORDER_EDGE)
     /** The surface of a selected or playing row. */
-    val selected = Color.White.copy(alpha = 0.08f)
+    val selected get() = if (tvMode) Color.White.copy(alpha = 0.08f) else Color(DesignTokens.Palette.SURFACE_SELECTED)
 
     /**
      * **Carries state: never rank, never a surface, never a mere label.**
@@ -188,13 +195,8 @@ object Theme {
         Tones(Color(0xFF50D5DA), Color(0xFF7AE6EA), Color(0xFF113435), Color(0xFF061212)))
     fun applyTones(value: Tones) { tones.value = value }
 
-    /** The play mark of the wordmark, top left to bottom right; one color is a flat fill. */
-    private val gradient = androidx.compose.runtime.mutableStateOf<List<Color>?>(null)
-    val markGradient: List<Color>? get() = gradient.value
-    fun applyMarkGradient(colors: List<Color>?) { gradient.value = colors }
-
     /** Something went wrong: **not the same as "waiting".** Carries no text on `erhoeht` (4.23). */
-    val error = Color(0xFFEF6567)
+    val error get() = Color(DesignTokens.Palette.STATE_ERROR)
 
     /**
      * **The eight tones of the profile glyphs**: eight hues 45 degrees apart, the first is the
@@ -235,23 +237,29 @@ object Theme {
     // a custom `Shape` (own Bezier math in every component). Deliberately not done.
 
     /** Button, poster, tile: under 48 dp height. */
-    val corner = 10.dp
-    val cornerTile = 10.dp
+    val corner get() = if (tvMode) 10.dp else DesignTokens.Touch.RADIUS_CONTROL.dp
+    val cornerTile get() = if (tvMode) 10.dp else DesignTokens.Touch.RADIUS_TILE.dp
     /** Search and input field. */
-    val cornerField = 10.dp
+    val cornerField get() = if (tvMode) 10.dp else DesignTokens.Touch.RADIUS_FIELD.dp
     /** Under 34 dp height: season field, badges. */
-    val cornerSmall = 8.dp
+    val cornerSmall get() = if (tvMode) 8.dp else DesignTokens.Touch.RADIUS_SMALL.dp
     /** Settings card, group. */
-    val cornerCard = 16.dp
+    val cornerCard get() = if (tvMode) 16.dp else DesignTokens.Touch.RADIUS_CARD.dp
     /** Own surface, panel, info box. */
-    val cornerArea = 16.dp
+    val cornerArea get() = if (tvMode) 16.dp else DesignTokens.Touch.RADIUS_AREA.dp
     /** Sheet from below: top corners only. */
-    val cornerSheet = 28.dp
+    val cornerSheet get() = if (tvMode) 28.dp else DesignTokens.Touch.RADIUS_SHEET.dp
+    /** The primary button on a detail page (the continue / play button). */
+    val cornerButton get() = if (tvMode) 10.dp else DesignTokens.Touch.RADIUS_BUTTON.dp
+    /** Height of the thin progress line inside the primary button. */
+    val buttonProgressHeight get() = DesignTokens.Touch.SIZE_BUTTON_PROGRESS.dp
+    /** Height of the primary button. */
+    val primaryHeight get() = if (tvMode) 48.dp else DesignTokens.Touch.SIZE_PRIMARY_HEIGHT.dp
 
     // MARK: Space (Style.swift, "Maße — iPhone")
 
     /** The page margin, and thus the most common spacing in the app. */
-    val edgeSpacing = 18.dp
+    val edgeSpacing get() = if (tvMode) 18.dp else DesignTokens.Touch.SPACE_PAGE.dp
     /** The page margin in the wide layout (tablet, unfolded foldable). */
     val edgePageWide = 28.dp
     val tileSpacing = 12.dp
@@ -259,7 +267,7 @@ object Theme {
     val railsSpacing = 40.dp
     /** Row spacing in the grid: library, watchlist, genre, search. */
     val gridRow = 32.dp
-    val headerTop = 28.dp
+    val headerTop get() = if (tvMode) 28.dp else DesignTokens.Touch.SPACE_HEADER_TOP.dp
     val tileWidth = 116.dp
     val tileHeight = 174.dp
     val heroHeightValue = 350.dp
@@ -271,8 +279,8 @@ object Theme {
     val readWidth = 700.dp
     val formWidth = 420.dp
 
-    /** Height of every button and every input field (`controlHeight`). */
-    val buttonHeight = 56.dp
+    /** Height of every button and every input field: token `size.control-height` (Android TV keeps 56). */
+    val buttonHeight get() = if (tvMode) 56.dp else DesignTokens.Touch.SIZE_CONTROL_HEIGHT.dp
     /** A list row (`rowHeight`). */
     val rowHeight = 60.dp
     /** One side margin per sheet (`sheetInset`). */
@@ -285,7 +293,9 @@ object Theme {
     val rowIconWidth = 26.dp
     val rowTitleSize = 17.sp
     val rowSymbolSize = 20.dp
-    val rowPadV = 10.dp
+    val rowPadV get() = if (tvMode) 10.dp else DesignTokens.Touch.SPACE_ROW_PAD_V.dp
+    /** Left and right padding of a settings row. */
+    val rowPadH get() = DesignTokens.Touch.SPACE_ROW_PAD_H.dp
     /** Pulls the first settings group up under the subpage title (`firstGroupTrim`). */
     val firstGroupTrim = 20.dp
     /** Back arrow inset (`backInset`). */
@@ -313,7 +323,7 @@ object Theme {
     val tabIconHeight = 26.dp
 
     /** Height of value pill and choice chip (as minimum height). */
-    val pillsHeight = 30.dp
+    val pillsHeight get() = if (tvMode) 30.dp else DesignTokens.Touch.SIZE_CHIP_HEIGHT.dp
     /** Hit area of a quiet button. */
     val stillHeight = 44.dp
 
@@ -338,34 +348,53 @@ object Theme {
     // **Only uppercase text is tracked**: the tile badge carries "3 offen", ordinary words, and does
     // not take its level's tracking.
 
-    /** 34 Bold: the title of a root page, also over a hero image. */
-    val titleLarge = TextStyle(fontFamily = Inter, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.7).sp)
+    /** Phone text style from a `type` token (size, weight, tracking); Android TV keeps its own style. */
+    private fun role(tvStyle: TextStyle, size: Float, weight: Int, tracking: Float) =
+        if (tvMode) tvStyle
+        else TextStyle(fontFamily = Inter, fontSize = size.sp, fontWeight = FontWeight(weight), letterSpacing = tracking.sp)
+    private fun tv(size: Int, weight: FontWeight, tracking: Float = 0f) =
+        TextStyle(fontFamily = Inter, fontSize = size.sp, fontWeight = weight, letterSpacing = tracking.sp)
+
+    /** Token `title.large`: the title of a root page, also over a hero image. */
+    val titleLarge get() = role(tv(34, FontWeight.Bold, -0.7f), DesignTokens.Touch.TEXT_TITLE_LARGE_SIZE,
+        DesignTokens.Touch.TEXT_TITLE_LARGE_WEIGHT, DesignTokens.Touch.TEXT_TITLE_LARGE_TRACKING)
     /** Same level. `title` and `titleLarge` are the same value on iPhone. */
-    val title = titleLarge
-    /** 28 Bold: a subpage, i.e. one with a way back. */
-    val subpageTitle = TextStyle(fontFamily = Inter, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
-    /** 22 Bold, -0.022 em: rail title on Start, group title. */
-    val section = TextStyle(fontFamily = Inter, fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.484).sp)
-    /** 20 Semibold: row heading, group title, header of an empty state. */
-    val rail = TextStyle(fontFamily = Inter, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.24).sp)
-    /** 17 Semibold: sheet heading, detail bar, main button. */
-    val categoryLarge = TextStyle(fontFamily = Inter, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.136).sp)
-    /** 15 Semibold: the list row. */
-    val listTitle = TextStyle(fontFamily = Inter, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-    /** 15 Regular: body text. */
-    val body = TextStyle(fontFamily = Inter, fontSize = 15.sp)
-    /** 15 Medium: secondary and quiet button. */
-    val buttonText = TextStyle(fontFamily = Inter, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-    /** 13 Medium: title under a poster, value pill, count badge, choice chip. */
-    val tile = TextStyle(fontFamily = Inter, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-    /** 13 Semibold: the chevron at the right of a row. */
+    val title get() = titleLarge
+    /** Token `title.subpage`: a subpage, i.e. one with a way back. */
+    val subpageTitle get() = role(tv(28, FontWeight.Bold, -0.4f), DesignTokens.Touch.TEXT_TITLE_SUBPAGE_SIZE,
+        DesignTokens.Touch.TEXT_TITLE_SUBPAGE_WEIGHT, DesignTokens.Touch.TEXT_TITLE_SUBPAGE_TRACKING)
+    /** Token `heading.section`: rail title on Start, group title, sheet heading. */
+    val section get() = role(tv(22, FontWeight.Bold, -0.484f), DesignTokens.Touch.TEXT_HEADING_SECTION_SIZE,
+        DesignTokens.Touch.TEXT_HEADING_SECTION_WEIGHT, DesignTokens.Touch.TEXT_HEADING_SECTION_TRACKING)
+    /** Token `heading.rail`: row heading, group title, header of an empty state. */
+    val rail get() = role(tv(20, FontWeight.SemiBold, -0.24f), DesignTokens.Touch.TEXT_HEADING_RAIL_SIZE,
+        DesignTokens.Touch.TEXT_HEADING_RAIL_WEIGHT, DesignTokens.Touch.TEXT_HEADING_RAIL_TRACKING)
+    /** Token `heading.category`: sheet row, detail bar, main button. */
+    val categoryLarge get() = role(tv(17, FontWeight.SemiBold, -0.136f), DesignTokens.Touch.TEXT_HEADING_CATEGORY_SIZE,
+        DesignTokens.Touch.TEXT_HEADING_CATEGORY_WEIGHT, DesignTokens.Touch.TEXT_HEADING_CATEGORY_TRACKING)
+    /** Token `label.row-title`: the list row. */
+    val listTitle get() = role(tv(15, FontWeight.SemiBold), DesignTokens.Touch.TEXT_LABEL_ROW_TITLE_SIZE,
+        DesignTokens.Touch.TEXT_LABEL_ROW_TITLE_WEIGHT, DesignTokens.Touch.TEXT_LABEL_ROW_TITLE_TRACKING)
+    /** Token `body.default`: body text. */
+    val body get() = role(tv(15, FontWeight.Normal), DesignTokens.Touch.TEXT_BODY_DEFAULT_SIZE,
+        DesignTokens.Touch.TEXT_BODY_DEFAULT_WEIGHT, DesignTokens.Touch.TEXT_BODY_DEFAULT_TRACKING)
+    /** Token `label.button`: secondary and quiet button. */
+    val buttonText get() = role(tv(15, FontWeight.SemiBold), DesignTokens.Touch.TEXT_LABEL_BUTTON_SIZE,
+        DesignTokens.Touch.TEXT_LABEL_BUTTON_WEIGHT, DesignTokens.Touch.TEXT_LABEL_BUTTON_TRACKING)
+    /** Token `label.tile`: title under a poster, value pill, count badge, choice chip. */
+    val tile get() = role(tv(13, FontWeight.Medium), DesignTokens.Touch.TEXT_LABEL_TILE_SIZE,
+        DesignTokens.Touch.TEXT_LABEL_TILE_WEIGHT, DesignTokens.Touch.TEXT_LABEL_TILE_TRACKING)
+    /** 13 Semibold: the chevron at the right of a row (no token of its own). */
     val angle = TextStyle(fontFamily = Inter, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-    /** 12 Regular: detail line: year, role, runtime, subtitle. */
-    val small = TextStyle(fontFamily = Inter, fontSize = 12.sp)
-    /** 11 Semibold, tracked: group title in uppercase. */
-    val group = TextStyle(fontFamily = Inter, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.54.sp)
-    /** 10 Semibold, tracked: badge and tile badge. */
-    val badge = TextStyle(fontFamily = Inter, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.0.sp)
+    /** Token `caption.small`: detail line: year, role, runtime, subtitle. */
+    val small get() = role(tv(12, FontWeight.Normal), DesignTokens.Touch.TEXT_CAPTION_SMALL_SIZE,
+        DesignTokens.Touch.TEXT_CAPTION_SMALL_WEIGHT, DesignTokens.Touch.TEXT_CAPTION_SMALL_TRACKING)
+    /** Token `overline.group`: group title in uppercase. */
+    val group get() = role(tv(11, FontWeight.SemiBold, 1.54f), DesignTokens.Touch.TEXT_OVERLINE_GROUP_SIZE,
+        DesignTokens.Touch.TEXT_OVERLINE_GROUP_WEIGHT, DesignTokens.Touch.TEXT_OVERLINE_GROUP_TRACKING)
+    /** Token `overline.badge`: badge and tile badge. */
+    val badge get() = role(tv(10, FontWeight.SemiBold, 1.0f), DesignTokens.Touch.TEXT_OVERLINE_BADGE_SIZE,
+        DesignTokens.Touch.TEXT_OVERLINE_BADGE_WEIGHT, DesignTokens.Touch.TEXT_OVERLINE_BADGE_TRACKING)
 
     // MARK: Glyphs
     //

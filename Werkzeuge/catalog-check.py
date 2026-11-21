@@ -20,7 +20,8 @@ catalog = json.loads((root / "Sources/Shared/Localizable.xcstrings").read_text()
 # `String(localized:)` or as the value of a `switch`. English users saw German
 # there: download states, part of the Seerr branding and the info cards in the
 # player.
-muster = re.compile(r'(?<![A-Za-z])(?:Text\(|Button\(|Toggle\(|Label\(|Menu\(|Section\(|'
+# A keyword inside a string literal (`"hint:" + text`, an id prefix) is no argument label: `(?<![A-Za-z"])`.
+muster = re.compile(r'(?<![A-Za-z"])(?:Text\(|Button\(|Toggle\(|Label\(|Menu\(|Section\(|'
                     r'String\(localized:\s*|navigationTitle\(|\.help\(|'
                     r'confirmationDialog\(|accessibilityLabel\(|accessibilityValue\(|'
                     r'accessibilityHint\(|'
@@ -45,6 +46,27 @@ fall = re.compile(r'case\s+\.[A-Za-z][A-Za-zÄÖÜäöü]*:\s*"([^"\\]{3,})"')
 
 missing, raw = set(), set()
 
+
+def debug_only(source):
+    """A file that is one `#if DEBUG ... #endif` block from its first to its last line.
+
+    Nothing of it ships in Release (the proof drivers: LiveRun, CardsRun, ...), so its
+    words (file labels, log notes) are never shown to a user and need no translation.
+    """
+    lines = [l.strip() for l in source.splitlines() if l.strip()]
+    if not lines or lines[0] != "#if DEBUG":
+        return False
+    depth = 0
+    for number, line in enumerate(lines):
+        if line.startswith("#if"):
+            depth += 1
+        elif line.startswith("#endif"):
+            depth -= 1
+            if depth == 0:
+                return number == len(lines) - 1
+    return False
+
+
 # **Including files that are not committed yet.** `git ls-files` only knows
 # tracked files -- a view that was just written is invisible to the check,
 # and that is exactly when its strings are most likely not in the catalog yet.
@@ -60,6 +82,8 @@ for distance in files:
     if not distance.endswith(".swift"):
         continue
     source = (root / distance).read_text()
+    if debug_only(source):
+        continue
     hit_list = muster.findall(source)
     for body, _ in block.findall(source):
         hit_list += fall.findall(body)
@@ -93,6 +117,8 @@ eingesetzt = re.compile(r'String\(localized:\s*"((?:[^"\\]|\\\()+)"')
 loch = re.compile(r'\\\((?:[^()]|\([^()]*\))*\)')  # one level of parentheses inside the interpolation
 for distance in files:
     if not distance.endswith(".swift"):
+        continue
+    if debug_only((root / distance).read_text()):
         continue
     for text in eingesetzt.findall((root / distance).read_text()):
         if "\\(" not in text:

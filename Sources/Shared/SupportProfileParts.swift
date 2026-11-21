@@ -208,6 +208,11 @@ extension View {
 
 private struct SupportProfileIntro: ViewModifier {
     @State private var shown = false
+    /// The page depth (`GiftFlow.pagesAboveStart`) the sheet opened at: the sheet belongs to the profile.
+    @State private var shownDepth = 0
+    /// Once per launch, besides the stored key: if the preferences cannot be read or written (a stuck system
+    /// preferences daemon), the key reads back as unset and the sheet would come back on every visit to the profile.
+    @MainActor private static var shownThisLaunch = false
 
     func body(content: Content) -> some View {
         content
@@ -222,17 +227,41 @@ private struct SupportProfileIntro: ViewModifier {
                     shown = false
                 }
             }
+            // A page pushed over the profile while the sheet is up (Settings, a server) takes the sheet away with it:
+            // it is the profile's sheet, not one to leave lying over another page.
+            .onChange(of: GiftFlow.shared.pagesAboveStart) { _, now in
+                guard shown, now != shownDepth else { return }
+                AppLog.writeOut("[Profil] Willkommensblatt: zu, Seitentiefe \(shownDepth) -> \(now)")
+                shown = false
+            }
             .task {
                 #if DEBUG
                 // Proof hook (same as the Mac's other asks): `-SwiftlyNoSupportAsk` keeps it off a window capture.
                 if ProcessInfo.processInfo.arguments.contains("-SwiftlyNoSupportAsk") { return }
                 #endif
                 // Once, and only for someone who does not support yet.
-                guard !UserDefaults.standard.bool(forKey: SupportLinks.profileIntroKey),
-                      !SupportModel.shared.isSupporter else { return }
+                let stored = UserDefaults.standard.bool(forKey: SupportLinks.profileIntroKey)
+                guard !stored, !Self.shownThisLaunch, !SupportModel.shared.isSupporter else {
+                    AppLog.writeOut("[Profil] Willkommensblatt: nicht gezeigt, Schlüssel \(stored), in dieser Sitzung \(Self.shownThisLaunch)")
+                    return
+                }
+                // **Only while the profile is the page on top** (`GiftFlow.pagesAboveStart`): a page opened over it
+                // within the wait (Settings, a server) is not covered, and no other ask is stacked on. It comes on the
+                // next visit instead, since the key is set only when it shows.
+                let depth = GiftFlow.shared.pagesAboveStart
                 try? await Task.sleep(for: .milliseconds(450))
-                guard !Task.isCancelled, !SupportModel.shared.isSupporter else { return }
+                let gift = GiftFlow.shared
+                guard !Task.isCancelled, !SupportModel.shared.isSupporter,
+                      gift.pagesAboveStart == depth, gift.stage == nil, !SupportModel.shared.presented else {
+                    AppLog.writeOut("[Profil] Willkommensblatt: aufgeschoben, Seitentiefe \(depth) -> \(gift.pagesAboveStart)")
+                    return
+                }
+                AppLog.writeOut("[Profil] Willkommensblatt: zeigt, Seitentiefe \(depth)")
                 UserDefaults.standard.set(true, forKey: SupportLinks.profileIntroKey)
+                Self.shownThisLaunch = true
+                shownDepth = depth
+                // One big ask per session: the gift, the rating and the Discord hint wait.
+                gift.noteBigAsk()
                 shown = true
             }
     }

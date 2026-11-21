@@ -113,6 +113,7 @@ struct HomeView: View {
                     .animation(Theme.reveal, value: state.loaded)
         // The "when" for the "how" above: the genre rows cross-fade when they arrive.
         .animation(Theme.reveal, value: state.genreRails.map(\.name))
+        .animation(Theme.reveal, value: state.disrupted)
         .animation(Theme.reveal, value: libraries.map(\.id))
             }
         }
@@ -211,7 +212,7 @@ struct HomeView: View {
         }
     }
 
-    /// Wordmark on the left, profile picture on the right.
+    /// The page title on the left (the first tab's name), profile picture on the right.
     ///
     /// Content visibly scrolls underneath instead of being cut off at a hard black
     /// edge. The magnifier is gone; Search is now its own section in the bar below.
@@ -232,9 +233,10 @@ struct HomeView: View {
         // layout anyway.
         HeaderReader(distance: distance) {
             HStack(alignment: .center, spacing: 0) {
-                // 36, not 30: the letters now match the 34 pt bold page
-                // titles of Movies, Series and Downloads. The row stays 44 high (header targets).
-                Wordmark(height: 36)
+                // **A title like every other root page**: the first tab's own name, set the way
+                // Movies, Series, Downloads and Search set theirs. The wordmark stood here until
+                // the launch animation went; the name of the app is not repeated on a page.
+                Text(Region.start.name).font(Theme.titleLarge).tracking(Theme.lockTitle)
                 Spacer(minLength: 0)
 
                 // **Three symbols, one language.**
@@ -310,6 +312,15 @@ struct HomeView: View {
                 if !state.loaded, showItem {
                     RailsPlaceholder(landscape: true)
                     RailsPlaceholder()
+                }
+                // **A silent server over rows that are already there** (the stored page, shown at once): the
+                // core says `Offline` once the refresh failed, and the page used to draw nothing for it, because
+                // the full-page notice (`notPresent`) only comes when there are no rows. The rows stay; the
+                // same section notice as everywhere else stands above them. Only for the two failures whose
+                // words are "does not answer" (a refused sign-in or an unreadable answer have their own page).
+                if state.disrupted, !state.allEmpty, state.trouble == .unreachable || state.trouble == .server {
+                    DisturbHint(model: model, retry: { newTry() }, spacingTop: 0, loads: loadsNew)
+                        .transition(.opacity)
                 }
                 // **Genres as chips, at the very top**, when enabled. An entry point, not
                 // content: a tap opens the genre.
@@ -533,10 +544,6 @@ struct HomeView: View {
         let a = CACurrentMediaTime()
         // What the core raises by itself (a refused removal puts the title back) shows with the row's change motion.
         state.rowMotion = { apply in withAnimation(Theme.reveal) { apply() } }
-        state.onNotice = { text in
-            AppLog.writeOut("[Weiterschauen] Kern: Server lehnt ab, Titel zurückgelegt, Hinweis: \(text)")
-            TileRequest.shared.message = text
-        }
         // The Seerr block is read next to the rows, so both are there at the same moment.
         async let seerrLoad: Void = seerr.load(model)
         if model.coreServes {
@@ -648,9 +655,7 @@ private struct Rail: View {
     /// It is set here so `LazyVStack` does not have to estimate. Its estimate was the
     /// reason the last row appeared too late and vanished again when scrolling up.
     private var railsHeightValue: CGFloat {
-        let image = landscape ? Theme.railsLandscapeHeight(wide: wide)
-                        : Theme.railsHeight(wide: wide)
-        return 28 + 12 + image + 8 + 34
+        Theme.railBlockHeight(landscape: landscape, wide: wide)
     }
 
     /// Finger down on a tile: the series it leads to (the tile itself, or the series of an episode tile) is asked
@@ -661,7 +666,12 @@ private struct Rail: View {
     private func warmSeries(of item: Item) {
         // The head picture of the page this tile opens: on its way (exact size, front of the queue) while the page opens.
         if let head = model.core.headPictureAhead(session: model.session, item: item) {
+#if os(macOS)
+            // The Mac page draws its backdrop at the desktop hero height (token size.hero-height 454), not the 350 of the phone.
+            ImageCache.shared.warmHead(head, height: DetailPageMetric.heroImage)
+#else
             ImageCache.shared.warmHead(head, height: Theme.heroHeightValue)
+#endif
         }
         let id = item.type == "Series" ? item.id : (item.type == "Episode" ? item.seriesId : nil)
         if let id { model.core.warmSeries(session: model.session, id: id) }

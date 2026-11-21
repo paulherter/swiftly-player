@@ -2,6 +2,7 @@ package de.paulherter.swiftly.tv
 
 import de.paulherter.swiftly.KernRules
 
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.support.SupporterAvatarHeart
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
@@ -18,7 +19,6 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -39,7 +39,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.findRootCoordinates
@@ -109,7 +113,7 @@ private fun SettingsHeading(text: String, modifier: Modifier = Modifier) {
 private fun TvGroup(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(SettingsLook.groupTitleGap)) {
         SettingsHeading(title)
-        Column(Modifier.clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.groupsArea)
+        Column(Modifier.clip(smoothRoundedShape(TvTheme.cornerArea)).background(TvTheme.groupsArea)
                    .padding(horizontal = SettingsLook.groupInset), content = content)
     }
 }
@@ -557,7 +561,7 @@ private fun SectionRow(title: String, glyph: Glyph, selected: Boolean, rests: Bo
             rests -> Theme.fontQuiet
             else -> Theme.accent
         }
-        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
+        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(smoothRoundedShape(TvTheme.corner))
                 .background(reason).padding(horizontal = TvSpec.rowInset),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvSpec.rowSpacing)) {
             Box(Modifier.width(TvSpec.rowSymbolColumn), contentAlignment = Alignment.Center) {
@@ -625,7 +629,7 @@ internal fun TvAction(title: String = "", glyph: Glyph? = null, name: String? = 
         return
     }
     FocusArea(modifier.fillMaxWidth().focusProperties { canFocus = enabled }, magnifier = 1f, perform = { if (enabled) perform() }) { focus ->
-        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
+        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(smoothRoundedShape(TvTheme.corner))
                 .background(tvFocusSurface(focus)).padding(horizontal = TvSpec.rowInset),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvSpec.rowSpacing)) {
             Text(name ?: title, style = TvTheme.body.copy(fontWeight = if (focus) FontWeight.SemiBold else FontWeight.Medium),
@@ -674,7 +678,7 @@ private fun TvValueRow(title: String, glyph: Glyph?, value: String?, opened: Str
                                  color = if (focus) Theme.reason else Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         }
                     } else FocusArea(choiceMod.fillMaxWidth(), magnifier = 1f, perform = pick) { focus ->
-                        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
+                        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(smoothRoundedShape(TvTheme.corner))
                                 .background(tvFocusSurface(focus)).padding(horizontal = TvSpec.rowInset),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvSpec.rowSpacing)) {
                             Box(Modifier.width(TvSpec.choiceCheckWidth), contentAlignment = Alignment.Center) {
@@ -723,8 +727,10 @@ internal fun TvToggle(an: Boolean, enabled: Boolean = true, focus: Boolean = fal
 /** Row with a switch on the right. Mirrors `ToggleRow`. The whole row is pressed. */
 @Composable
 internal fun TvToggleRow(title: String, an: Boolean, glyph: Glyph? = null, enabled: Boolean = true, modifier: Modifier = Modifier, perform: () -> Unit) {
+    // The switch is drawn, not a widget: without this the row tells neither a screen reader nor a test whether it is on.
+    val state = modifier.semantics { toggleableState = ToggleableState(an); role = Role.Switch }
     if (LocalSettingsLook.current) {
-        TvSettingsRow(modifier, enabled = enabled, spacing = SettingsLook.rowGap, perform = perform) { focus ->
+        TvSettingsRow(state, enabled = enabled, spacing = SettingsLook.rowGap, perform = perform) { focus ->
             RowSymbol(glyph, focus)
             Text(title, style = SettingsLook.rowText, color = if (focus) Theme.reason else Theme.font, maxLines = 1,
                  overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -733,8 +739,8 @@ internal fun TvToggleRow(title: String, an: Boolean, glyph: Glyph? = null, enabl
         }
         return
     }
-    FocusArea(modifier.fillMaxWidth().focusProperties { canFocus = enabled }, magnifier = 1f, perform = { if (enabled) perform() }) { focus ->
-        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
+    FocusArea(state.fillMaxWidth().focusProperties { canFocus = enabled }, magnifier = 1f, perform = { if (enabled) perform() }) { focus ->
+        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(smoothRoundedShape(TvTheme.corner))
                 .background(tvFocusSurface(focus)).padding(horizontal = TvSpec.rowInset),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvSpec.rowSpacing)) {
             Text(title, style = TvTheme.body.copy(fontWeight = if (focus) FontWeight.SemiBold else FontWeight.Medium),

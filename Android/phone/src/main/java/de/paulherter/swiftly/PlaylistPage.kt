@@ -6,7 +6,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +21,7 @@ import coil3.compose.AsyncImage
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +44,7 @@ fun PlaylistTileView(s: CollectionTile, modifier: Modifier = Modifier, perform: 
     val description = "${s.name}, ${playlistCount(s.count)}"
     Column(modifier.reveal().tapOn(perform).semantics(mergeDescendants = true) { contentDescription = description },
         verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area),
+        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(smoothRoundedShape(Theme.cornerTile)).background(Theme.area),
             contentAlignment = Alignment.Center) {
             var missing by remember(s.poster) { mutableStateOf(s.poster == null) }
             if (missing) Symbol(Glyph.Film, 22.dp, color = Theme.fontVeryQuiet)

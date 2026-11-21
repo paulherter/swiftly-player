@@ -23,7 +23,7 @@ mod wgpu_renderer;
 
 pub use atlas::{Atlas, AtlasFormat, DirtyRect, PixelPage};
 pub use draw_list::{Border, DrawList, DrawQuad, QuadKind, ShadowStyle};
-pub use geometry::{Color, Corners, Fill, LinearGradient, Rect};
+pub use geometry::{CORNER_REACH, Color, Corners, Fill, LinearGradient, Rect};
 pub use image::RgbaImage;
 pub use software::{SoftwareRenderer, Sources, VideoBase};
 pub use video_layer::VideoFit;

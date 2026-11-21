@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.shared.PrimaryButton
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 
 /**
  * Full-screen notice of the "switch to Google Play" build for the current beta testers
@@ -39,7 +39,7 @@ fun BetaRedirectPage(openPlay: () -> Unit) {
             Modifier.widthIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
         ) {
-            Box(Modifier.size(88.dp).clip(RoundedCornerShape(20.dp))) {
+            Box(Modifier.size(88.dp).clip(smoothRoundedShape(20.dp))) {
                 Image(painterResource(R.drawable.ic_launcher_background), null, Modifier.fillMaxSize())
                 Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.fillMaxSize())
             }

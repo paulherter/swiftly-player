@@ -36,7 +36,7 @@ for flavor in $flavors; do
     fi
   fi
   if [[ $mode == bindings || $mode == all ]]; then
-    rm -rf "$OUT/kotlin"; mkdir -p "$OUT/kotlin"
+    rm -rf "${OUT:?}/kotlin"; mkdir -p "${OUT:?}/kotlin"
     schwer cargo run -q -p xtask --bin uniffi-bindgen -- generate "$OUT/host/libswiftly_uniffi.dylib" --language kotlin --no-format --out-dir "$OUT/kotlin"
     # JNA on ART does not see `@JvmField internal` fields of Structure subclasses (the app died with "Structure.getFieldOrder()
     # ... do not match declared field names" on the first foreign async call); public fields work.

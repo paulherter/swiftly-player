@@ -703,6 +703,15 @@ pub(crate) fn send_text(device: &str, text: &str) -> bool {
         })
 }
 
+/// A text message for every socket of every device (what a server sends all its clients); how many got it.
+pub(crate) fn send_all(text: &str) -> usize {
+    world()
+        .sockets
+        .iter()
+        .filter(|(_, _, tx)| tx.send(Out::Text(text.to_owned())).is_ok())
+        .count()
+}
+
 /// A play order for the device's socket, as the server forwards `POST /Sessions/{id}/Playing` (`Play` message).
 /// `false` when the device holds no socket.
 pub(crate) fn send_play(device: &str, item_ids: &str, ticks: i64) -> bool {

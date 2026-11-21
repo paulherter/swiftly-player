@@ -2,6 +2,7 @@ package de.paulherter.swiftly.tv
 
 import de.paulherter.swiftly.AppLog
 import de.paulherter.swiftly.shared.VisibilityProtection
+import de.paulherter.swiftly.shared.DesignTokens
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
@@ -15,13 +16,13 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,6 +80,9 @@ import de.paulherter.swiftly.shared.translated
  *
  * The one rule behind it all: **focus is white, selection is accent.**
  */
+/** The generated `tv` tokens are in Apple TV points; an Android TV lays out in dp at half of that. */
+internal fun tvDp(points: Float): Dp = (points * 0.5f).dp
+
 object TvTheme {
     /**
      * **How long a focus request waits until the node exists.** `requestFocus()` in the same frame as
@@ -89,39 +93,31 @@ object TvTheme {
     val edgePage = TvSpec.edgePage
     val edgeTop = TvSpec.edgeTop
     val stripHeight = TvSpec.stripHeight
-    val tileSpacing = 20.dp
-    val posterWidth = 104.dp
-    val posterHeight = 156.dp
-    val landscapeWidth = 224.dp
-    val landscapeHeight = 126.dp
-    val heroHeight = 255.dp
+    val tileSpacing = tvDp(DesignTokens.Tv.SPACE_TILE_GAP)
+    val posterWidth = tvDp(DesignTokens.Tv.SIZE_POSTER_WIDTH)
+    val posterHeight = tvDp(DesignTokens.Tv.SIZE_POSTER_HEIGHT)
+    val landscapeWidth = tvDp(DesignTokens.Tv.SIZE_LANDSCAPE_WIDTH)
+    val landscapeHeight = tvDp(DesignTokens.Tv.SIZE_LANDSCAPE_HEIGHT)
+    val heroHeight = tvDp(DesignTokens.Tv.SIZE_HERO_HEIGHT)
     /** 28 gap + 10 air + 12 head room; the air absorbs the magnification. */
-    val railsSpacing = 36.dp
+    val railsSpacing = tvDp(DesignTokens.Tv.SPACE_RAIL_GAP)
     val railsPadding = 10.dp
     /** 28 pt: between row title and tiles (was 36 in 1.0). */
     val titleSpacing = 14.dp
-    val buttonHeight = 38.dp
-    val chipHeight = 28.dp
+    val buttonHeight = tvDp(DesignTokens.Tv.SIZE_PRIMARY_HEIGHT)
+    val chipHeight = tvDp(DesignTokens.Tv.SIZE_CHIP_HEIGHT)
     val rowsHeight = TvSpec.rowsHeight
     /**
-     * **The corner scale: the same rounding as on the phone, not the same number.**
-     *
-     * What matters is the ratio of radius to the size of the thing it rounds; that decides how round a
-     * corner *looks*. Things on TV do not all grow equally (poster 112 to 208 is 1.86, button 48 to 76
-     * only 1.58), so no fixed factor can work. The table is at `Theme.corner` in
-     * `Sources/tvOS/Style.swift`; it gives **14 / 16 / 18 / 24** there, halved:
-     *
-     *     cornerSmall   14 -> 7      badges and tags
-     *     ecke        16 -> 8      button, field
-     *     cornerTile  18 -> 9      poster, tile
-     *     eckeFlaeche 24 -> 12     panel, sheet
+     * **The corner scale comes from the `tv` tokens** (`radius.small` 14, `radius.control` 16, `radius.tile` 24,
+     * `radius.card` 26 in Apple TV points), halved to dp: 7 / 8 / 12 / 13. Every rounded rectangle
+     * goes through `smoothRoundedShape` (60 % smoothing).
      */
-    val corner = TvSpec.corner
-    val cornerTile = TvSpec.cornerTile
+    val corner = tvDp(DesignTokens.Tv.RADIUS_CONTROL)
+    val cornerTile = tvDp(DesignTokens.Tv.RADIUS_TILE)
     /** Badges and tags on a tile. */
-    val cornerSmall = TvSpec.cornerSmall
+    val cornerSmall = tvDp(DesignTokens.Tv.RADIUS_SMALL)
     /** A free-standing surface or panel: action panel, sheet. */
-    val cornerArea = TvSpec.cornerArea
+    val cornerArea = tvDp(DesignTokens.Tv.RADIUS_CARD)
     /** Not a scale step but a placeholder bar (`Ladefeld`). */
     val cornerBar = TvSpec.cornerBar
     const val gridColumns = 7
@@ -186,8 +182,18 @@ object TvTheme {
     val captionLine = 17.dp
     val captionDrop = 7.dp
     /** Design tab: 68 high, 28 padding. */
-    val tabHeight = 34.dp
-    val tabPadding = 14.dp
+    val tabHeight = tvDp(DesignTokens.Tv.SIZE_TAB_HEIGHT)
+    val tabPadding = tvDp(DesignTokens.Tv.SPACE_TAB_PAD_H)
+    /** The white focus pill behind a tab label, centred in the tab frame; the open tab's accent line sits right below it. */
+    val tabPillHeight = tvDp(DesignTokens.Tv.SIZE_TAB_PILL_HEIGHT)
+    val tabUnderlineHeight = tvDp(DesignTokens.Tv.SIZE_TAB_UNDERLINE_HEIGHT)
+    val tabGap = tvDp(DesignTokens.Tv.SPACE_TAB_GAP)
+    /** The card of a settings group (the token colour, not the phone's `Theme.groupsArea`). */
+    val groupsArea = Color(DesignTokens.Palette.SURFACE_GROUP)
+    /** `border.edge`: the 1 dp edge of a floating panel or menu. */
+    val edge = Color(DesignTokens.Palette.BORDER_EDGE)
+    /** `border.hairline`: the separator between rows of a menu. */
+    val hairline = Color(DesignTokens.Palette.BORDER_HAIRLINE)
     /** Info-row chip (`ProofMark`): 44 high, 16 padding, symbol 20, gap 8, between chips 12. */
     val markHeight = 22.dp
     val markCharacter = 10.dp
@@ -326,7 +332,7 @@ fun FocusArea(modifier: Modifier = Modifier, magnifier: Float = TvTheme.focusMag
                     shadowElevation = 3.dp.toPx()
                     ambientShadowColor = Color.Black.copy(alpha = 0.12f)
                     spotShadowColor = Color.Black.copy(alpha = 0.12f)
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(liftCorner)
+                    shape = smoothRoundedShape(liftCorner)
                     clip = false
                 }
             }
@@ -476,7 +482,7 @@ fun TvButton(text: String?, symbol: Glyph? = null, modifier: Modifier = Modifier
         // carries the same .10 fill as the labelled buttons.
         val bare = text == null && height < TvTheme.buttonHeight
         Row(Modifier.height(height).then(if (text == null) Modifier.width(height) else Modifier)
-                .clip(RoundedCornerShape(TvTheme.corner))
+                .clip(smoothRoundedShape(TvTheme.corner))
                 .background(if (!released) Theme.area else if (focus) Color.White else if (bare) Color.Transparent else Color.White.copy(alpha = 0.10f))
                 .padding(horizontal = if (text == null) 0.dp else 20.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -592,7 +598,7 @@ fun TvField(value: String, change: (String) -> Unit, placeholder: String, modifi
         decorationBox = { inner ->
             // **No border**: a field is a filled capsule, not a drawn outline, on TV as well. At rest `area`,
             // not `erhoeht`: `erhoeht` is what lies **on** a surface.
-            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(TvTheme.corner))
+            Box(Modifier.fillMaxSize().clip(smoothRoundedShape(TvTheme.corner))
                     .background(if (focus) Color.White else Theme.area)
                     .padding(horizontal = 15.dp), contentAlignment = Alignment.CenterStart) {
                 if (value.isEmpty()) Text(placeholder, style = TvTheme.body,
@@ -677,7 +683,7 @@ fun TvRow(text: String, symbol: Glyph? = null, right: String? = null, checkmark:
             /** A long text may wrap (up to 3 lines) and the row grows with it, instead of being cut off. */
             wraps: Boolean = false, perform: () -> Unit) {
     FocusArea(modifier.fillMaxWidth(), magnifier = 1f, perform = perform) { focus ->
-        Row(Modifier.fillMaxWidth().then(if (wraps) Modifier.heightIn(min = TvTheme.rowsHeight) else Modifier.height(TvTheme.rowsHeight)).clip(RoundedCornerShape(TvTheme.corner))
+        Row(Modifier.fillMaxWidth().then(if (wraps) Modifier.heightIn(min = TvTheme.rowsHeight) else Modifier.height(TvTheme.rowsHeight)).clip(smoothRoundedShape(TvTheme.corner))
                 .background(if (focus) TvTheme.focusArea else Color.Transparent).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             symbol?.let { Symbol(it, 13.dp, color = symbolColor, strength = Strength.Medium) }
@@ -711,7 +717,7 @@ fun TvMenuRow(text: String, modifier: Modifier = Modifier, symbol: Glyph? = null
             else -> Theme.fontQuiet
         }
         Row(Modifier.fillMaxWidth().then(if (wraps) Modifier.heightIn(min = 36.dp) else Modifier.height(36.dp))
-                .clip(RoundedCornerShape(TvTheme.corner))
+                .clip(smoothRoundedShape(TvTheme.corner))
                 .background(if (focus) Color.White else Color.Transparent).padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(if (check != null) 10.dp else 11.dp)) {
@@ -770,7 +776,7 @@ fun TvTile(image: String?, title: String, subline: String?, landscape: Boolean =
         FocusArea(modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = description },
                   focusChanged = { tileFocus = it; focusChanged(it) }, lengthy = lengthy, lift = true, perform = perform) {
             Box(Modifier.size(width, if (landscape) TvTheme.landscapeHeight else TvTheme.posterHeight)
-                    .clip(RoundedCornerShape(TvTheme.cornerTile)).background(Theme.area)) {
+                    .clip(smoothRoundedShape(TvTheme.cornerTile)).background(Theme.area)) {
                 // No placeholder drawing of its own: if the image is missing or still loading, `Theme.area`
                 // stays visible, as `Picture` does in `Sources/tvOS/Style.swift` (also just a surface, no icon).
                 if (substitute != null) Box(Modifier.fillMaxSize().alpha(opacity)) { substitute() }
@@ -819,12 +825,12 @@ fun TvTileBadge(mark: String, figure: Int, modifier: Modifier = Modifier) {
     }
     val ink = Color(0xFF101010)
     if (mark == "gesehen") {
-        Box(modifier.padding(8.dp).size(22.dp).clip(RoundedCornerShape(6.dp)).background(ink.copy(alpha = 0.7f)),
+        Box(modifier.padding(8.dp).size(22.dp).clip(smoothRoundedShape(6.dp)).background(ink.copy(alpha = 0.7f)),
             contentAlignment = Alignment.Center) {
             Symbol(Glyph.Checkmark, 13.dp, color = Theme.font, strength = Strength.Semibold)
         }
     } else if (wording != null) {
-        Box(modifier.padding(7.dp).height(18.dp).clip(RoundedCornerShape(5.dp)).background(ink.copy(alpha = 0.72f))
+        Box(modifier.padding(7.dp).height(18.dp).clip(smoothRoundedShape(5.dp)).background(ink.copy(alpha = 0.72f))
                 .padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
             Text(wording, style = TvTheme.badge.copy(letterSpacing = 0.25.sp), color = Theme.font, maxLines = 1)
         }
@@ -885,9 +891,9 @@ fun TvHintStrip(text: String, modifier: Modifier = Modifier, close: () -> Unit) 
         close()
     }
     Row(modifier.widthIn(max = 550.dp)
-            .clip(RoundedCornerShape(TvTheme.corner))
+            .clip(smoothRoundedShape(TvTheme.corner))
             .background(Theme.raised)
-            .border(1.dp, Theme.warning.copy(alpha = 0.3f), RoundedCornerShape(TvTheme.corner))
+            .border(1.dp, Theme.warning.copy(alpha = 0.3f), smoothRoundedShape(TvTheme.corner))
             .padding(horizontal = 15.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Symbol(Glyph.Warning, 13.dp, color = Theme.warning)
@@ -930,7 +936,7 @@ fun TvSettingsRow(modifier: Modifier = Modifier, enabled: Boolean = true, focusC
         Box(Modifier.fillMaxWidth().heightIn(min = TvTheme.rowsHeight)) {
             if (focus) Box(Modifier.matchParentSize()
                 .layout { m, c -> val p = m.measure(c.copy(minWidth = c.maxWidth + 26.dp.roundToPx(), maxWidth = c.maxWidth + 26.dp.roundToPx())); layout(c.maxWidth, p.height) { p.place(-13.dp.roundToPx(), 0) } }
-                .clip(RoundedCornerShape(TvTheme.corner)).background(Color.White))
+                .clip(smoothRoundedShape(TvTheme.corner)).background(Color.White))
             Row(Modifier.fillMaxWidth().heightIn(min = TvTheme.rowsHeight).alpha(if (enabled) 1f else 0.4f),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing), content = { content(focus) })
         }

@@ -6,6 +6,7 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -37,7 +38,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.*
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -110,6 +111,24 @@ fun TvGrid(tiles: List<GridTile>, loadMore: () -> Unit = {}, focus: FocusRequest
     var recent by rememberSaveable { mutableStateOf<String?>(null) }
     var comeBack by remember { mutableStateOf(recent) }
     LaunchedEffect(loads) { if (loads) comeBack = null }
+    // **A quiet reload must not move the user** (`focusAfterReload` on Start). When the tiles are replaced while one holds
+    // focus and that tile is gone (deleted elsewhere, left the filter), Compose would hand focus to the top bar. The plan is
+    // made in composition, before the old tile is disposed and focus drops: the same tile, else the one at its place
+    // (`idAfterReload`); `wanted` then attaches a requester to it and the effect asks for focus as soon as it is attached.
+    val track = remember { object { var held = false; var heldId: String? = null; var ids = emptyList<String>() } }
+    val ids = tiles.map { it.id }
+    val plan = remember(ids) { (if (track.held) idAfterReload(track.heldId, track.ids, ids) else null).also { track.ids = ids } }
+    var wanted by remember { mutableStateOf<String?>(null) }
+    val wantedFocus = remember { FocusRequester() }
+    LaunchedEffect(ids) {
+        val id = plan ?: return@LaunchedEffect
+        wanted = id
+        for (frame in 0 until 30) {
+            withFrameNanos { }
+            if (track.held && track.heldId == id) break
+            if (runCatching { wantedFocus.requestFocus() }.isSuccess) break
+        }
+    }
     val focusIndex = comeBack?.let { id -> tiles.indexOfFirst { it.id == id } }?.takeIf { it >= 0 } ?: 0
     // The tile Left from the letter rail lands on: the one focused last when it is in view, else the first in view
     // (the requester must sit on a composed tile, or Left is swallowed).
@@ -153,8 +172,9 @@ fun TvGrid(tiles: List<GridTile>, loadMore: () -> Unit = {}, focus: FocusRequest
                 TvTile(k.poster, k.title, if (withUnderRow) k.subline else null,
                          mark = k.mark, markCount = k.markCount,
                          lengthy = menu?.let { m -> { m(de.paulherter.swiftly.TileMenuRequest(k.id, k.title, k.type, k.poster, false, k.subline)) } },
-                         modifier = if (i == landing && focus != null) Modifier.focusRequester(focus) else Modifier,
-                         focusChanged = { if (it) recent = k.id }) {
+                         modifier = (if (i == landing && focus != null) Modifier.focusRequester(focus) else Modifier)
+                             .then(if (k.id == wanted) Modifier.focusRequester(wantedFocus) else Modifier),
+                         focusChanged = { track.held = it; if (it) { recent = k.id; track.heldId = k.id } }) {
                     open(Destination(k.id, k.title, k.type))
                 }
             }
@@ -192,19 +212,27 @@ internal fun TvTilePlaceholder() {
 fun TvEmpty(headerLine: String, text: String, symbol: Glyph? = null, button: Pair<String, () -> Unit>? = null,
            /** For the initial focus when the button is the only target on the page. */
            buttonModifier: Modifier = Modifier,
+           /** A second, quiet way out next to `button` (Apple's `EmptyState.quietButton`), e.g. "Schließen". */
+           quietButton: Pair<String, () -> Unit>? = null,
            /** The distance above the symbol; the search page sits higher than a full page. */
-           top: androidx.compose.ui.unit.Dp = 80.dp) {
+           top: androidx.compose.ui.unit.Dp = 80.dp,
+           /** "Trying right now": the symbol breathes and the buttons wait (dimmed, no action), like the phone's `EmptyState.loads`. */
+           loads: Boolean = false) {
+    val pulse = if (loads) LoadingPulse() else null
     Column(Modifier.fillMaxWidth().padding(top = top), horizontalAlignment = Alignment.CenterHorizontally) {
         symbol?.let {
             // **44, not 38**: tvOS uses 88, here half. It was the only number in the file next to the scale.
             // No circle around it: the phone's empty state has one, tvOS omits it, and that stays.
-            Symbol(it, 44.dp, Modifier.padding(bottom = 10.dp), color = Theme.fontVeryQuiet)
+            Symbol(it, 44.dp, Modifier.padding(bottom = 10.dp).graphicsLayer { alpha = pulse?.value ?: 1f }, color = Theme.fontVeryQuiet)
         }
         Text(headerLine, style = TvTheme.rail, color = Theme.font)
         Text(text, style = TvTheme.body, color = Theme.fontQuiet, textAlign = TextAlign.Center,
              modifier = Modifier.padding(top = 8.dp).widthIn(max = 480.dp))
-        button?.let { (title, perform) ->
-            TvButton(title, modifier = Modifier.padding(top = 16.dp).then(buttonModifier), perform = perform)
+        if (quietButton == null) button?.let { (title, perform) ->
+            TvButton(title, modifier = Modifier.padding(top = 16.dp).then(buttonModifier), released = !loads, perform = perform)
+        } else Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            button?.let { (title, perform) -> TvButton(title, modifier = buttonModifier, released = !loads, perform = perform) }
+            TvButton(quietButton.first, released = !loads, perform = quietButton.second)
         }
     }
 }
@@ -225,11 +253,31 @@ fun TvEmpty(headerLine: String, text: String, symbol: Glyph? = null, button: Pai
  * external-drive symbol.
  */
 @Composable
-fun TvDisruption(app: SwiftlyApplication, address: String? = null, buttonModifier: Modifier = Modifier, top: androidx.compose.ui.unit.Dp = 80.dp, retry: (() -> Unit)? = null) {
+fun TvDisruption(app: SwiftlyApplication, address: String? = null, buttonModifier: Modifier = Modifier, top: androidx.compose.ui.unit.Dp = 80.dp,
+                retrying: Boolean = false, retry: (() -> Unit)? = null) {
     TvEmpty(translated("Server ist abgetaucht"),
            translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", address ?: app.serverAddress()),
            symbol = Glyph.ServerRoute,
-           button = retry?.let { translated("Erneut versuchen") to it }, buttonModifier = buttonModifier, top = top)
+           button = retry?.let { translated("Erneut versuchen") to it }, buttonModifier = buttonModifier, top = top, loads = retrying)
+}
+
+/**
+ * The same notice over rows that are already there (`DisturbNotice` on tvOS): the page keeps its stored rows and the server
+ * does not answer. It stands in the header zone above the rows, left-aligned like the page, and the button waits while a retry
+ * runs. Where there are no rows, [TvDisruption] is the whole page.
+ */
+@Composable
+fun TvDisturbNotice(app: SwiftlyApplication, loads: Boolean, modifier: Modifier = Modifier, retry: () -> Unit) {
+    val pulse = if (loads) LoadingPulse() else null
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(TvSpec.noticeGap)) {
+        Symbol(Glyph.ServerRoute, TvSpec.noticeSymbol, Modifier.graphicsLayer { alpha = pulse?.value ?: 1f }, color = Theme.fontVeryQuiet)
+        Column {
+            Text(translated("Server ist abgetaucht"), style = TvTheme.rail, color = Theme.font)
+            Text(translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serverAddress()), style = TvTheme.body,
+                 color = Theme.fontQuiet, modifier = Modifier.padding(top = TvSpec.noticeGap).widthIn(max = TvSpec.messageWidth))
+            TvButton(translated("Erneut versuchen"), modifier = Modifier.padding(top = TvSpec.noticeGap), released = !loads, perform = retry)
+        }
+    }
 }
 
 /**
@@ -257,6 +305,8 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
     // changes, so the panel is current when it opens (the years and languages are fetched when it opens).
     LaunchedEffect(state.filter, state.choice) { state.sheetRead(app.rk, filter) }
     de.paulherter.swiftly.WatchStateChange(app) { state.load(app.rk) }
+    // The reloads the core starts by itself (another device, the link back, a delete): the tiles patch in, the grid stays.
+    LaunchedEffect(state) { de.paulherter.swiftly.followListsStale(app, { state.runs > 0 }) { state.load(app.rk) } }
     val collections = state.listSelected
     val focus = firstFocus(!state.loads || collections)
     val lattice = rememberLazyGridState()
@@ -418,7 +468,7 @@ private fun TvCapsuleWithPanel(text: String, symbol: Glyph?, entries: List<Choic
                   properties = PopupProperties(focusable = true)) {
                 CompositionLocalProvider(LocalWithinPanel provides true) {
                     // Design menu: #303030, r24, pad 10, selection menus 420 wide (pt / 2 here).
-                    Column(Modifier.width(210.dp).clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.raised)
+                    Column(Modifier.width(210.dp).clip(smoothRoundedShape(TvTheme.cornerArea)).background(Theme.raised)
                             .heightIn(max = 420.dp).verticalScroll(rememberScrollState()).padding(5.dp)
                             .focusProperties { exit = { if (sharing[0]) FocusRequester.Default else FocusRequester.Cancel } }
                             .focusGroup()) {

@@ -40,7 +40,7 @@ struct MacKindPicker: View {
             switch purpose {
             case .firstStart:
                 VStack(spacing: 0) {
-                    Wordmark(height: 44)
+                    AppIconMark(height: 44)
                     Text("Was läuft bei dir?")
                         .font(Theme.titleLarge)
                         .tracking(Theme.lockTitle)

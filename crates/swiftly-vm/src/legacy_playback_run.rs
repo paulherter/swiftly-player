@@ -722,7 +722,7 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
             let proceed = has_next
                 && may_advance
                 && (ready_countdown
-                    || (live.layer.next_at_end()
+                    || (live.layer.next_at_end_with(automatic)
                         && episodes_end::advance(
                             spot,
                             live.snap.duration,
@@ -1073,6 +1073,32 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
         let Some(id) = self.locked(|s| s.ready.as_ref().map(|r| r.item.id.clone())) else {
             return Self::switch_answer(Outcome::Failed, None, None, None);
         };
+        self.switch_to(&id, position, None, Switch::Quality).await
+    }
+
+    /// `Kern.decoderRetry`: the device's decoder refused the open title at the start (no decoder for the codec, bit depth or
+    /// picture size). The same title is planned again as a server transcode and switched to at `position`, as a quality
+    /// change is. Once per title: a second call for it answers `Failed` and the host shows the error as before. The new plan
+    /// can still be the original when the server cannot transcode: the host reads the method.
+    pub async fn decoder_retry(&self, position: f64) -> String {
+        self.run.with(|r| {
+            r.prepared = None;
+            r.preparation = None;
+        });
+        let Some(id) = self.locked(|s| s.ready.as_ref().map(|r| r.item.id.clone())) else {
+            return Self::switch_answer(Outcome::Failed, None, None, None);
+        };
+        let again = self.locked(|s| {
+            let again = s.decoder_refused.as_deref() == Some(id.as_str());
+            s.decoder_refused = Some(id.clone());
+            again
+        });
+        if again {
+            return Self::switch_answer(Outcome::Failed, None, None, None);
+        }
+        self.run.row(format!(
+            "Dekoder lehnt {id} ab \u{2192} Plan als Umwandlung"
+        ));
         self.switch_to(&id, position, None, Switch::Quality).await
     }
 

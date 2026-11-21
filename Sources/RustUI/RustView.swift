@@ -38,7 +38,8 @@ final class RustView: UIView {
         isMultipleTouchEnabled = true
         #endif
         isOpaque = !live
-        backgroundColor = live ? .clear : UIColor(white: 0.0627, alpha: 1)
+        // The ground comes from the generated launch colour (`surface.base`), not a literal grey.
+        backgroundColor = live ? .clear : (UIColor(named: "StartBackground") ?? .black)
         if let layer = layer as? CAMetalLayer {
             layer.isOpaque = !live
             layer.framebufferOnly = true

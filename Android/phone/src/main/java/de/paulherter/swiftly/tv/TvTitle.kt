@@ -1,5 +1,6 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.playOnChosen
 import de.paulherter.swiftly.shared.motionReduced
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
@@ -15,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -26,6 +26,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
+import de.paulherter.swiftly.shared.Motion
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -45,6 +47,7 @@ import androidx.compose.ui.window.PopupProperties
 import coil3.compose.AsyncImage
 import de.paulherter.swiftly.*
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -133,7 +136,7 @@ fun TvMark(symbolText: Glyph?, word: String, color: Color, strength: Strength = 
         else -> color.copy(alpha = 0.15f)
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvTheme.markCharacterSpacing),
-        modifier = Modifier.height(TvTheme.markHeight).clip(RoundedCornerShape(6.dp)).background(fill)
+        modifier = Modifier.height(TvTheme.markHeight).clip(smoothRoundedShape(6.dp)).background(fill)
             .padding(horizontal = TvTheme.markInner)) {
         symbolText?.let { Symbol(it, TvTheme.markCharacter, color = if (neutral) Theme.font else color, strength = strength) }
         Text(word, style = TvTheme.mark.let { if (digits) it.copy(fontFeatureSettings = "tnum") else it },
@@ -183,7 +186,7 @@ fun TvMoreButton(entries: List<Choice>, icons: Map<String, Glyph> = emptyMap(), 
                 // Inside the panel: a clicked row must not register itself as the trigger in `FocusRemember`,
                 // or the next close would restore focus to that row instead of the "..." button.
                 CompositionLocalProvider(LocalWithinPanel provides true) {
-                    Column(Modifier.width(340.dp).clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.area)
+                    Column(Modifier.width(340.dp).clip(smoothRoundedShape(TvTheme.cornerArea)).background(Theme.area)
                             .padding(vertical = 6.dp)
                             .focusProperties { exit = { if (sharing[0]) FocusRequester.Default else FocusRequester.Cancel } }.focusGroup()) {
                         entries.forEachIndexed { i, e ->
@@ -222,15 +225,22 @@ fun TvStrip(title: String, modifier: Modifier = Modifier, content: androidx.comp
 /** Mirrors `CastTile`: round, 104 dp, name and role below. */
 @Composable
 fun TvCast(p: WithAct, perform: () -> Unit) {
+    // The same focus look as every tile (`TvTile`): magnification plus the lift shadow, and the name steps from quiet to white
+    // and drops with it.
+    var lit by remember { mutableStateOf(false) }
+    val drop by animateFloatAsState(if (lit) TvTheme.captionDrop.value else 0f,
+        if (motionReduced()) Motion.fadeReduced() else tween(TvTheme.focusDuration, easing = TvTheme.focusCurve), label = "castDrop")
     Column(Modifier.width(TvTheme.posterWidth), horizontalAlignment = Alignment.CenterHorizontally) {
-        FocusArea(perform = perform) {
+        FocusArea(focusChanged = { lit = it }, lift = true, liftCorner = 100.dp, perform = perform) {
             Box(Modifier.size(TvTheme.posterWidth).clip(CircleShape).background(Theme.area), contentAlignment = Alignment.Center) {
                 Symbol(Glyph.PersonFilled, 30.dp, color = Theme.fontVeryQuiet)
                 AsyncImage(model = p.image, contentDescription = p.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             }
         }
-        Text(p.name, style = TvTheme.tile, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
-        p.role?.let { Text(it, style = TvTheme.small, color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        Column(Modifier.padding(top = 7.dp).graphicsLayer { translationY = drop.dp.toPx() }, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(p.name, style = TvTheme.tile, color = if (lit) Theme.font else Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            p.role?.let { Text(it, style = TvTheme.small, color = Theme.fontVeryQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
     }
 }
 
@@ -380,16 +390,8 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                         }
                         // `TitleActions.forMovie`: "Watched" first (reachable from the button row, see
                         // `gesehenHandlung`), "Restart"/"Reset" only with progress.
-                        val entries = buildList {
-                            if (tt.planPresent && tt.resumeFrom != null) {
-                                add(Choice("vonvorn", translated("Von vorn abspielen")))
-                                add(Choice("zuruecksetzen", translated("Fortschritt zurücksetzen")))
-                            }
-                            add(Choice("metadaten", translated("Metadaten neu einlesen")))
-                        }
-                        TvMoreButton(entries,
-                            mapOf("vonvorn" to Glyph.Rewind, "zuruecksetzen" to Glyph.ResetCircle,
-                                  "metadaten" to Glyph.Reload)) { choice ->
+                        val more = tvMore(app, series = false, planKnown = tt.planPresent, begun = tt.resumeFrom != null, together = row.together)
+                        TvMoreButton(more.choices, more.icons) { choice ->
                             run.launch {
                                 when (choice) {
                                     "vonvorn" -> de.paulherter.swiftly.playDefault(app, target.id, null)
@@ -402,6 +404,7 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                                         val reason = withContext(Dispatchers.IO) { app.rk.metadataRefresh(target.id).await() }
                                         message = if (reason.isEmpty()) translated("Der Server liest die Metadaten neu ein.") else errorString(reason)
                                     }
+                                    else -> app.playOnChosen(choice, target.id, tt.resumeFrom ?: -1.0)
                                 }
                             }
                         }

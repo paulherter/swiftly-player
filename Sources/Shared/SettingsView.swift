@@ -179,6 +179,11 @@ struct SettingsView: View {
                 }
                 .buttonStyle(Theme.PressRow())
             }
+            // The core's switch (only where Seerr exists): every "Vom Server löschen" entry asks it.
+            if let row = feed.row("loeschenSperren") {
+                SheetLine()
+                coreRow(row)
+            }
         }
     }
 

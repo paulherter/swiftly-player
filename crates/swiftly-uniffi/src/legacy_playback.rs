@@ -26,6 +26,16 @@ pub struct LegacyStopped {
     pub sent: bool,
 }
 
+/// One video decoder of the device (`MediaCodecList`): the codec (`h264`, `hevc`, `av1`, `vp9`), whether it takes 10 bits per
+/// channel, and the largest picture it takes.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct LegacyVideoDecoder {
+    pub codec: String,
+    pub ten_bit: bool,
+    pub width: u32,
+    pub height: u32,
+}
+
 /// The open title of one account.
 #[derive(uniffi::Object)]
 pub struct LegacyPlayback {
@@ -76,6 +86,15 @@ impl LegacyPlayback {
     /// The device has no Dolby Vision decoder: Dolby Vision profile 5 is planned as a server transcode.
     pub fn set_no_dolby_vision_decoder(&self, on: bool) {
         self.inner.set_no_dolby_vision_decoder(on);
+    }
+    /// The video decoders of the device, asked once: a title none of them decodes is planned as a server transcode. An empty
+    /// list says the device decodes none of the codecs the core knows.
+    pub fn set_video_decoders(&self, decoders: Vec<LegacyVideoDecoder>) {
+        let entries: Vec<(String, bool, u32, u32)> = decoders
+            .into_iter()
+            .map(|d| (d.codec, d.ten_bit, d.width, d.height))
+            .collect();
+        self.inner.set_video_decoders(&entries);
     }
     /// Tracks sent with the title from another client.
     pub fn set_ordered(&self, item_id: String, audio: Option<i64>, subtitle: Option<i64>) {
@@ -270,6 +289,11 @@ impl LegacyPlayback {
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn quality_switch(&self, position: f64) -> Result<String, CoreError> {
         Ok(self.inner.quality_switch(position).await)
+    }
+    /// `Kern.decoderRetry`: the decoder refused the open title at the start; the same title as a server transcode.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn decoder_retry(&self, position: f64) -> Result<String, CoreError> {
+        Ok(self.inner.decoder_retry(position).await)
     }
     /// `Kern.episodeSwitch`.
     #[uniffi::method(async_runtime = "tokio")]

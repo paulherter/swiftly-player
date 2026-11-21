@@ -84,7 +84,7 @@ struct CollectionMosaic: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerTile, style: .continuous))
         .task(id: collection.id) {
             let found = await model.collectionPosters(collection, art: art)
-            withAnimation(Theme.reveal) { title = Array((found ?? []).prefix(4)) }
+            InTravel.land { withAnimation(Theme.reveal) { title = Array((found ?? []).prefix(4)) } }
         }
     }
 

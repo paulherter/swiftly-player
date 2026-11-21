@@ -2,6 +2,11 @@ package de.paulherter.swiftly
 
 import de.paulherter.swiftly.rustcore.host.CoreWords
 import de.paulherter.swiftly.rustcore.legacyEpisodeCardWidth
+import de.paulherter.swiftly.rustcore.PlayerStartVeil
+import de.paulherter.swiftly.rustcore.PlayerStartVeilEvent
+import de.paulherter.swiftly.rustcore.playerStartFailure
+import de.paulherter.swiftly.rustcore.playerStartTimeoutSeconds
+import de.paulherter.swiftly.rustcore.playerStartVeilStep
 import de.paulherter.swiftly.rustcore.legacyEpisodeCard
 import de.paulherter.swiftly.shared.Texts
 import de.paulherter.swiftly.rustcore.SubtitleSearchIntent
@@ -42,6 +47,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.zIndex
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import kotlinx.coroutines.flow.first
 import android.content.Context
 import android.content.ContextWrapper
@@ -172,7 +178,9 @@ import androidx.compose.foundation.Image
 /** What to play and from where (iOS `PlayRequest`). `since == null` starts from the beginning. */
 data class PlayRequest(val id: String, val since: Double?,
                        /** The version the user picked when a title has several (`MediaSource.id`); empty = the best one. */
-                       val sourceID: String = "")
+                       val sourceID: String = "",
+                       /** The top bar's facts the tapping page already has (`kopf` of the core's page answer, same keys as `playSeed`): the player shows title, meta and the Folgen slot from frame 1 even with no stored copy. */
+                       val head: String? = null)
 
 /** Result of `Kern.playbackOpen`: the stream URL and the footer lines. */
 data class PlayPlan(val url: String, val lossless: Boolean, val method: String, val title: String,
@@ -202,6 +210,18 @@ private const val AUDIO_JE_TITLE = "tonJeTitel"
 private const val UT_JE_TITLE = "utJeTitel"
 /** The subtitle offset per title (title id to milliseconds), kept like the track choices. */
 private const val UT_OFFSET_JE_TITLE = "utVersatzJeTitel"
+
+/** The header facts of `playSeed` (no stream yet): a plan without a URL, used only for the top bar. */
+internal fun playSeedRead(json: String): PlayPlan? = runCatching {
+    JSONObject(json).let { o ->
+        PlayPlan("", false, "", o.optString("titel"), o.optString("untertitel"), false,
+            o.optString("serie").takeIf { !o.isNull("serie") }, null, null, null,
+            o.optString("itemId"), o.optBoolean("episode"), o.optString("serieId").takeIf { !o.isNull("serieId") },
+            o.optString("staffelId").takeIf { !o.isNull("staffelId") }, o.optString("kopfzeile"),
+            if (o.isNull("staffelNr")) null else o.optInt("staffelNr"), if (o.isNull("folgeNr")) null else o.optInt("folgeNr"),
+            o.optString("nebenzeile").takeIf { !o.isNull("nebenzeile") })
+    }
+}.getOrNull()
 
 internal fun playPlanRead(json: String) = JSONObject(json).let { o ->
     PlayPlan(o.getString("url"), o.optBoolean("lossless"), o.optString("methode"), o.optString("titel"),
@@ -340,10 +360,33 @@ class PlayItem(
     fun playOn() = nowOrAfter("Weiter") { player.play() }
 
     var plan by mutableStateOf<PlayPlan?>(null); private set
+    /** The top bar's facts (title, meta, episode) from the core's stored copy, there from the first frame; the plan replaces it (`PlayerPage`). */
+    var seed by mutableStateOf<PlayPlan?>(null)
     var running by mutableStateOf(false); private set
     var position by mutableDoubleStateOf(0.0); private set
     var duration by mutableDoubleStateOf(0.0); private set
     var imageFree by mutableStateOf(false); private set
+    /**
+     * **Where the start stands**: opening, picture shown, or failed (error before the first picture, or none within the core's
+     * start timeout). One state from the core (`playerStartVeilStep`), not a "failed" flag next to `imageFree`.
+     * Failed shows "Das startet nicht" with retry and close (`PlayerPage`, `TvPlayer`).
+     */
+    var startVeil by mutableStateOf(PlayerStartVeil.OPENING); private set
+    private var startedAt = SystemClock.elapsedRealtime()
+    private fun startMoves(event: PlayerStartVeilEvent) {
+        val next = playerStartVeilStep(startVeil, event)
+        if (next != startVeil) { AppLog.writeOut("[Player] Start $startVeil -> $next ($event)"); startVeil = next }
+    }
+    /** "Erneut versuchen": same title, same position, fresh setup (`startNewTry` on Apple). */
+    fun startAgain() {
+        val p = plan ?: return
+        AppLog.writeOut("[Player] Start erneut versucht")
+        startMoves(PlayerStartVeilEvent.RETRY)
+        startedAt = SystemClock.elapsedRealtime()
+        hint = null
+        showsImage[0] = false
+        run.launch { mediaOpen(p.url, position.takeIf { it > 1 }) }
+    }
     var offeringArt by mutableStateOf(CoreWords.Angebot.NOBODY); private set
     var offeringPost by mutableStateOf<Double?>(null); private set
     var offerText by mutableStateOf(""); private set
@@ -476,12 +519,16 @@ class PlayItem(
      * as a key so the bar is recomputed after loading.
      */
     var chapterCount by mutableIntStateOf(0); private set
+    /** The chapter answer of the open title has arrived (also "none"); until then a film keeps the Kapitel slot of the capsule reserved. */
+    var chaptersKnown by mutableStateOf(false); private set
 
     suspend fun chapterLoad() {
         chapterCount = 0
+        chaptersKnown = false
         val n = withContext(Dispatchers.IO) { app.rk.chapterLoad().await() }
         AppLog.writeOut("[Kapitel] " + if (n > 0L) "$n" else "keine")
         chapterCount = n.toInt()
+        chaptersKnown = true
     }
 
     // MARK: Trickplay: seek preview, mirrors `TrickplayImages` in the package.
@@ -591,11 +638,22 @@ class PlayItem(
                         plan?.let { run.launch { mediaOpen(it.url, position) } }
                         return@onEvents
                     }
+                    // No decoder for this title on the device (codec, bit depth or picture size) before any picture: the core plans it
+                    // as a server transcode, once per title (it answers "failed" for the second call).
+                    if (code?.decoder == true && !imageFree && plan?.method != "Transcode" && !switches) {
+                        AppLog.writeOut("[Media3] Dekoder lehnt den Titel ab (${code.name}): neuer Versuch als Umwandlung")
+                        run.launch { decoderRetry() }
+                        return@onEvents
+                    }
                     AppLog.writeOut("[Media3] Fehler ${code?.name ?: "?"}${if (imageFree) "" else " vor dem ersten Bild"}")
                     // A dead stream is rebuilt (`teardown`); otherwise the viewer is told.
-                    if (!teardown("Fehler")) hint = translated(
-                        if (code?.decoder == true) "Dieses Videoformat wird auf diesem Gerät nicht unterstützt."
-                        else "Die Folge konnte nicht geladen werden.")
+                    if (!teardown("Fehler")) {
+                        // Before the first picture the start has failed: the veil says so with a way out.
+                        if (!imageFree) startMoves(PlayerStartVeilEvent.ENGINE_ERROR)
+                        else hint = translated(
+                            if (code?.decoder == true) "Dieses Videoformat wird auf diesem Gerät nicht unterstützt."
+                            else "Die Folge konnte nicht geladen werden.")
+                    }
                 }
             }
         }
@@ -716,6 +774,8 @@ class PlayItem(
         run.launch { trickplayLoad() }
         run.launch { chapterLoad() }
         imageFree = false
+        startVeil = PlayerStartVeil.OPENING
+        startedAt = SystemClock.elapsedRealtime()
         showsImage[0] = false
         buffers = false
         end[0] = false
@@ -913,12 +973,13 @@ class PlayItem(
         switches = true
         val spot = (if (playerFree) player.time / 1000.0 else position).coerceAtLeast(0.0)
         try {
-            val answer = JSONObject(withContext(Dispatchers.IO) { app.rk.qualitySwitch(spot).await() })
-            app.toStop(answer.fieldText("nachmeldung"))
+            val answer = SwitchAnswer.read(withContext(Dispatchers.IO) { app.rk.qualitySwitch(spot).await() })
+            app.toStop(answer.pending)
             app.logWrite()
-            when (answer.optString("ergebnis")) {
-                CoreWords.Ergebnis.SWITCHED -> {
-                    val new = answer.fieldText("spielplan")
+            // Every outcome has a branch (`when` without `else`): the old quality keeps playing on all but the first.
+            when (answer) {
+                is SwitchAnswer.Switched -> {
+                    val new = answer.plan
                     if (new != null && !ended[0]) {
                         val newPlan = playPlanRead(new)
                         // Limit chosen but the original plays: either the file already fits or the server does not
@@ -930,13 +991,54 @@ class PlayItem(
                         launch(newPlan, spot)
                     }
                 }
-                CoreWords.Ergebnis.FAILED -> hint = errorString(context, Exception(answer.fieldText("fehler")
-                    ?: translated("Nächste Folge konnte nicht geladen werden.")))
+                else -> switchOutcomeShow(answer, "Die Folge konnte nicht geladen werden.")
             }
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
             hint = errorString(context, e)
         } finally {
             switches = false
+        }
+    }
+
+    /**
+     * **The decoder refused the title before the first picture**: the core plans the same title as a server transcode and
+     * the player opens it at the same position. Without a transcode (the server cannot or may not) or after a second
+     * refusal the start fails as it would have: the veil offers the way out.
+     */
+    private suspend fun decoderRetry() {
+        if (switches || ended[0]) return
+        switches = true
+        val spot = position.coerceAtLeast(0.0)
+        try {
+            val answer = SwitchAnswer.read(withContext(Dispatchers.IO) { app.rk.decoderRetry(spot).await() })
+            app.toStop(answer.pending)
+            app.logWrite()
+            val new = (answer as? SwitchAnswer.Switched)?.plan?.let { playPlanRead(it) }
+            if (new != null && new.method == "Transcode" && !ended[0]) {
+                stopNow("Dekoder")
+                launch(new, spot)
+            } else {
+                AppLog.writeOut("[Media3] Kein Umwandlungsplan: Start scheitert")
+                if (!ended[0]) startMoves(PlayerStartVeilEvent.ENGINE_ERROR)
+            }
+        } catch (e: CancellationException) { throw e } catch (e: Exception) {
+            hint = errorString(context, e)
+        } finally {
+            switches = false
+        }
+    }
+
+    /**
+     * **Whatever the core answered to a switch other than "switched"**: logged by its word and shown as a hint, so the
+     * viewer never sits in front of the old picture with nothing said. A closed player (`Cancelled`) says nothing: it is gone.
+     */
+    private fun switchOutcomeShow(answer: SwitchAnswer, failure: String) {
+        when (answer) {
+            is SwitchAnswer.Switched -> {}
+            is SwitchAnswer.Locked -> { AppLog.writeOut("[Wechsel] gesperrt"); hint = translated(failure) }
+            is SwitchAnswer.Cancelled -> AppLog.writeOut("[Wechsel] abgebrochen")
+            is SwitchAnswer.Failed -> { AppLog.writeOut("[Wechsel] gescheitert"); hint = errorString(context, Exception(answer.error ?: translated(failure))) }
+            is SwitchAnswer.Unknown -> { AppLog.writeOut("[Wechsel] unbekannt: ${answer.word}"); hint = translated(failure) }
         }
     }
 
@@ -967,12 +1069,13 @@ class PlayItem(
         val spot = (if (playerFree) player.time / 1000.0 else position).coerceAtLeast(0.0)
         app.doneWatch(spot, duration)
         try {
-            val answer = JSONObject(withContext(Dispatchers.IO) { app.rk.episodeSwitch(id, spot).await() })
-            app.toStop(answer.fieldText("nachmeldung"))
+            val answer = SwitchAnswer.read(withContext(Dispatchers.IO) { app.rk.episodeSwitch(id, spot).await() })
+            app.toStop(answer.pending)
             app.logWrite()
-            when (answer.optString("ergebnis")) {
-                CoreWords.Ergebnis.SWITCHED -> {
-                    val new = answer.fieldText("spielplan")
+            // Every outcome has a branch (`when` without `else`): the old episode keeps playing on all but the first.
+            when (answer) {
+                is SwitchAnswer.Switched -> {
+                    val new = answer.plan
                     // Swap only once the card covers the picture, otherwise black shows around it.
                     val rest = swapOff - SystemClock.elapsedRealtime()
                     if (rest > 0) delay(rest)
@@ -988,9 +1091,9 @@ class PlayItem(
                         hint = errorString(context, Exception(translated(failure)))
                     }
                 }
-                CoreWords.Ergebnis.FAILED -> hint = errorString(context, Exception(answer.fieldText("fehler") ?: translated(failure)))
+                else -> switchOutcomeShow(answer, failure)
             }
-            if (answer.optString("ergebnis") != CoreWords.Ergebnis.SWITCHED) cardsSwitch?.let { cardsSwitch = it.copy(failed = true) }
+            if (answer !is SwitchAnswer.Switched) cardsSwitch?.let { cardsSwitch = it.copy(failed = true) }
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
             hint = errorString(context, e)
             cardsSwitch?.let { cardsSwitch = it.copy(failed = true) }
@@ -1695,8 +1798,12 @@ class PlayItem(
             val answer = JSONObject(app.rk.playbackTick(
                 if (restoring) maxOf(length, duration) else length, reported, showsImage[0], player.isPlaying,
                 player.audioTracksCount > 0, atPush, app.settings.introOutroAutomatic))
+            if (startVeil == PlayerStartVeil.OPENING && !imageFree && cardsSwitch == null &&
+                SystemClock.elapsedRealtime() - startedAt > playerStartTimeoutSeconds() * 1000)
+                startMoves(PlayerStartVeilEvent.TIMED_OUT)
             if (answer.optBoolean("ladeschirmWeg")) {
                 imageFree = true
+                startMoves(PlayerStartVeilEvent.PICTURE)
                 // From a handover: the card now zooms onto the picture, the audio fades in.
                 Handoff.imagePresent(app, plan?.itemId ?: wish.id)
                 if (handoffFadeIn) {
@@ -1763,7 +1870,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
     // frame (mirrors `PlayerFrame` on iOS). Set here, the player rotated to landscape only after opening,
     // rotated back once more on close, and the bars flashed on teardown.
 
-    val mediaWork = remember { PlayItem(app, context, run, jerk) }
+    val mediaWork = remember { PlayItem(app, context, run, jerk).also { w -> w.seed = (wish.head ?: app.rk.playSeed(wish.id).takeIf { it.isNotEmpty() })?.let { playSeedRead(it) } } }
     LaunchedEffect(Unit) { app.playTargetsRefresh() }
     // **Re-attach the video surface** if Android tore it down on moving to the background; otherwise
     // audio kept playing and the picture stayed black until restart.
@@ -1781,6 +1888,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
         onDispose { lifeRun.removeObserver(observer) }
     }
     var visible by remember { mutableStateOf(true) }
+    var screenLocked by remember { mutableStateOf(false) }
     var touched by remember { mutableIntStateOf(0) }
     var leap by remember { mutableStateOf<Jump?>(null) }
     var tickBack by remember { mutableIntStateOf(0) }
@@ -1885,7 +1993,12 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
     mediaWork.smallWindow = smallWindow
     val scrimPresent = visible && mediaWork.imageFree && !smallWindow
     val controlsPresent = scrimPresent && !layerOpen
-    val titlePresent = (controlsPresent || openLayer == "folgen") && !smallWindow
+    // **The top bar (title, meta line, capsule, X) is one thing from the first frame to playback** (mirrors `topBarPresent`):
+    // everything in it is known before the stream answers, so it is up over the start veil and simply stays when the
+    // picture arrives. Only the centre and the footer wait for the picture (`controlsPresent`).
+    val topBarPresent = visible && !smallWindow && !layerOpen && (mediaWork.imageFree || mediaWork.cardsSwitch == null)
+    val titlePresent = (topBarPresent || openLayer == "folgen") && !smallWindow
+    val topBarCoverage by animateFloatAsState(if (topBarPresent) 1f else 0f, fadeCurve(topBarPresent, layerOpen), label = "kopfleiste")
     val scrimCoverage by animateFloatAsState(if (scrimPresent) 1f else 0f, fadeCurve(scrimPresent, false), label = "schleier")
     val controlsCoverage by animateFloatAsState(if (controlsPresent) 1f else 0f, fadeCurve(controlsPresent, layerOpen), label = "steuerung")
     val titleCoverage by animateFloatAsState(if (titlePresent) 1f else 0f, fadeCurve(titlePresent, layerOpen), label = "titel")
@@ -1907,11 +2020,17 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
     }
 
     val plan = mediaWork.plan
-    val hasEpisodes = plan?.episode == true && plan.seriesIdentifier != null
+    // **The top bar reads the stored copy until the plan lands** (same rule, `playSeed`), so title, meta and the Folgen icon are
+    // there from the first frame and nothing in the top band moves when the plan arrives.
+    val head = plan ?: mediaWork.seed
+    val hasEpisodes = head?.episode == true && head.seriesIdentifier != null
+    // **The capsule's slots are final from frame 1**: a film's Kapitel slot (the same glyph) is held while the chapter answer is on its way,
+    // since chapters are a property of the file and no page knows them; an episode has the Folgen slot anyway.
+    val hasFolgenSlot = hasEpisodes || mediaWork.chapterCount > 0 || (head != null && !mediaWork.chaptersKnown)
     // "Übergeben an …": the TVs in reach, not in a group and not in the small window.
     val handOver = if (!mediaWork.inGroup && !smallWindow) app.playTargets.value else emptyList()
-    val title = plan?.headerLine?.takeIf { it.isNotEmpty() } ?: plan?.title.orEmpty()
-    val meta = plan?.let {
+    val title = head?.headerLine?.takeIf { it.isNotEmpty() } ?: head?.title.orEmpty()
+    val meta = head?.let {
         if (it.episode && it.seasonNr != null && it.episodeNr != null) translated("S%lld · F%lld", it.seasonNr, it.episodeNr)
         else if (it.episode) it.subtitle.takeIf { u -> u.isNotEmpty() }
         else it.secondaryLine?.takeIf { n -> n.isNotEmpty() }
@@ -2001,20 +2120,21 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
             if (mediaWork.imageFree && !smallWindow) Box(Modifier.align(Alignment.Center).size(108.dp, 132.dp).onTap { mediaWork.toggle() })
         }
 
-        // **Start veil**: black until VLC has the first frame; closing works earlier, at the position of the
-        // controls' X (mirrors `startScrim`). Fades with 0.3 s easeOut, like `firstImagePresent` on iOS.
+        // **Start veil**: black until VLC has the first frame. Closing works earlier through the real top bar, which is
+        // up over this veil (`topBarPresent`); the veil carries no buttons of its own (mirrors `startScrim`). Fades with 0.3 s easeOut, like `firstImagePresent` on iOS.
         // If the card zooms into the picture it covers the change, so no loading screen on top.
         AnimatedVisibility(!mediaWork.imageFree && mediaWork.cardsSwitch == null, enter = EnterTransition.None, exit = fadeOut(tween(300, easing = EaseOut))) {
             Box(Modifier.fillMaxSize().background(Color.Black)) {
                 val h = mediaWork.hint
-                if (h == null) Loader(Modifier.align(Alignment.Center))
+                // **The start failed**: "Das startet nicht" with a way out (`startScrim` on iOS); the top bar's X stays up too.
+                if (mediaWork.startVeil == PlayerStartVeil.FAILED) {
+                    val failure = remember { playerStartFailure() }
+                    EmptyState(Glyph.Warning, translated(failure.header), translated(failure.text),
+                        primaryButton = translated(failure.primary) to { mediaWork.startAgain() },
+                        quietButton = translated(failure.quiet) to { mediaWork.finish(close) })
+                } else if (h == null) Loader(Modifier.align(Alignment.Center))
                 else Text(h, style = Theme.body.copy(textAlign = TextAlign.Center), color = Theme.fontQuiet,
                           modifier = Modifier.align(Alignment.Center).padding(horizontal = 48.dp))
-                Row(Modifier.fillMaxWidth().padding(start = margin.page, end = margin.page, top = margin.top)
-                        .padding(horizontal = PlayerMetric.page).padding(top = PlayerMetric.top),
-                    horizontalArrangement = Arrangement.End) {
-                    IconButton(Glyph.Cross, translated("Player schließen")) { mediaWork.finish(close) }
-                }
             }
         }
 
@@ -2022,7 +2142,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
         // so quiet and without a button. It disappears by itself when the stream runs again.
         AnimatedVisibility(mediaWork.restoring && mediaWork.imageFree && !smallWindow, Modifier.align(Alignment.Center),
                            enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
-            Column(Modifier.clip(RoundedCornerShape(Theme.corner)).background(Color.Black.copy(alpha = 0.7f))
+            Column(Modifier.clip(smoothRoundedShape(Theme.corner)).background(Color.Black.copy(alpha = 0.7f))
                     .padding(horizontal = 22.dp, vertical = 18.dp).clearAndSetSemantics {},
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Loader(size = 26.dp, strength = 2.5.dp)
@@ -2076,23 +2196,26 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
         // rest was still fading. Hidden, they accept no tap.
         val active = controlsPresent
         val iconsPresent = active && !mediaWork.atPush
+        val topIcons = topBarPresent && !mediaWork.atPush
         // **Hidden, the bar does not follow the time.** The tick moves `position` every 250 ms; the bar read
         // it even at opacity 0 and the window drew four frames a second over the film. On phones that is
         // what kept the display at its top rate. It reads again as soon as the controls start to appear.
         val barAwake by remember { derivedStateOf { controlsCoverage > 0f || mediaWork.atPush } }
         val barTime = remember { DoubleArray(1) }
         val barPosition: () -> Double = if (barAwake) ({ mediaWork.position.also { barTime[0] = it } }) else ({ barTime[0] })
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = controlsCoverage.coerceIn(0f, 1f) }) {
+        // Opacity sits on the single parts: header on `topBarCoverage`, centre, hint and footer on `controlsCoverage`.
+        Box(Modifier.fillMaxSize()) {
             // **Center of the screen, not of the safe area**: in landscape there is more room below than above.
             // While seeking only the bar counts; the center gives way.
             CenterControls(mediaWork.running, mediaWork.backS, mediaWork.preS, tickBack, tickPre, narrow, iconsPresent,
-                Modifier.align(Alignment.Center).graphicsLayer { alpha = if (mediaWork.atPush) 0f else 1f },
+                Modifier.align(Alignment.Center).graphicsLayer { alpha = if (mediaWork.atPush) 0f else controlsCoverage.coerceIn(0f, 1f) },
                 back = { scrub(-1) }, toggle = { mediaWork.toggle() }, forward = { scrub(1) })
 
             Column(Modifier.fillMaxSize().padding(start = margin.page, end = margin.page, top = margin.top, bottom = footBottom)) {
                 // **Header:** title placeholder (`stateTitle` is shown above it), quietly the meta line below;
                 // only icons on the right, which give way while seeking. The title stays.
-                Row(Modifier.fillMaxWidth().padding(horizontal = PlayerMetric.page).padding(top = PlayerMetric.top),
+                Row(Modifier.fillMaxWidth().padding(horizontal = PlayerMetric.page).padding(top = PlayerMetric.top)
+                        .graphicsLayer { alpha = topBarCoverage.coerceIn(0f, 1f) },
                     verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(title, style = titleStyle, maxLines = 1, modifier = Modifier.alpha(0f).clearAndSetSemantics {})
@@ -2112,17 +2235,19 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
                         }
                     }
                     Spacer(Modifier.width(12.dp))
-                    BarCapsule(hasEpisodes || mediaWork.chapterCount > 0, openLayer == "folgen", handOver.isNotEmpty(), menuSession, iconsPresent,
+                    BarCapsule(hasFolgenSlot, openLayer == "folgen", handOver.isNotEmpty(), menuSession, topIcons,
                                folgen = { menuSession.close(); unfoldLayer("folgen") }, close = { mediaWork.finish(close) },
                                modifier = Modifier.graphicsLayer { alpha = if (mediaWork.atPush) 0f else 1f })
                 }
                 mediaWork.hint?.let {
                     Text(it, style = Theme.small.copy(textAlign = TextAlign.Center), color = Theme.fontQuiet,
-                         modifier = Modifier.fillMaxWidth().padding(horizontal = PlayerMetric.page).padding(top = 10.dp))
+                         modifier = Modifier.fillMaxWidth().padding(horizontal = PlayerMetric.page).padding(top = 10.dp)
+                             .graphicsLayer { alpha = controlsCoverage.coerceIn(0f, 1f) })
                 }
                 Spacer(Modifier.weight(1f))
                 // **The bar across the full width**, time on the left, remaining time on the right (mirrors `footer`).
-                Box(Modifier.fillMaxWidth().height(PlayerMetric.bar).padding(horizontal = PlayerMetric.page)) {
+                Box(Modifier.fillMaxWidth().height(PlayerMetric.bar).padding(horizontal = PlayerMetric.page)
+                        .graphicsLayer { alpha = controlsCoverage.coerceIn(0f, 1f) }) {
                     TimeRow(app, barPosition, mediaWork.duration, mediaWork.atPush, active, mediaWork.plan?.marks.orEmpty(), mediaWork.chapterCount, { mediaWork.trickplayImage(it) },
                               { mediaWork.atPush = it; touched++ }) { mediaWork.vault(it) }
                 }
@@ -2199,10 +2324,18 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
             }
         }
 
+        // "Problem melden" only where Seerr offers it (the core's title menu rule: a connection and the right to report).
+        val reportOffered by produceState(false, app.seerrStored()) { value = seerrReportEntry(app) != null }
         // **The menus**: the core builds every level; the box hangs from the button that opened it.
         if (!smallWindow) PlayerMenuLayer(menuSession, { playerMenus(app, mediaWork, menuSession, handOver, seasonList, seasonShown) },
-            canReport = false, canLock = false,
-            press = { a -> playerMenuPress(app, mediaWork, menuSession, run, close, handOver, { seasonChosen = it }, { unfoldLayer("suche") }, a) })
+            canReport = reportOffered, canLock = true,
+            press = { a -> playerMenuPress(app, mediaWork, menuSession, run, close, handOver, { seasonChosen = it }, { unfoldLayer("suche") },
+                { visible = false; screenLocked = true }, a,
+                report = { mediaWork.plan?.itemId?.let { id -> run.launch { reportIssueOpen(app, id, mediaWork.position) } } }) })
+        // **Screen lock** (iOS `screenLocked`): above everything, fades 0.2 s.
+        AnimatedVisibility(screenLocked, Modifier.zIndex(30f), enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
+            PlayerLockOverlay(unlock = { screenLocked = false })
+        }
         LaunchedEffect(menuSession.isOpen, menuSession.kind) {
             if (menuSession.isOpen && menuSession.kind != null) { menuSession.audioSelected = mediaWork.player.audioTrack; menuSession.subtitleSelected = mediaWork.player.spuTrack }
         }
@@ -2217,7 +2350,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
             Text(title, style = titleStyle, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis,
                  modifier = Modifier.weight(1f))
             // Room for the icon row so the title gets the same width as in the header.
-            Spacer(Modifier.width(12.dp + iconRailsWidth(hasEpisodes || mediaWork.chapterCount > 0, handOver.isNotEmpty())))
+            Spacer(Modifier.width(12.dp + iconRailsWidth(hasFolgenSlot, handOver.isNotEmpty())))
         }
     }
 }
@@ -2313,15 +2446,6 @@ private fun Modifier.hop(tick: Int): Modifier = composed {
         scale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 700f))
     }
     graphicsLayer { scaleX = scale.value; scaleY = scale.value }
-}
-
-/** One of the icon buttons at the top right, in the player and on the layers (`IconButton`): 44 hit area, white. */
-@Composable
-private fun IconButton(symbol: Glyph, description: String, active: Boolean = true, perform: () -> Unit) {
-    Box(Modifier.size(PlayerMetric.button).iconPress(active, description, perform), contentAlignment = Alignment.Center) {
-        // `mass.symbol`: 19 medium, white.
-        Symbol(symbol, 19.dp, color = Color.White, strength = Strength.Medium)
-    }
 }
 
 private fun iconRailsWidth(hasEpisodes: Boolean, handOver: Boolean = false): Dp =
@@ -2539,8 +2663,8 @@ private fun TimeRow(app: SwiftlyApplication, position: () -> Double, duration: D
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     image?.let {
                         Image(it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(160.dp, 90.dp).clip(RoundedCornerShape(Theme.corner))
-                                .border(1.dp, Theme.margin, RoundedCornerShape(Theme.corner)))
+                            modifier = Modifier.size(160.dp, 90.dp).clip(smoothRoundedShape(Theme.corner))
+                                .border(1.dp, Theme.margin, smoothRoundedShape(Theme.corner)))
                     }
                     // Semibold, not bold; on its own capsule since no veil lies here. **With a chapter its name stands
                     // before the time**, in the same capsule: one line, at most as wide as the preview image; a long
@@ -2588,7 +2712,7 @@ private fun LayersHeader(close: () -> Unit, left: @Composable () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(horizontal = PlayerMetric.page).padding(top = PlayerMetric.top), verticalAlignment = Alignment.Top) {
         Box(Modifier.weight(1f)) { left() }
         Spacer(Modifier.width(12.dp))
-        IconButton(Glyph.Cross, translated("Schließen"), perform = close)
+        PlayerCloseButton(true, close = close)
     }
 }
 
@@ -2738,7 +2862,7 @@ private fun EpisodeStripTile(f: Episode, ongoing: Boolean, lengthy: (() -> Unit)
             .semantics { selected = ongoing }) {
         Column(Modifier.requiredSize(width, tileHeight).graphicsLayer { scaleX = grow; scaleY = grow; transformOrigin = TransformOrigin(0f, 0f) },
                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.size(width, height).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
+            Box(Modifier.size(width, height).clip(smoothRoundedShape(Theme.cornerTile)).background(Theme.area)) {
                 AsyncImage(model = f.image, contentDescription = null, contentScale = ContentScale.Crop,
                            colorFilter = if (f.watched) WATCHED_DIM else null, modifier = Modifier.fillMaxSize())
                 if (!f.watched) f.progress?.takeIf { it > 0 }?.let { ProgressBar(it, Modifier.align(Alignment.BottomStart)) }
@@ -2766,7 +2890,7 @@ const val SKIP_BUTTON_SECONDS = 6.0
 fun OfferingPill(art: String, text: String, share: Double?, seconds: Int?, mediaWork: PlayItem,
                  length: Double = mediaWork.countdownLength, action: () -> Unit) {
     val fillContent = continuousFill(share, mediaWork.running, length)
-    Row(Modifier.height(40.dp).clip(RoundedCornerShape(Theme.cornerField))
+    Row(Modifier.height(40.dp).clip(smoothRoundedShape(Theme.cornerField))
             .background(Color.White)
             .drawBehind { if (share != null) drawRect(Theme.reason.copy(alpha = 0.16f), size = size.copy(width = size.width * fillContent)) }
             .iconPress(true, text, action)
@@ -2890,7 +3014,7 @@ fun TechBadge(fixed: List<TechRow>, live: JSONObject?, position: () -> Double, d
             rest { measureRow("${translated("Beschädigt")} $broken · ${translated("Sprünge")} $jumps", broken > 0 || jumps > 0) }
         }
     }
-    val form = RoundedCornerShape(if (far) Theme.cornerSmall else Theme.corner)
+    val form = smoothRoundedShape(if (far) Theme.cornerSmall else Theme.corner)
     Box(modifier.clip(form).background(Theme.reason.copy(alpha = 0.78f))
             .padding(horizontal = if (far) 20.dp else 12.dp, vertical = if (far) 16.dp else 10.dp)
             .width(if (far) 420.dp else 260.dp)
@@ -2957,7 +3081,7 @@ private fun SubtitleSearchPanel(vm: SubtitleSearchVm, margin: Rand, back: () -> 
                     SubtitleSearchPhase.IDLE, SubtitleSearchPhase.LOADING ->
                         Text("…", style = Theme.body, color = Theme.fontQuiet, modifier = Modifier.padding(horizontal = 10.dp, vertical = 16.dp))
                     SubtitleSearchPhase.RESULTS, SubtitleSearchPhase.DOWNLOADING -> part.rows.forEach { r ->
-                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(Theme.cornerField))
+                        Column(Modifier.fillMaxWidth().clip(smoothRoundedShape(Theme.cornerField))
                                 .pressRow { if (part.phase != SubtitleSearchPhase.DOWNLOADING) vm.send(SubtitleSearchIntent.Download(r.id)) }
                                 .padding(horizontal = 10.dp, vertical = 8.dp)) {
                             Text(r.title, style = Theme.body, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis)

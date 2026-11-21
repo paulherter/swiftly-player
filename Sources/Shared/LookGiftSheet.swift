@@ -1,5 +1,8 @@
 import JellyfinKit
-import func SwiftlyCore.whatsNewDecide
+import class SwiftlyCore.GiftFlowModel
+import struct SwiftlyCore.GiftEvalInput
+import func SwiftlyCore.giftClaimMs
+import func SwiftlyCore.lookSeasonActive
 import SwiftUI
 #if os(iOS)
 import UIKit
@@ -38,20 +41,30 @@ final class GiftFlow {
         case choosing(fromGift: Bool)
     }
 
-    /// The sheet is open on this step; `nil`: closed.
-    var stage: Stage?
+    /// The sheet is open on this step; `nil`: closed. A copy of the core's flow for the views
+    /// (`sync`); every change goes through the core, which holds the rules and the steps.
+    private(set) var stage: Stage?
     /// The looks panel is up, over the real home page: nothing on the page reacts to a tap.
     var looksOpen: Bool {
         if case .choosing = stage { return true }
         return false
     }
-    /// One big ask showed this session.
+    /// One big ask showed this session (a copy of the core's flow).
     private(set) var bigAskShown = false
     /// Since when the loaded home page is on screen; `nil` while it is not.
     private(set) var homeSince: Date?
+    /// How many pages lie above Start (the profile, the settings, a detail page); `MainView` reports it.
+    /// The gift sheet and "What's new" come only while this is zero: the page the person opened stays theirs.
+    private(set) var pagesAboveStart = 0
     /// Counts "go to the home page, and close whatever lies above it"; `MainView` steps
     /// there on every change. The profile slides away to the right as it does on "back".
     private(set) var homeRequests = 0
+
+    /// The rules of the offer and the steps of the sheet, shared with every app
+    /// (`swiftly-support`, `gift_flow.rs`): when What's New or the gift comes, once per
+    /// season, the pick-up and the looks panel. This class keeps the clock, the sleeping,
+    /// the stored "version seen" and the drawing.
+    private let core = GiftFlowModel()
 
     private init() {}
 
@@ -60,10 +73,38 @@ final class GiftFlow {
         set { if !newValue { close() } }
     }
 
+    /// Takes over what the core's flow says now.
+    private func sync(page: WhatsNewPage? = nil) {
+        bigAskShown = core.bigAskShown()
+        guard let info = core.stage() else {
+            if stage != nil { stage = nil }
+            return
+        }
+        let next: Stage
+        switch info {
+        case .whatsNew:
+            var shown = page
+            if shown == nil, case let .whatsNew(current) = stage { shown = current }
+            guard let shown else {
+                _ = core.dismiss()
+                stage = nil
+                return
+            }
+            next = .whatsNew(shown)
+        case let .offer(lookId): next = .offer(Look.with(id: lookId))
+        case let .claiming(lookId): next = .claiming(Look.with(id: lookId))
+        case let .choosing(fromGift): next = .choosing(fromGift: fromGift)
+        }
+        if stage != next { stage = next }
+    }
+
     // MARK: Asks
 
     /// Another big ask showed (support sheet, rating, Discord hint): the gift waits.
-    func noteBigAsk() { bigAskShown = true }
+    func noteBigAsk() {
+        core.noteBigAsk()
+        sync()
+    }
 
     /// The home page has its rows, or went away.
     func homeVisible(_ visible: Bool) {
@@ -74,68 +115,74 @@ final class GiftFlow {
         }
     }
 
+    /// The depth of the Start stack changed (`MainView`). Back on a bare Start, the presenters ask again (`blocked` changes).
+    func startDepth(_ depth: Int) {
+        if pagesAboveStart != depth { pagesAboveStart = depth }
+    }
+
     /// **Called a moment after the home page came up.** Shows What's New after an update,
     /// else the gift once in its window. Nothing during playback, nothing on top of another
-    /// sheet, nothing when the session already asked.
+    /// sheet, nothing when the session already asked. The core decides; this passes in the
+    /// clock, what the app is doing, and the version file.
     func evaluate(model: AppModel) {
-        guard stage == nil, !bigAskShown, let homeSince, model.phase == .ready,
-              !model.playerOpen, !model.ratingDue, !model.discordHintDue,
-              !SupportModel.shared.presented else { return }
-        let store = LookStore.shared
-
-        // What's New first: it carries the gift itself when there is one.
+        guard let homeSince else { return }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
         let defaults = UserDefaults.standard
-        switch whatsNewDecide(lastSeen: defaults.string(forKey: WhatsNew.lastSeenKey),
-                              usedBefore: SupportModel.shared.usedBeforeThisLaunch,
-                              current: version, entryJson: WhatsNewPage.bundledJson(for: version)) {
-        case .show:
-            defaults.set(version, forKey: WhatsNew.lastSeenKey)
-            if let entry = WhatsNewPage.bundled(for: version) {
-                if let gift = entry.giftLook, giftDue(gift, store: store) { markOffered(gift) }
-                show(.whatsNew(entry))
-                return
-            }
-        case .markSeen:
-            defaults.set(version, forKey: WhatsNew.lastSeenKey)
-        case .nothing:
-            break
+        let now = LookClock.now
+        let result = core.evaluate(
+            looks: LookStore.shared.core,
+            input: GiftEvalInput(
+                now: now.timeIntervalSince1970, utcOffset: LookStore.offset(at: now),
+                homeReady: model.phase == .ready,
+                blocked: model.playerOpen || model.ratingDue || model.discordHintDue
+                    || SupportModel.shared.presented || pagesAboveStart > 0,
+                secondsOnHome: Date.now.timeIntervalSince(homeSince),
+                lastSeen: defaults.string(forKey: WhatsNew.lastSeenKey),
+                usedBefore: SupportModel.shared.usedBeforeThisLaunch,
+                current: version, entryJson: WhatsNewPage.bundledJson(for: version)))
+        #if DEBUG
+        AppLog.writeOut("[Geschenk] Prüfung: \(result.outcome), Startseite \(model.phase == .ready), gesperrt Player \(model.playerOpen) Bewertung \(model.ratingDue) Discord \(model.discordHintDue) Unterstützen \(SupportModel.shared.presented) Seiten über Start \(pagesAboveStart), schon gefragt \(core.bigAskShown())")
+        #endif
+        if result.markSeen { defaults.set(version, forKey: WhatsNew.lastSeenKey) }
+        if case .whatsNew = result.outcome {
+            sync(page: WhatsNewPage.bundled(for: version))
+        } else {
+            sync()
         }
-
-        let context = LookGift.Context(
-            now: LookClock.now, homeReady: true, playing: model.playerOpen, askedThisSession: bigAskShown,
-            secondsOnHome: Date.now.timeIntervalSince(homeSince), owned: store.owned, offered: offered)
-        guard let gift = LookGift.due(context) else { return }
-        markOffered(gift)
-        show(.offer(gift))
     }
 
     /// Whether a sheet with this gift may still offer it (in the window, not owned).
     func giftDue(_ look: Look, store: LookStore = .shared) -> Bool {
-        !store.owned.contains(look.id) && (look.availability?.isActive(at: LookClock.now) ?? false)
+        let now = LookClock.now
+        return !store.owned.contains(look.id)
+            && lookSeasonActive(lookId: look.id, now: now.timeIntervalSince1970,
+                                utcOffset: LookStore.offset(at: now))
     }
 
-    private var offered: Set<String> {
-        Set(UserDefaults.standard.stringArray(forKey: LookStorageKey.giftOffered) ?? [])
-    }
-
-    private func markOffered(_ look: Look) {
-        guard let id = LookGift.offerID(look, at: LookClock.now) else { return }
-        var all = offered
-        all.insert(id)
-        UserDefaults.standard.set(all.sorted(), forKey: LookStorageKey.giftOffered)
-    }
-
-    private func show(_ stage: Stage) {
-        bigAskShown = true
-        self.stage = stage
+    /// Shows a step (a tap that opens the sheet, a debug entry); it counts as the session's ask.
+    func show(_ stage: Stage) {
+        switch stage {
+        case let .whatsNew(entry):
+            core.show(stage: .whatsNew(giftLookId: entry.giftLook?.id))
+            sync(page: entry)
+        case let .offer(look):
+            core.show(stage: .offer(lookId: look.id))
+            sync()
+        case let .claiming(look):
+            core.show(stage: .claiming(lookId: look.id))
+            sync()
+        case let .choosing(fromGift):
+            core.show(stage: .choosing(fromGift: fromGift))
+            sync()
+        }
     }
 
     // MARK: Actions
 
     /// The looks sheet over the page that is showing (from What's New, from the home page).
     func openLooks() {
-        stage = .choosing(fromGift: false)
+        core.openLooks()
+        sync()
     }
 
     /// **The looks sheet from a page deeper in the app** (profile, settings): that page
@@ -165,28 +212,34 @@ final class GiftFlow {
     /// "Grab it": picked up for good the moment it is pressed; the app turns to the look
     /// while the icon springs to the middle, then the looks sheet comes.
     func grab(_ look: Look) {
-        // A second tap while the icon is on its way must not claim again.
-        if case .claiming = stage { return }
+        let reduced = Theme.motionReduced
+        // A second tap while the icon is on its way must not claim again (the core says so).
+        guard let id = core.grab(lookId: look.id, reduceMotion: reduced) else { return }
         #if os(iOS)
         Theme.jerk(.lightweight)
         #endif
-        let reduced = Theme.motionReduced
         withAnimation(Motion.change) {
-            _ = LookStore.shared.claim(look)
-            stage = reduced ? .choosing(fromGift: true) : .claiming(look)
+            _ = LookStore.shared.claim(Look.with(id: id))
+            sync()
         }
         // The icon follows when the looks sheet closes: the system's notice about a new
         // icon would land in the middle of the animation.
         guard !reduced else { return }
         Task {
-            try? await Task.sleep(for: .milliseconds(900))
+            try? await Task.sleep(for: .milliseconds(giftClaimMs()))
             guard stage == .claiming(look) else { return }
-            withAnimation(Motion.land) {
-                stage = .choosing(fromGift: true)
-            }
+            land()
             #if os(iOS)
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             #endif
+        }
+    }
+
+    /// The pick-up animation ended, or a tap on it: the looks sheet.
+    func land() {
+        withAnimation(Motion.land) {
+            core.land()
+            sync()
         }
     }
 
@@ -202,17 +255,14 @@ final class GiftFlow {
     func close() {
         // Pulled down or X on the looks sheet: the icon follows what is worn, as on "Use".
         // A look only previewed (not allowed) goes back first.
-        switch stage {
-        case .choosing, .claiming:
+        if core.dismiss() {
             if LookStore.shared.isPreviewing {
                 Motion.recolor { LookStore.shared.endPreview() }
             }
             let icon = LookStore.shared.palette.iconName
             Task { await LookIcon.apply(icon) }
-        default:
-            break
         }
-        stage = nil
+        sync()
     }
 
     #if DEBUG
@@ -221,12 +271,36 @@ final class GiftFlow {
     /// that step a moment after launch. With `-lookDate` (see `LookClock`) for the season.
     static func debugLaunch() {
         let arguments = ProcessInfo.processInfo.arguments
+        AppLog.writeOut("[Geschenk] Startschalter: \(arguments.filter { $0.hasPrefix("-look") })")
         if arguments.contains("-lookReset") {
             LookStore.shared.reset()
             shared.reset()
         }
         guard let index = arguments.firstIndex(of: "-lookDemo"), index + 1 < arguments.count else { return }
         let step = arguments[index + 1]
+        // `grab`: nothing is opened; when the offer came by itself (with `-lookDate`, `-lookReset`), the same calls
+        // as "Hol ihn dir" and then "Verwenden" a moment later each, for a proof run that takes no input.
+        if step == "grab" {
+            Task {
+                for _ in 0..<120 {
+                    if case let .offer(look) = shared.stage {
+                        try? await Task.sleep(for: .seconds(3))
+                        shared.grab(look)
+                        break
+                    }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+                for _ in 0..<40 {
+                    if case .choosing = shared.stage {
+                        try? await Task.sleep(for: .seconds(3))
+                        shared.use(LookStore.shared.saved)
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+            }
+            return
+        }
         Task {
             try? await Task.sleep(for: .seconds(4))
             switch step {
@@ -244,8 +318,8 @@ final class GiftFlow {
 
     /// Back to before the gift (Settings → Swiftly → Preview → Reset).
     func reset() {
-        stage = nil
-        bigAskShown = false
+        core.reset()
+        sync()
         UserDefaults.standard.removeObject(forKey: LookStorageKey.giftOffered)
         UserDefaults.standard.removeObject(forKey: WhatsNew.lastSeenKey)
     }
@@ -270,7 +344,7 @@ private struct GiftPresentation: ViewModifier {
 
     /// Something on screen that the gift must not land on.
     private var blocked: Bool {
-        model.playerOpen || SupportModel.shared.presented
+        model.playerOpen || SupportModel.shared.presented || flow.pagesAboveStart > 0
     }
 
     func body(content: Content) -> some View {
@@ -281,6 +355,9 @@ private struct GiftPresentation: ViewModifier {
             .overlay(alignment: .bottom) {
                 if flow.showsPreviewBar {
                     LookPreviewBar()
+                        // sheet-anim-ok: the bar is no part of the card. It shows only while the card is
+                        // down (the sheet binding below is `presented && !showsPreviewBar`), so nothing
+                        // of the card's content is cut off from its slide-up.
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
@@ -572,9 +649,7 @@ private struct GiftClaiming: View {
         .contentShape(Rectangle())
         // A tap during the animation goes straight to the end.
         .onTapGesture {
-            withAnimation(Motion.land) {
-                GiftFlow.shared.stage = .choosing(fromGift: true)
-            }
+            GiftFlow.shared.land()
         }
         .onAppear {
             batStart = .now

@@ -9329,6 +9329,29 @@
         }
       }
     },
+    "Löschen (Titel vom Server)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Löschen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить"
+          }
+        }
+      }
+    },
     "MISSTRAUT": {
       "extractionState": "manual",
       "localizations": {
@@ -10918,29 +10941,6 @@
         }
       }
     },
-    "VLC, Dolby Vision mit ExoPlayer": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "VLC, Dolby Vision mit ExoPlayer"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "VLC, Dolby Vision with ExoPlayer"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "VLC, Dolby Vision через ExoPlayer"
-          }
-        }
-      }
-    },
     "Immer ExoPlayer": {
       "extractionState": "manual",
       "localizations": {
@@ -10960,29 +10960,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Всегда ExoPlayer"
-          }
-        }
-      }
-    },
-    "Immer VLC": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Immer VLC"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Always VLC"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Всегда VLC"
           }
         }
       }
@@ -12565,29 +12542,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Swiftly"
-          }
-        }
-      }
-    },
-    "Swiftly 1.0 · VLCKit 4.0.0-a23": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swiftly 1.0 · VLCKit 4.0.0-a23"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swiftly 1.0 · VLCKit 4.0.0-a23"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swiftly 1.0 · VLCKit 4.0.0-a23"
           }
         }
       }
@@ -18477,29 +18431,6 @@
         }
       }
     },
-    "Swiftly Player nutzt libVLC von VideoLAN unter der LGPL 2.1 oder später": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swiftly Player nutzt libVLC von VideoLAN unter der LGPL 2.1 oder später"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swiftly Player uses libVLC by VideoLAN under the LGPL 2.1 or later"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swiftly Player использует libVLC от VideoLAN по лицензии LGPL 2.1 или новее"
-          }
-        }
-      }
-    },
     "Open-Source-Lizenzen": {
       "extractionState": "manual",
       "localizations": {
@@ -18523,48 +18454,25 @@
         }
       }
     },
-    "Was in Swiftly steckt, und der Quelltext von VLCKit": {
+    "Swiftly Player spielt mit AetherEngine und FFmpeg (Apple), Media3 (Android) und libmpv (Windows, Linux). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Was in Swiftly steckt, und der Quelltext von VLCKit"
+            "value": "Swiftly Player spielt mit AetherEngine und FFmpeg (Apple), Media3 (Android) und libmpv (Windows, Linux). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "What's inside Swiftly, and the source code of VLCKit"
+            "value": "Swiftly Player plays with AetherEngine and FFmpeg (Apple), Media3 (Android) and libmpv (Windows, Linux). Everything else that's inside is listed below, with license and author."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Из чего состоит Swiftly и исходный код VLCKit"
-          }
-        }
-      }
-    },
-    "Swiftly Player nutzt VLCKit und libVLC von VideoLAN (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swiftly Player nutzt VLCKit und libVLC von VideoLAN (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swiftly Player uses VLCKit and libVLC by VideoLAN (LGPL 2.1 or later). Everything else that's inside is listed below, with license and author."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swiftly Player использует VLCKit и libVLC от VideoLAN (LGPL 2.1 или новее). Всё остальное, что входит в приложение, перечислено ниже с лицензией и автором."
+            "value": "Swiftly Player воспроизводит видео с помощью AetherEngine и FFmpeg (Apple), Media3 (Android) и libmpv (Windows, Linux). Всё остальное, что входит в приложение, перечислено ниже с лицензией и автором."
           }
         }
       }
@@ -18592,29 +18500,6 @@
         }
       }
     },
-    "VLCKit und libVLC": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "VLCKit und libVLC"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "VLCKit and libVLC"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "VLCKit и libVLC"
-          }
-        }
-      }
-    },
     "Quelltext und schriftliches Angebot": {
       "extractionState": "manual",
       "localizations": {
@@ -18638,25 +18523,48 @@
         }
       }
     },
-    "Woher VLCKit kommt und wie du es ersetzt": {
+    "Frühere Versionen enthielten VLCKit und libVLC (LGPL 2.1 oder später). Das schriftliche Angebot für ihren Quelltext gilt weiter, siehe „Quelltext und schriftliches Angebot“.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Woher VLCKit kommt und wie du es ersetzt"
+            "value": "Frühere Versionen enthielten VLCKit und libVLC (LGPL 2.1 oder später). Das schriftliche Angebot für ihren Quelltext gilt weiter, siehe „Quelltext und schriftliches Angebot“."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Where VLCKit comes from and how to replace it"
+            "value": "Earlier versions contained VLCKit and libVLC (LGPL 2.1 or later). The written offer for their source code still applies; see “Source code and written offer”."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Откуда взят VLCKit и как его заменить"
+            "value": "Более ранние версии содержали VLCKit и libVLC (LGPL 2.1 или новее). Письменное предложение об исходном коде для них остаётся в силе, см. «Исходный код и письменное предложение»."
+          }
+        }
+      }
+    },
+    "Woher die Player-Bausteine kommen und wie du sie ersetzt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Woher die Player-Bausteine kommen und wie du sie ersetzt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where the player components come from and how to replace them"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откуда берутся компоненты плеера и как их заменить"
           }
         }
       }
@@ -18680,29 +18588,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Другие компоненты"
-          }
-        }
-      }
-    },
-    "In VLCKit eingebaut": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In VLCKit eingebaut"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Built into VLCKit"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Встроено в VLCKit"
           }
         }
       }
@@ -24733,25 +24618,25 @@
         }
       }
     },
-    "Und der Quelltext von VLCKit": {
+    "Und der Quelltext der Player-Bausteine": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Und der Quelltext von VLCKit"
+            "value": "Und der Quelltext der Player-Bausteine"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "And the source code of VLCKit"
+            "value": "And the source code of the player components"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "И исходный код VLCKit"
+            "value": "И исходный код компонентов плеера"
           }
         }
       }
@@ -29881,6 +29766,765 @@
           "stringUnit": {
             "state": "translated",
             "value": "Управлять нечем"
+          }
+        }
+      }
+    },
+    "Schlüssel für Windows, Linux und Android": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schlüssel für Windows, Linux und Android"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Key for Windows, Linux and Android"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ключ для Windows, Linux и Android"
+          }
+        }
+      }
+    },
+    "Damit schaltest du Swiftly dort frei.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Damit schaltest du Swiftly dort frei."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It unlocks Swiftly there."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Он открывает Swiftly там."
+          }
+        }
+      }
+    },
+    "Schlüssel wird geholt …": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schlüssel wird geholt …"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Getting your key …"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Получаем ключ …"
+          }
+        }
+      }
+    },
+    "Kopieren": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopieren"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Копировать"
+          }
+        }
+      }
+    },
+    "Noch mal": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch mal"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ещё раз"
+          }
+        }
+      }
+    },
+    "Einfügen: In Swiftly für Windows, Linux oder Android unter Swiftly unterstützen › Ich habe einen Unterstützer-Schlüssel.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einfügen: In Swiftly für Windows, Linux oder Android unter Swiftly unterstützen › Ich habe einen Unterstützer-Schlüssel."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste it in Swiftly for Windows, Linux or Android under Support Swiftly › I have a supporter key."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вставь его в Swiftly для Windows, Linux или Android: Поддержать Swiftly › У меня есть ключ поддержки."
+          }
+        }
+      }
+    },
+    "Gilt für immer.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gilt für immer."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Valid forever."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Действует навсегда."
+          }
+        }
+      }
+    },
+    "Gilt bis %@.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gilt bis %@."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Valid until %@."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Действует до %@."
+          }
+        }
+      }
+    },
+    "Keine Verbindung. Versuch es gleich noch mal.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Verbindung. Versuch es gleich noch mal."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No connection. Try again in a moment."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет соединения. Попробуй ещё раз чуть позже."
+          }
+        }
+      }
+    },
+    "Auf diesem Apple Account ist kein Plan aktiv.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf diesem Apple Account ist kein Plan aktiv."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No plan is active on this Apple Account."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В этом Apple Account нет активного плана."
+          }
+        }
+      }
+    },
+    "Im TestFlight-Test gibt es keinen Schlüssel.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im TestFlight-Test gibt es keinen Schlüssel."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There is no key in the TestFlight test."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В тесте TestFlight ключа нет."
+          }
+        }
+      }
+    },
+    "Dein Monatsabo ist abgelaufen. Mit der Verlängerung gibts wieder einen Schlüssel.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein Monatsabo ist abgelaufen. Mit der Verlängerung gibts wieder einen Schlüssel."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your monthly plan has run out. Renew it and you get a key again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Месячная подписка закончилась. После продления ключ снова будет."
+          }
+        }
+      }
+    },
+    "Dieser Kauf wurde erstattet. Dafür gibt es keinen Schlüssel.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Kauf wurde erstattet. Dafür gibt es keinen Schlüssel."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This purchase was refunded. There is no key for it."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эта покупка возвращена. Ключа для неё нет."
+          }
+        }
+      }
+    },
+    "Zu viele Versuche. Probier es in ein paar Minuten noch mal.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu viele Versuche. Probier es in ein paar Minuten noch mal."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Too many tries. Try again in a few minutes."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Слишком много попыток. Попробуй через пару минут."
+          }
+        }
+      }
+    },
+    "Das hat nicht geklappt. Versuch es später noch mal.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das hat nicht geklappt. Versuch es später noch mal."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That did not work. Try again later."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не получилось. Попробуй позже."
+          }
+        }
+      }
+    },
+    "Dateien gelöscht": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dateien gelöscht"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files deleted"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Файлы удалены"
+          }
+        }
+      }
+    },
+    "In Seerr entfernt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In Seerr entfernt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removed from Seerr"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалено из Seerr"
+          }
+        }
+      }
+    },
+    "Jellyfin liest neu ein": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jellyfin liest neu ein"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jellyfin is rescanning"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jellyfin перечитывает библиотеку"
+          }
+        }
+      }
+    },
+    "Prüfen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prüfen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверка"
+          }
+        }
+      }
+    },
+    "Radarr oder Sonarr hat die Dateien nicht gelöscht.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radarr oder Sonarr hat die Dateien nicht gelöscht."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radarr or Sonarr did not delete the files."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radarr или Sonarr не удалили файлы."
+          }
+        }
+      }
+    },
+    "Seerr hat den Titel nicht entfernt.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr hat den Titel nicht entfernt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr did not remove the title."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr не удалил запись."
+          }
+        }
+      }
+    },
+    "Jellyfin antwortet nicht.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jellyfin antwortet nicht."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jellyfin is not answering."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jellyfin не отвечает."
+          }
+        }
+      }
+    },
+    "Der Titel ist noch in der Bibliothek.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Titel ist noch in der Bibliothek."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The title is still in the library."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Название всё ещё в библиотеке."
+          }
+        }
+      }
+    },
+    "Angefragt von": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angefragt von"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requested by"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запросил"
+          }
+        }
+      }
+    },
+    "Angefragt am": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angefragt am"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requested on"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Дата запроса"
+          }
+        }
+      }
+    },
+    "Limit erreicht": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limit erreicht"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limit reached"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Лимит достигнут"
+          }
+        }
+      }
+    },
+    "Im Trend": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Trend"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trending"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В тренде"
+          }
+        }
+      }
+    },
+    "Beliebte Filme": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beliebte Filme"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Popular movies"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Популярные фильмы"
+          }
+        }
+      }
+    },
+    "Beliebte Serien": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beliebte Serien"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Popular series"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Популярные сериалы"
+          }
+        }
+      }
+    },
+    "Bald im Kino": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bald im Kino"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coming to cinemas"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скоро в кино"
+          }
+        }
+      }
+    },
+    "Bald im Stream": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bald im Stream"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coming to streaming"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скоро в стриминге"
+          }
+        }
+      }
+    },
+    "Zuletzt angefragt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zuletzt angefragt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recently requested"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Недавние запросы"
+          }
+        }
+      }
+    },
+    "Personen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "People"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Люди"
           }
         }
       }

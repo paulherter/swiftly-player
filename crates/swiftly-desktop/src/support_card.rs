@@ -6,7 +6,11 @@
 //! for 30 days (`SupportPromptHistory.snooze_card`).
 
 use std::sync::Arc;
+use swiftly_l10n::whats_new::{LAST_SEEN_KEY, WhatsNewDecision, WhatsNewEntry, bundled, decide};
 use swiftly_settings::{JsonFileStore, KeyValueStore, StoreError, Value};
+use swiftly_support::gift_flow::{GiftEval, GiftEvaluation, GiftFlow, WhatsNewDue, evaluate};
+use swiftly_support::look::Look;
+use swiftly_support::look_store::LookStore;
 use swiftly_support::support::{
     PromptContext, SupportPlatform, SupportPrompt, SupportStore, WatchTimeCounter, WatchTimeFeed,
 };
@@ -40,19 +44,85 @@ pub struct SupportCard {
     counter: WatchTimeCounter,
     /// The clock reading (seconds) the app started at.
     launched: Timestamp,
+    /// The settings file, which also holds the version whose "Was ist neu" sheet was seen.
+    settings: Arc<JsonFileStore>,
+    /// The app ran before this start (a first launch was on record): tells a fresh install from an update.
+    used_before: bool,
 }
 
 impl SupportCard {
     /// Opens the records and notes this start (the first one is remembered as the first launch).
     pub fn new(settings: Arc<JsonFileStore>, now: Timestamp) -> SupportCard {
-        let store = SupportStore::new(Shared(settings));
+        let store = SupportStore::new(Shared(Arc::clone(&settings)));
+        let used_before = store.usage().first_launch.is_some();
         let _ = store.record_launch(now);
         let counter = WatchTimeCounter::new(store.usage().watched_seconds);
         SupportCard {
             store,
             counter,
             launched: now,
+            settings,
+            used_before,
         }
+    }
+
+    /// **What comes up a moment after Start** (`GiftFlow.evaluate`): "Was ist neu" once per version after an update, which
+    /// carries the gift when the file has one, else the gift offer once in its season. The core decides
+    /// (`whats_new::decide`, `gift_flow::evaluate`); this stores what it says: the version as seen, the offer as made.
+    /// Returns the evaluation and the entry for `version`.
+    pub fn gift_evaluate(
+        &self,
+        version: &str,
+        now: Timestamp,
+        seconds_on_home: f64,
+        blocked: bool,
+        flow: &GiftFlow,
+    ) -> (GiftEvaluation, Option<WhatsNewEntry>) {
+        let last = match self.settings.get(LAST_SEEN_KEY) {
+            Some(Value::Str(v)) => Some(v),
+            _ => None,
+        };
+        let entry = bundled(version);
+        let due = match decide(last.as_deref(), self.used_before, version, entry.is_some()) {
+            WhatsNewDecision::Show => WhatsNewDue::Show,
+            WhatsNewDecision::MarkSeen => WhatsNewDue::MarkSeen,
+            WhatsNewDecision::Nothing => WhatsNewDue::Nothing,
+        };
+        let looks = LookStore::load(Shared(Arc::clone(&self.settings)));
+        let input = GiftEval {
+            now,
+            stage_open: flow.presented(),
+            big_ask_shown: flow.big_ask_shown(),
+            home_ready: true,
+            blocked,
+            seconds_on_home,
+            whats_new: due,
+            whats_new_gift: entry
+                .as_ref()
+                .and_then(|e| e.gift_look_id())
+                .map(Look::with_id)
+                .filter(|l| l.is_gift),
+            owned: looks.state().owned().clone(),
+            offered: looks.offered(),
+        };
+        let out = evaluate(&input, &Look::ALL, Calendar::UTC);
+        if out.mark_seen {
+            let _ = self
+                .settings
+                .set(LAST_SEEN_KEY, Value::Str(version.to_owned()));
+        }
+        if let Some(look) = &out.mark_offered {
+            let _ = looks.mark_offered(look, now, Calendar::UTC);
+        }
+        (out, entry)
+    }
+
+    /// "Hol ihn dir": the gift is picked up for good the moment it is pressed, and the app turns to the look
+    /// (`GiftFlow.grab`, `LookStore.claim`).
+    pub fn claim_gift(&self, look: &Look) {
+        let mut store = LookStore::load(Shared(Arc::clone(&self.settings)));
+        let _ = store.claim(look);
+        crate::look_glow::apply(&store);
     }
 
     /// The platform the rules know this build as. The desktop has no support sheet (there is no in-app purchase here,

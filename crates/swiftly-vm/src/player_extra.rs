@@ -33,6 +33,49 @@ impl Failure {
     };
 }
 
+/// Seconds without a picture before a start counts as failed: the ONE start timeout (the engine watchdog of the
+/// core's player state and the start veil of a host that keeps its own engine are the same number).
+pub const START_TIMEOUT_SECONDS: f64 = swiftly_playback::player_state::START_WATCHDOG_SECONDS;
+
+/// Where a start stands, for a host that runs its own engine and keeps no `PlayerVm`: one state instead of a
+/// "loading" flag and a "failed" flag that could both be set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartVeil {
+    /// Opening: the black veil with the loader, until a picture or a failure.
+    Opening,
+    /// The first picture is there; the veil is gone (a later error is not a failed start).
+    Shown,
+    /// No picture and the engine failed or the timeout ran out: "Das startet nicht" with retry and close.
+    Failed,
+}
+
+/// What moves a [`StartVeil`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartVeilEvent {
+    /// The first picture was shown.
+    Picture,
+    /// The engine reported an error.
+    EngineError,
+    /// [`START_TIMEOUT_SECONDS`] passed since the (re)start.
+    TimedOut,
+    /// "Erneut versuchen": a fresh start.
+    Retry,
+}
+
+impl StartVeil {
+    /// The one transition table.
+    #[must_use]
+    pub fn step(self, event: StartVeilEvent) -> Self {
+        match (self, event) {
+            // A picture that arrives late (after the timeout) means the stream works: the failure goes away.
+            (Self::Opening | Self::Failed, StartVeilEvent::Picture) => Self::Shown,
+            (Self::Opening, StartVeilEvent::EngineError | StartVeilEvent::TimedOut) => Self::Failed,
+            (Self::Failed, StartVeilEvent::Retry) => Self::Opening,
+            (state, _) => state,
+        }
+    }
+}
+
 /// Seconds a hint line stays over the picture before the player clock clears it (`PlayerScreen.notify`, macOS: 3 s);
 /// one rule for every hint of the core.
 pub const HINT_SECONDS: f64 = 3.0;
@@ -254,5 +297,38 @@ impl TrackMemoryStore for MemoryTrackStore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(key.to_owned(), all.clone());
+    }
+}
+
+#[cfg(test)]
+mod start_veil_tests {
+    use super::{START_TIMEOUT_SECONDS, StartVeil, StartVeilEvent as E};
+
+    #[test]
+    fn the_start_timeout_is_the_players() {
+        assert_eq!(START_TIMEOUT_SECONDS, 30.0);
+    }
+
+    #[test]
+    fn opening_ends_in_a_picture_or_a_failure() {
+        assert_eq!(StartVeil::Opening.step(E::Picture), StartVeil::Shown);
+        assert_eq!(StartVeil::Opening.step(E::EngineError), StartVeil::Failed);
+        assert_eq!(StartVeil::Opening.step(E::TimedOut), StartVeil::Failed);
+    }
+
+    #[test]
+    fn a_shown_picture_is_never_a_failed_start() {
+        for e in [E::EngineError, E::TimedOut, E::Retry, E::Picture] {
+            assert_eq!(StartVeil::Shown.step(e), StartVeil::Shown);
+        }
+    }
+
+    #[test]
+    fn a_failure_ends_with_a_retry_or_a_late_picture() {
+        assert_eq!(StartVeil::Failed.step(E::Retry), StartVeil::Opening);
+        assert_eq!(StartVeil::Failed.step(E::Picture), StartVeil::Shown);
+        for e in [E::EngineError, E::TimedOut] {
+            assert_eq!(StartVeil::Failed.step(e), StartVeil::Failed);
+        }
     }
 }

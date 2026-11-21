@@ -86,7 +86,7 @@ struct PlaylistView: View {
             Spacer(minLength: 8)
             if !wide, !shown.isEmpty { CountMark(count: shown.count) }
         }
-        .frame(minHeight: 30)
+        .frame(minHeight: Theme.pillMinHeight)
     }
 
     /// From the first entry on; the rest follows through the player's

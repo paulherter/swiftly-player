@@ -40,8 +40,11 @@ pub const MAX_REDIRECTS: usize = 10;
 /// Timeouts and switches of [`ReqwestTransport`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransportConfig {
-    /// Longest silence while connecting or reading (`timeoutIntervalForRequest`, 15 s).
+    /// Longest silence while reading (`timeoutIntervalForRequest`, 15 s).
     pub request_timeout: Duration,
+    /// Longest wait for the connection itself. A server whose packets are dropped never refuses; 5 s is far above a
+    /// LAN or internet connect, and the page says so after 5 s instead of after 15 s.
+    pub connect_timeout: Duration,
     /// Longest time for the whole call (`timeoutIntervalForResource`, 20 s).
     pub resource_timeout: Duration,
     /// Keep cookies between requests.
@@ -57,6 +60,9 @@ pub struct TransportConfig {
 /// Default idle time of a pooled connection ([`TransportConfig::pool_idle_timeout`]).
 pub const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// Default connect timeout ([`TransportConfig::connect_timeout`]).
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Default cap for one answer body: library pages and images are far below this; a malicious server is not.
 pub const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 
@@ -65,6 +71,7 @@ impl Default for TransportConfig {
     fn default() -> Self {
         Self {
             request_timeout: Duration::from_secs(15),
+            connect_timeout: CONNECT_TIMEOUT,
             resource_timeout: Duration::from_secs(20),
             cookies: true,
             max_response_bytes: MAX_RESPONSE_BYTES,
@@ -129,7 +136,7 @@ impl ReqwestTransport {
                 .cookie_store(config.cookies)
                 .pool_idle_timeout(config.pool_idle_timeout)
                 .tcp_nodelay(true)
-                .connect_timeout(config.request_timeout)
+                .connect_timeout(config.connect_timeout.min(config.request_timeout))
                 .read_timeout(config.request_timeout)
                 .timeout(config.resource_timeout);
             for bytes in &tls.extra_roots {

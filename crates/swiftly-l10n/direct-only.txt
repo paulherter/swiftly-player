@@ -1,0 +1,38 @@
+# Texts of the direct distribution only (the supporter key and the website link; the Apple key hand-out that points to
+# them). Read by `gen_catalog` and the tests, never compiled into a binary. Every entry listed under [keys] is emitted into
+# `src/catalog_data.rs` behind `#[cfg(feature = "supporter-key")]`, so a core built without that feature (the Play core)
+# does not contain the text at all. Google Play refuses an app that points to payment outside Play Billing and
+# `Werkzeuge/store-guard-android.py` looks for these words in the built package.
+#
+# [words]: a catalogue text (key or any language) that contains one of these, case-insensitive, MUST be listed under
+# [keys]; `gen_catalog` fails otherwise, so a new support-key text cannot slip into the Play core unnoticed.
+# [keys]: the exact German key, one per line.
+[words]
+Unterstützer-Schlüssel
+supporter key
+supporterkey
+swiftlyplayer.com/supporter
+pay.paulherter
+[keys]
+Auf der Website unterstützen
+Auf diesem Apple Account ist kein Plan aktiv.
+Damit schaltest du Swiftly dort frei.
+Das hat nicht geklappt. Versuch es später noch mal.
+Dein Monatsabo ist abgelaufen. Mit der Verlängerung gibts wieder einen Schlüssel.
+Den Schlüssel bekommst du, nachdem du uns auf der Website unterstützt hast: auf der Danke-Seite und per E-Mail.
+Dieser Kauf wurde erstattet. Dafür gibt es keinen Schlüssel.
+Dieser Schlüssel passt nicht. Prüf ihn auf Tippfehler und versuch es noch einmal.
+Einfügen: In Swiftly für Windows, Linux oder Android unter Swiftly unterstützen › Ich habe einen Unterstützer-Schlüssel.
+Gilt bis %@.
+Gilt für immer.
+Ich habe einen Unterstützer-Schlüssel
+Im TestFlight-Test gibt es keinen Schlüssel.
+Keine Verbindung. Versuch es gleich noch mal.
+Kopieren
+Mit deinem Unterstützer-Schlüssel bekommst du ein Herz in „Über“ und zusätzliche App-Icons.
+Noch mal
+Schlüssel für Windows, Linux und Android
+Schlüssel verloren? Schreib uns an
+Schlüssel wird geholt …
+Unterstützer-Schlüssel
+Zu viele Versuche. Probier es in ein paar Minuten noch mal.

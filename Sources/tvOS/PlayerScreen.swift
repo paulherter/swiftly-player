@@ -159,6 +159,9 @@ struct PlayerScreen: View {
     @FocusState private var focus: FocusTarget?
     /// Where focus goes when the controls appear: the bar, unless "up" asked for the buttons.
     @State private var targetShow: FocusTarget = .bar
+    /// The bar button focus is returning to after a menu closed, until it holds. The capsule takes focus only once its fade-in
+    /// is done (~0.2 s), so the first assignments are dropped; meanwhile the paused tick must not put focus on the timeline.
+    @State private var focusReturning: FocusTarget?
 
     /// **Watching together.** Set at open if the title is the one the group is watching. The group itself is held by ``SharedModel``.
     ///
@@ -401,7 +404,7 @@ struct PlayerScreen: View {
                 .zIndex(6)
 
             // **The menus of the buttons**: over the title row, in the capsule's place (the season box hangs under the pill).
-            TVPlayerMenuLayer(session: menu, host: menuHost)
+            TVPlayerMenuLayer(session: menu, host: menuHost, closeAfterPick: closeMenu)
                 .zIndex(8)
             TVPlayerMenuLayer(session: seasonMenu, host: menuHost)
                 .zIndex(9)
@@ -475,10 +478,19 @@ struct PlayerScreen: View {
             let target = targetShow
             targetShow = .bar
             focus = target
+            let returning = target != .bar && target != .idle
+            focusReturning = returning ? target : nil
             focusCatchUp {
-                for wait in [80, 250, 600] {
+                defer { if focusReturning == target { focusReturning = nil } }
+                for wait in (returning ? [80, 170, 350, 600] : [80, 250, 600]) {
                     try? await Task.sleep(for: .milliseconds(wait))
                     guard !Task.isCancelled, controlsPresent, !layerOpen else { return }
+                    if returning {
+                        // The button is set until it holds, whatever took focus meanwhile.
+                        if focus == target { return }
+                        focus = target
+                        continue
+                    }
                     guard focus == nil || focus == .idle else { return }
                     focus = target
                     AppLog.writeOut("[Fokus] nachgesetzt auf \(target) nach \(wait) ms")
@@ -660,7 +672,7 @@ struct PlayerScreen: View {
         .task(id: item.id) { await HandoffExit.preload(item, model: model) }
         // The episode layer should already stand when opened.
         .task(id: item.id) {
-            if hasEpisodes { await EpisodesLayer.preload(model: model, item: item) }
+            if hasEpisodes { await EpisodesLoader.preload(model: model, item: item) }
         }
         .onChange(of: duration) { _, _ in hubReport() }
         .task(id: fadeOutMark) {
@@ -751,6 +763,10 @@ struct PlayerScreen: View {
                        chapter: chapter,
                        buffered: PlayerShoot.withoutImage ? PlayerShoot.buffered : nil)
                 .focused($focus, equals: .bar)
+                // **One focus decision while a menu closes:** the timeline is not offered to the focus engine while the opener
+                // button is the target (`targetShow`) or is still being set (`focusReturning`); the engine would take it in the
+                // frames before the capsule has faded in (a visible blip on the timeline).
+                .disabled(targetShow != .bar || focusReturning != nil)
                 // The bar is a drawing: the position exists only as bar length. Without a value it would be silent.
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Abspielstelle")
@@ -897,6 +913,8 @@ struct PlayerScreen: View {
     /// **Why this sets `targetShow`:** the controls are hidden while a menu is open, so closing it makes them appear, and
     /// `onChange(of: controlsPresent)` then puts focus on `targetShow` (the timeline) after this function ran and cancelled
     /// its catch-up. The opener goes in there, so the one rule that places focus when the controls return lands on the button.
+    /// That rule then keeps setting the button until it holds (`focusReturning`): the capsule takes focus only after its fade-in, the first
+    /// assignments are dropped, and the paused tick or the focus engine's own choice would leave it on the timeline (measured with Einstellungen and Folgen).
     private func closeMenu() {
         guard menu.isOpen else { return }
         let kind = menu.kind
@@ -989,27 +1007,21 @@ struct PlayerScreen: View {
     /// The Folgen box's content: the episodes panel (with the Kapitel tab and the season button), or for a film its chapters.
     @ViewBuilder
     private func folgenPanel(_ tab: PlayerMenuPanelTab) -> some View {
-        if hasEpisodes {
-            EpisodesLayer(model: model, item: item, title: titleLine, picker: seasonPicker,
-                          seasonText: menu.model?.menus.episodes.seasonButton?.value.text,
-                          frozen: seasonMenu.isOpen, openSeasons: { openMenu(.seasons) },
-                          hasChapters: !chapter.isEmpty, chosenSeason: seasonPicker.chosen, area: area,
-                          chapterPreview: { trickplay.image(at: $0, model: model, core: .some($1)) },
-                          close: closeMenu, startTab: tab) { episode in
-                closeMenu()
-                // Choosing the current episode means: keep watching.
-                guard episode.id != item.id else { return }
-                // In a group nobody switches alone: the choice sets the queue and everyone loads the episode (as on iOS).
-                if inGroup { gemeinsam.bitTitle(episode.id); return }
-                changeInto(episode, since: episode.resumeFrom ?? 0)
-            }
-            // **Not on every tick**; see `EpisodesLayer.==`.
-            .equatable()
-        } else {
-            ChaptersLayer(area: area,
-                          preview: { trickplay.image(at: $0, model: model, core: .some($1)) },
-                          close: closeMenu)
+        TVFolgenBox(model: model, item: item, hasEpisodes: hasEpisodes, picker: seasonPicker,
+                    seasonText: menu.model?.menus.episodes.seasonButton?.value.text,
+                    frozen: seasonMenu.isOpen, openSeasons: { openMenu(.seasons) },
+                    hasChapters: !chapter.isEmpty, chosenSeason: seasonPicker.chosen, area: area,
+                    chapterPreview: { trickplay.image(at: $0, model: model, core: .some($1)) },
+                    close: closeMenu, startTab: tab) { episode in
+            closeMenu()
+            // Choosing the current episode means: keep watching.
+            guard episode.id != item.id else { return }
+            // In a group nobody switches alone: the choice sets the queue and everyone loads the episode (as on iOS).
+            if inGroup { gemeinsam.bitTitle(episode.id); return }
+            changeInto(episode, since: episode.resumeFrom ?? 0)
         }
+        // **Not on every tick**; see `TVFolgenBox.==`.
+        .equatable()
     }
 
     // MARK: - Skip
@@ -2223,7 +2235,7 @@ struct PlayerScreen: View {
             // The detour through settings does exactly this: the sheet closes and `wakeControls` puts focus back on the bar, after which playback works again. Doing it once on toggle was not enough; SwiftUI clears focus afterwards. So while paused and with no sheet open, it is set again on every tick.
             //
             // Only while paused: during playback focus should be free to move to the buttons at the top. And only if it is **nowhere**; on a button it belongs there.
-            if !running, !layerOpen, focus == nil {
+            if !running, !layerOpen, focus == nil, focusReturning == nil {
                 focus = .bar
             }
 

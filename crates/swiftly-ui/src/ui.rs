@@ -160,8 +160,23 @@ pub fn set_precise_wheel(on: bool) {
     PRECISE_WHEEL.with(|c| c.set(on));
 }
 
+thread_local! {
+    static THEME_EPOCH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Counts changes of the app-wide theme; every [`Ui`] builds its view again on its next frame after one.
+pub fn theme_epoch() -> u32 {
+    THEME_EPOCH.with(std::cell::Cell::get)
+}
+
+/// Tells every [`Ui`] that an app-wide theme value (the accent) changed.
+pub fn bump_theme() {
+    THEME_EPOCH.with(|c| c.set(c.get().wrapping_add(1)));
+}
+
 /// The shared UI: a `view` function, its inputs and the retained tree.
 pub struct Ui<P> {
+    theme_seen: u32,
     view: ViewFn<P>,
     parts: P,
     env: Env,
@@ -204,6 +219,7 @@ impl<P: PartialEq + Clone> Ui<P> {
             arena: None,
             events: Vec::new(),
             now: 0.0,
+            theme_seen: theme_epoch(),
             view_runs: 0,
             focus: Focus::new(),
             fmap: FocusMap::new(),
@@ -358,6 +374,11 @@ impl<P: PartialEq + Clone> Ui<P> {
 
     /// Advances animations, scroll bodies, press delays and the long-press timer to `now_ms`, then emits the quads.
     pub fn frame(&mut self, now_ms: f64) -> DrawList {
+        // The app-wide theme (the accent) changed since this view ran: build it again with the new colours.
+        if self.theme_seen != theme_epoch() {
+            self.theme_seen = theme_epoch();
+            self.rebuild();
+        }
         self.tick(now_ms);
         let mut list = DrawList::new(self.env.size.w, self.env.size.h, self.env.scale);
         let mut ts = self.cx.text.borrow_mut();
@@ -1064,6 +1085,15 @@ impl<P: PartialEq + Clone> Ui<P> {
         self.pointer.cursor
     }
 
+    /// A press hides the tooltip under the pointer until the pointer leaves its node (AppKit hides a help tag on mouse
+    /// down). `touch_down` does this for everything the `Ui` hit-tests itself; a host that decides a click by geometry
+    /// and never calls `touch_down` (the window's history arrows, its caption buttons) calls this instead.
+    pub fn dismiss_tooltip(&mut self) {
+        if let Some((id, ..)) = &self.pointer.tip {
+            self.pointer.tip_dismissed = Some(*id);
+        }
+    }
+
     /// The text of the tooltip a click hid, to hand to the next screen when the click changes the page.
     pub fn dismissed_tooltip(&self) -> Option<String> {
         let (id, text, _, _) = self.pointer.tip.as_ref()?;
@@ -1715,7 +1745,7 @@ fn draw_tooltip(
     anchor: swiftly_layout::Rect,
 ) {
     use crate::components::color;
-    use swiftly_design::tokens::colour;
+    use swiftly_design::tokens_generated::color;
     let (size, weight) = crate::feel::TOOLTIP_FONT;
     let style = swiftly_text::TextStyle::new(size, weight);
     let l = ts.layout(text, &style, None, Some(1), swiftly_text::Align::Start);
@@ -1742,7 +1772,13 @@ fn draw_tooltip(
         },
         crate::feel::TOOLTIP_RADIUS,
     );
-    list.fill(r, color(colour::RAISED), crate::feel::TOOLTIP_RADIUS);
-    list.stroke(r, color(colour::MARGIN), 1.0, crate::feel::TOOLTIP_RADIUS);
-    ts.atlas.draw(&l, list, x + px, y + py, color(colour::FONT));
+    list.fill(r, color(color::SURFACE_RAISED), crate::feel::TOOLTIP_RADIUS);
+    list.stroke(
+        r,
+        color(color::SURFACE_FOCUS),
+        1.0,
+        crate::feel::TOOLTIP_RADIUS,
+    );
+    ts.atlas
+        .draw(&l, list, x + px, y + py, color(color::TEXT_PRIMARY));
 }

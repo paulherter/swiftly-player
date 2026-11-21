@@ -31,6 +31,9 @@ pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 pub trait SeerrLibrary: Send + Sync {
     /// The library item id of a title (`movie` / `tv`) by its TMDB id; `None` when the server has none.
     async fn find(&self, art: String, tmdb: i64) -> Result<Option<String>, LibraryFailure>;
+    /// The address of the library item's own cover picture; `None` when the item has none. The "ist da" banner shows it
+    /// before the TMDB poster.
+    async fn cover(&self, id: String) -> Result<Option<String>, LibraryFailure>;
     /// Asks Jellyfin to scan its libraries again; fails when it does not answer or refuses.
     async fn refresh(&self) -> Result<(), LibraryFailure>;
 }
@@ -174,25 +177,17 @@ impl SeerrHub {
     /// locked the delete). Empty without a working connection. Every platform asks here, so the rule and
     /// the words live once.
     pub fn title_menu(&self) -> Vec<SeerrMenuEntry> {
-        if !self.available() {
-            return Vec::new();
-        }
-        let perms = lock(self.vm()).perms();
-        let t = swiftly_l10n::Translator::new(self.locale_of());
-        let mut out = Vec::new();
-        if perms.can_create_issues() {
-            out.push(SeerrMenuEntry {
-                kind: SeerrMenuKind::ReportProblem,
-                text: t.t("Problem melden"),
-            });
-        }
-        if swiftly_vm::delete_offered(perms.can_manage_requests()) {
-            out.push(SeerrMenuEntry {
-                kind: SeerrMenuKind::DeleteFromServer,
-                text: t.t("Vom Server löschen"),
-            });
-        }
-        out
+        self.core
+            .title_menu()
+            .into_iter()
+            .map(|e| SeerrMenuEntry {
+                kind: match e.kind {
+                    swiftly_vm::TitleMenuKind::ReportProblem => SeerrMenuKind::ReportProblem,
+                    swiftly_vm::TitleMenuKind::DeleteFromServer => SeerrMenuKind::DeleteFromServer,
+                },
+                text: e.text,
+            })
+            .collect()
     }
 
     /// Reads who the account is, what it may do, its quota and the counts.
@@ -440,6 +435,7 @@ impl SeerrListsScreen {
         }
         let candidates = lock(&self.home).arrival_candidates();
         let mut found = Vec::new();
+        let mut covers = Vec::new();
         if let Some(library) = &self.hub.library {
             for cand in candidates {
                 if let Some(id) = library
@@ -448,11 +444,18 @@ impl SeerrListsScreen {
                     .ok()
                     .flatten()
                 {
+                    if let Some(cover) = library.cover(id.clone()).await.ok().flatten() {
+                        covers.push((id.clone(), cover));
+                    }
                     found.push((cand.request_id, id));
                 }
             }
         }
-        lock(&self.home).arrivals_found(found);
+        {
+            let mut h = lock(&self.home);
+            h.arrival_covers(covers);
+            h.arrivals_found(found);
+        }
         self.home_is_answered();
         Ok(self.home())
     }

@@ -344,11 +344,18 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val seerrFlow = remember(app) { de.paulherter.swiftly.SeerrHomeFlow(app) }
     var rails by remember { mutableStateOf(app.startRails) }
     var disrupted by remember { mutableStateOf(false) }
+    // Why the core says the page has no answer (`homeFailure`), for "the server does not answer over rows that are already there".
+    var failure by remember { mutableStateOf<String?>(null) }
     val run = rememberCoroutineScope()
     // How many loads are on their way; see `StartPage`: the lifecycle effect fires on the first composition too.
     var running by remember { mutableIntStateOf(0) }
+    // Focus bookkeeping for reloads (see `focusAfterReload`): whether a tile in the rows holds focus right now, where it
+    // lies ("row|id", as in `lastAtTitle`), and where it must go after the rows were replaced.
+    var rowsFocused by remember { mutableStateOf(false) }
+    var lastAtTitle by rememberSaveable { mutableStateOf<String?>(null) }
+    var focusWant by remember { mutableStateOf<String?>(null) }
 
-    suspend fun load() {
+    suspend fun load(quiet: Boolean = false) {
         // An account switch in progress does the loading; returning to the page does not (it would fetch the old account).
         if (de.paulherter.swiftly.AccountSwitchTransition.waits && !de.paulherter.swiftly.AccountSwitchTransition.switched) return
         running++
@@ -361,7 +368,18 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                     e.startGenres.toTypedArray(), e.genreChips, e.startLibrariesJson()).await()
             }
         }.onSuccess { json ->
-            val list = railsRead(json).also { app.startRails = it; app.continueHiddenAfterLoad(it) }
+            // A reload the core started (`followListsStale`) never takes an answer that says the server is away: the rows stay.
+            if (quiet && de.paulherter.swiftly.homeDisturbed(json)) return@onSuccess
+            val answered = railsRead(json)
+            val why = de.paulherter.swiftly.homeFailure(json)
+            // **A silent server over rows that are already there**: an answer that says "no answer" has no rows of its own, and
+            // taking it blanked the page. The rows stay (as on tvOS) and the notice stands above them.
+            val keeps = answered.isEmpty() && de.paulherter.swiftly.homeSilent(why) && !rails.isNullOrEmpty()
+            val list = if (keeps) rails.orEmpty() else answered.also { app.startRails = it; app.continueHiddenAfterLoad(it) }
+            failure = why
+            // A reload must not move the user: while a tile holds focus, note where focus goes once the rows are replaced
+            // (the same tile, else the one that took its place, else the row above); `TvStartPage` puts it there after layout.
+            if (rowsFocused) focusWant = focusAfterReload(lastAtTitle, rails?.withoutRemoved(app.continueHidden.value), list.withoutRemoved(app.continueHidden.value))
             rails = list
             disrupted = disturbedRead(json)
             if (!disrupted) { app.startLoaded = System.currentTimeMillis(); app.startKey = key } else app.startKey = ""
@@ -371,12 +389,14 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
             if (!disrupted) withContext(Dispatchers.IO) {
                 runCatching { TvContinueWatchingShelf.updateNow(app, list) }
             }
-        }.onFailure { disrupted = true } } finally { running-- }
+        }.onFailure { if (!quiet) disrupted = true } } finally { running-- }
     }
     LaunchedEffect(app.seerrConnected.value) { seerrFlow.load() }
     LaunchedEffect(de.paulherter.swiftly.startKey(e)) {
         if (!de.paulherter.swiftly.startFresh(app, de.paulherter.swiftly.startKey(e))) load()
     }
+    // The reloads the core starts by itself (another device, the link back, a delete): the rows patch in quietly.
+    LaunchedEffect(Unit) { de.paulherter.swiftly.followListsStale(app, { running > 0 }) { load(quiet = true) } }
     // The player refreshes without delay; the foreground refreshes with a 30 s grace period.
     // Same flow as `StartPage.kt` on the phone. The player is its own activity on the TV too
     // (picture-in-picture, foreground service), not an overlay as on tvOS, so "comes back" here is
@@ -400,13 +420,15 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     // subpage opens or the section changes, and restores it via the `SaveableStateHolder`. With
     // `remember` it started from zero afterwards: focus on the first tile, `focusRail` 0 and thus
     // `animateScrollToItem(0)`, so the page jumped to the top.
-    var lastAtTitle by rememberSaveable { mutableStateOf<String?>(null) }
     fun tileTo(mark: String?, l: List<Rail>?): Tile? {
         val parts = mark?.split('|', limit = 2) ?: return null
         return l?.getOrNull(parts[0].toIntOrNull() ?: -1)?.tiles?.firstOrNull { it.id == parts.getOrNull(1) }
     }
     var current by remember { mutableStateOf(tileTo(lastAtTitle, rails)) }
     val list = rails?.withoutRemoved(app.continueHidden.value)
+    // **The server does not answer over rows that are already there** (`noticeOverRows` on tvOS): the rows stay and the notice
+    // takes the header zone. Without rows, or for a refused sign-in or an unreadable answer, the whole page is the notice.
+    val noticeOverRows = disrupted && !de.paulherter.swiftly.AccountSwitchTransition.waits && de.paulherter.swiftly.homeSilent(failure) && !list.isNullOrEmpty()
     // The header shows the focused tile. A tile just removed from the row (long OK menu) must leave the header in the same
     // frame: derived here from the visible rows, not from a later focus event.
     val listedIds = list?.flatMap { r -> r.tiles.map { it.id } }?.toSet()
@@ -497,10 +519,37 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     // On appearing (first build, back from a subpage, section switch to "Start") the same path:
     // wait until the layout is set (list and row state are restored by then), then go straight to
     // the entry target. No fixed delay, no detour via the first tile.
-    LaunchedEffect(list != null) {
-        if (list == null) return@LaunchedEffect
+    // Not while the profile picker is open: the page below it is out of reach of focus (`LocalFocusLocked`), a request then does
+    // nothing, and when the picker closes nobody asked again, so focus fell to the first item of the top bar. The effect starts
+    // again when the lock ends.
+    val focusLocked = LocalFocusLocked.current
+    // Keyed on `disrupted` too: this effect reads `list` through `entryTarget`'s closure, and the closure of the run that started
+    // while the error page was up holds the empty list of that time. After a successful "Erneut versuchen" it would look at no
+    // rows for ever and focus fell to the top bar; the flip to "not disrupted" starts it afresh with the new rows.
+    val rowsReady = list != null && (!disrupted || noticeOverRows)
+    LaunchedEffect(rowsReady, focusLocked) {
+        if (list == null || (disrupted && !noticeOverRows) || focusLocked) return@LaunchedEffect
         val target = snapshotFlow { entryTarget() }.first { it != null }
-        runCatching { target?.requestFocus() }
+        // The request can come before the tile is attached; ask again for a few frames until a tile of the rows has focus.
+        var tries = 0
+        while (tries < 40) {
+            tries++
+            runCatching { target?.requestFocus() }
+            withFrameNanos { }
+            if (rowsFocused) break
+        }
+    }
+    // After a reload replaced the rows while a tile held focus: the focused tile may be gone (a new "next episode"), and
+    // Compose would then hand focus to the top bar. Put it on the tile `focusAfterReload` named as soon as that tile is
+    // attached; nothing to do when focus is still on it. A few frames at most, then give up quietly.
+    LaunchedEffect(focusWant) {
+        val mark = focusWant ?: return@LaunchedEffect
+        for (frame in 0 until 30) {
+            withFrameNanos { }
+            if (rowsFocused && lastAtTitle == mark) break
+            if (runCatching { petition(mark).requestFocus() }.isSuccess) break
+        }
+        focusWant = null
     }
     // Reasoning for both values at the row change right below.
     val railsSwitchDuration = 500
@@ -549,10 +598,27 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     // Mirrors `HomeView` `.imageReason(url: backdropsURL)` and `landscapeImage`, drawn in `TvMain`
     // (`TvBackdropsLayer`) so they simply stay when a page opens. Header shadow likewise there.
     // Error and empty state have no backdrop.
-    TvBackdropReport(if ((disrupted && !inSwitch) || allEmpty) null else image)
+    TvBackdropReport(if ((disrupted && !inSwitch && !noticeOverRows) || allEmpty) null else image)
+    // The error page: focus goes to "Erneut versuchen" (once the profile picker no longer locks the page), and the button waits
+    // while the retry is on its way (`running`), as the phone does it (`StartPage`: the symbol breathes, the buttons wait).
+    var retryBusy by remember { mutableStateOf(false) }
+    val retryFocus = firstFocus(disrupted && !inSwitch && !noticeOverRows && !focusLocked)
+    val retryNow: () -> Unit = {
+        // A refused connection answers in a few milliseconds: hold the waiting state for 700 ms so a press is seen to do something.
+        run.launch {
+            retryBusy = true
+            val began = android.os.SystemClock.elapsedRealtime()
+            try { load() } finally {
+                val rest = 700 - (android.os.SystemClock.elapsedRealtime() - began)
+                if (rest > 0) kotlinx.coroutines.delay(rest)
+                retryBusy = false
+            }
+        }
+    }
     Box(Modifier.fillMaxSize()) {
         when {
-            disrupted && !inSwitch -> TvDisruption(app, retry = { run.launch { load() } })
+            disrupted && !inSwitch && !noticeOverRows -> TvDisruption(app, buttonModifier = Modifier.focusRequester(retryFocus), retrying = retryBusy || running > 0,
+                retry = retryNow)
             allEmpty -> TvEmpty(translated("Hier ist noch nichts"), translated("Sobald auf dem Server etwas liegt, taucht es hier auf."))
             else -> {
                 Column(Modifier.fillMaxSize()) {
@@ -568,7 +634,11 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                         //
                         // Short crossfade (200 ms), not a hard jump: the text still changes immediately with focus
                         // (no debounce as for the image), just softly.
-                        Crossfade(shown, animationSpec = tween(200), label = "kopfauskunft") { k ->
+                        // While the server is silent over the rows, the notice takes the place of the readout: the readout belongs to a
+                        // title, the notice to the whole page (tvOS `HomeView`).
+                        if (noticeOverRows) TvDisturbNotice(app, loads = retryBusy || running > 0,
+                            modifier = Modifier.padding(start = TvTheme.edgePage, top = 98.dp), retry = retryNow)
+                        else Crossfade(shown, animationSpec = tween(200), label = "kopfauskunft") { k ->
                             if (k != null) {
                                 HeaderInfo(k.name, k.episodeName, k.detailsRow, k.rating, k.sharing, k.description,
                                              Modifier.padding(start = TvTheme.edgePage, top = 98.dp)) {
@@ -589,12 +659,13 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                         Column(Modifier.weight(1f).onSizeChanged { window = it.height }
                                    .tvInFade { railsFadeIn.value }
                                    .focusProperties { enter = { entryTarget() ?: FocusRequester.Default } }
+                                   .onFocusChanged { rowsFocused = it.hasFocus }
                                    .focusGroup().verticalScroll(listsState).padding(bottom = 40.dp),
                                verticalArrangement = Arrangement.spacedBy(TvTheme.railsSpacing - TvTheme.railsPadding * 2)) {
                             if (e.genreChips && e.startGenres.isNotEmpty()) key("genres") {
                                 CompositionLocalProvider(LocalBringIntoViewSpec provides TvRailsBringIntoView) {
                                     LazyRow(contentPadding = PaddingValues(horizontal = TvTheme.edgePage, vertical = TvTheme.railsPadding),
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)) { // token-lint: allow genre chip gap, as before; the line only moved when the notice code was added above it
                                         // With a key like every other row; `distinct` because a duplicate key throws.
                                         items(e.startGenres.distinct(), key = { it }) { g -> TvChip(g, false) { open(Destination(g, g, "Genre")) } }
                                     }
@@ -612,7 +683,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             de.paulherter.swiftly.homeLayout(app, shownRails, seerrFlow).forEach { row ->
                               if (row is de.paulherter.swiftly.HomeRowItem.SeerrRow) key("seerr-${row.part}") {
                                   de.paulherter.swiftly.TvSeerrPartView(app, seerrFlow, row.part, open)
-                              } else if (row is de.paulherter.swiftly.HomeRowItem.RailRow) { val i = row.index; val r = row.rail; key("$i-${r.title}") {
+                              } else if (row is de.paulherter.swiftly.HomeRowItem.RailRow) { val i = row.index; val r = row.rail; key("rail-${r.identity()}") {
                                 Column(Modifier.railEntrance(i).onGloballyPositioned { c ->
                                     val status = c.positionInParent().y.roundToInt() to c.size.height
                                     if (railsStatus[i] != status) railsStatus[i] = status

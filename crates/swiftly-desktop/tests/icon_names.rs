@@ -90,7 +90,11 @@ fn asked_for() -> BTreeSet<String> {
             let line_start = text[..at].rfind('\n').map_or(0, |n| n + 1);
             let line_end = text[at..].find('\n').map_or(text.len(), |n| at + n);
             let line = &text[line_start..line_end];
-            let before = &text[at.saturating_sub(90)..at];
+            let mut from = at.saturating_sub(90);
+            while !text.is_char_boundary(from) {
+                from -= 1;
+            }
+            let before = &text[from..at];
             let in_call = before.contains(".node(") || before.contains(".node_template(");
             let talks = ["icon", "symbol", "glyph", "asset", "mark"]
                 .iter()
@@ -112,6 +116,7 @@ const NOT_ASSETS: &[&str] = &[
     "close",
     "delete",
     "download",
+    "report",
     "fail-close",
     "fullscreen",
     "lib.filter",
@@ -128,6 +133,10 @@ const NOT_ASSETS: &[&str] = &[
     "load.go",
     "load.queue",
     "load.sound",
+    "look-close",
+    "look-effects",
+    "look-icon",
+    "look-use",
     "mark",
     "mute",
     "nav.back",
@@ -142,6 +151,7 @@ const NOT_ASSETS: &[&str] = &[
     "skip-end",
     "surface",
     "until-player-timeout",
+    "app.icon",
     "wordmark.letters",
     "wordmark.mark",
 ];

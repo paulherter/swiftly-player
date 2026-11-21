@@ -351,7 +351,7 @@ inside the installer.
 
 - [Building](Documentation/Building.md): build the apps, run the tests, package the desktop app
 - [Players](Documentation/Players.md): which player engine runs on which system, and where its source is
-- [VLCKit](Documentation/VLCKit.md): why the VLCKit build used so far is patched, with the measurements
+- [VLCKit (earlier versions)](Documentation/VLCKit.md): the patched VLCKit build that earlier versions shipped, with the measurements and the source offer
 - [Device profile](Packages/JellyfinKit/Sources/JellyfinKit/DeviceProfile.swift): the file that decides whether your server transcodes, with the reasoning in its comments
 
 <br>
@@ -424,9 +424,7 @@ them (MPL-2.0 section 2.3). A version you change and ship needs its own name,
 icon and look, and must not be presented as Swiftly Player or as made by its
 author.
 
-Playback uses [VLCKit](https://code.videolan.org/videolan/VLCKit) under the
-**LGPL-2.1-or-later** — see [Documentation/VLCKit.md](Documentation/VLCKit.md) —
-and, in the versions with the new player engines,
+Playback uses
 [AetherEngine](https://github.com/superuser404notfound/AetherEngine)
 (LGPL-3.0 with an App Store exception) with FFmpeg from
 [FFmpegBuild](https://github.com/superuser404notfound/FFmpegBuild)
@@ -435,8 +433,14 @@ devices, Media3 (Apache-2.0) with an FFmpeg audio decoder (LGPL) on Android, and
 libmpv (LGPL) on Windows and Linux. Details and source locations are in
 [Documentation/Players.md](Documentation/Players.md).
 
-The libraries bundled with the apps keep their own licenses (LGPL for VLCKit,
-libVLC, FFmpeg, libmpv and several others, plus BSD, MIT, Apache-2.0 and the SIL OFL for
+Earlier versions of Swiftly Player played with
+[VLCKit](https://code.videolan.org/videolan/VLCKit) and libVLC under the
+**LGPL-2.1-or-later**. The written offer for the source of those versions stays
+valid: see [Documentation/VLCKit.md](Documentation/VLCKit.md) and the "Earlier
+versions" sections of [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+The libraries bundled with the apps keep their own licenses (LGPL for FFmpeg,
+libmpv and several others, plus BSD, MIT, Apache-2.0 and the SIL OFL for
 the Inter font). The list, the license texts and the source offer for the LGPL
 parts are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and
 [LICENSES/](LICENSES/).

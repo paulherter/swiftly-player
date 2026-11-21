@@ -4,8 +4,6 @@ import SwiftUI
 
 struct RootView: View {
     @State private var model = AppModel.only
-    /// The curtain covers everything until the animation is done.
-    @State private var started = false
     #if os(iOS)
     /// Apple's own rating prompt. When it appears is decided by
     /// `RatingQuestion` in the package; Apple shows it at most three times a
@@ -96,17 +94,6 @@ struct RootView: View {
         .supportPresentation(model: model)
         // The Halloween gift and "What's new": one sheet, see `GiftFlow`.
         .giftPresentation(model: model)
-        .overlay {
-            #if os(iOS)
-            if !started {
-                StartCurtain {
-                    // 0.28 from `Theme.einblenden` instead of its own 0.45: the curtain lifts
-                    // like any other content that is there, one duration, not two.
-                    withAnimation(Theme.reveal) { started = true }
-                }
-            }
-            #endif
-        }
         // Connect, sign in, main view is a change of area, not a system default.
         // `.default` was the last motion in the app without a token; now the
         // same curve as every tab switch.
@@ -163,7 +150,7 @@ struct ConnectView: View {
         ScrollView {
             VStack(spacing: 0) {
                 if back == nil {
-                    Wordmark(height: 40)
+                    AppIconMark(height: 40)
                         .padding(.top, 172)
                 }
 

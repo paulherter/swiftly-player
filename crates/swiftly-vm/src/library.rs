@@ -250,6 +250,8 @@ struct Inner<T: HttpTransport> {
     kv: Arc<dyn KeyValue>,
     collator: Option<NaturalCollator>,
     lists: Mutex<HashMap<String, Arc<Vec<Item>>>>,
+    /// The strips read back from the cache (key: `strip_key`), until the whole list answers.
+    strips: Mutex<HashMap<String, AlphabetIndex>>,
     bell: Arc<Bell>,
     menu: Mutex<(crate::detail_more::MenuContext, Vec<TileRequest>)>,
     live: Mutex<Live<T>>,
@@ -611,6 +613,7 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
             spec,
             kv,
             lists: Mutex::new(HashMap::new()),
+            strips: Mutex::new(HashMap::new()),
             bell: Bell::new(),
             menu: Mutex::new((crate::detail_more::MenuContext::default(), Vec::new())),
             live: Mutex::new(live),
@@ -861,7 +864,8 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
         true
     }
 
-    /// The letter strip of the list on screen: the whole "By name" list when it was fetched, else the loaded titles.
+    /// The letter strip of the list on screen: the whole "By name" list when it was fetched, else the strip stored
+    /// with the page cache (the last whole list's), else the loaded titles.
     pub fn alphabet(&self) -> AlphabetIndex {
         let (sorting, filter, switch, loaded) = {
             let live = self.inner.live();
@@ -872,7 +876,34 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
                 live.state.items.clone(),
             )
         };
-        let key = self.inner.strip_key(sorting, &filter, switch);
+        if let Some(known) = self.known_strip(sorting, &filter, switch) {
+            return known;
+        }
+        library_list::alphabet(&loaded, sorting)
+    }
+
+    /// The strip when it is known without a fetch: the whole list's, or the one remembered from the last visit.
+    /// `None` while only the loaded titles could build it (a strip from the first page would be partial) and for
+    /// the orders that have none. A host puts it up together with the first tiles and asks `load_alphabet` for the
+    /// fresh one.
+    pub fn alphabet_known(&self) -> Option<AlphabetIndex> {
+        let (sorting, filter, switch) = {
+            let live = self.inner.live();
+            (live.state.sorting, live.state.list_filter(), live.switch)
+        };
+        if sorting != Sorting::Name {
+            return None;
+        }
+        self.known_strip(sorting, &filter, switch)
+    }
+
+    fn known_strip(
+        &self,
+        sorting: Sorting,
+        filter: &ListFilter,
+        switch: u64,
+    ) -> Option<AlphabetIndex> {
+        let key = self.inner.strip_key(sorting, filter, switch);
         let whole = self
             .inner
             .lists
@@ -880,7 +911,15 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
             .unwrap_or_else(PoisonError::into_inner)
             .get(&key)
             .cloned();
-        library_list::alphabet(whole.as_deref().map_or(&loaded, |l| l), sorting)
+        if let Some(list) = whole {
+            return Some(library_list::alphabet(&list, sorting));
+        }
+        self.inner
+            .strips
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&key)
+            .cloned()
     }
 
     /// Fetches the whole "By name" list once, so the A-Z strip covers every title and not only the loaded pages
@@ -918,6 +957,17 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
     /// without titles gives the next one that has some; `None` for a key past the last letter or unknown.
     pub fn jump_target(&self, key: &str, index: &AlphabetIndex) -> Option<usize> {
         index.first_for_key(key)
+    }
+
+    /// Makes `held` the strip of the order on screen when it is missing or belongs to another order. A host that keeps
+    /// the strip it last fetched for `key_of` and `jump_target` calls this first, so a jump never depends on the host
+    /// having asked for the strip before (a page can put its tiles up before the strip was ever requested, and then
+    /// every key and jump answered "nothing").
+    pub fn keep_strip(&self, held: &mut Option<AlphabetIndex>) {
+        let sorting = self.inner.live().state.sorting;
+        if held.as_ref().is_none_or(|strip| strip.sorting != sorting) {
+            *held = Some(self.alphabet());
+        }
     }
 
     /// The version of the view model; moves whenever a part is replaced.
@@ -1550,12 +1600,23 @@ impl<T: HttpTransport + 'static> Inner<T> {
                     if let Some(memory) = &remembered
                         && let Some(cached) = memory.read()
                     {
+                        // The strip stored with the page goes up in the same publish as the tiles.
+                        let strip = (sorting == Sorting::Name)
+                            .then(|| self.remember(switch, sorting, &filter, 0))
+                            .flatten()
+                            .and_then(|slot| slot.read_strip());
                         let mut live = self.live();
                         if live.switch != switch {
                             return;
                         }
                         // Only an empty grid paints from the cache; a standing one is newer.
                         if live.state.items.is_empty() {
+                            if let Some(strip) = strip {
+                                self.strips
+                                    .lock()
+                                    .unwrap_or_else(PoisonError::into_inner)
+                                    .insert(self.strip_key(sorting, &filter, switch), strip);
+                            }
                             live.state.page_loaded(run, source, Some(cached), false);
                             self.publish(&mut live);
                             painted = true;
@@ -1740,6 +1801,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
         }
         let collator = self.collator.as_ref()?;
         let types = self.types();
+        let slot = self.remember(switch, Sorting::Name, filter, 0);
         let list = if let Some(genre) = &self.spec.genre {
             let answer = client
                 .items(&ItemsQuery {
@@ -1780,11 +1842,55 @@ impl<T: HttpTransport + 'static> Inner<T> {
             list.retain(|i| i.production_year.is_some_and(|y| span.contains(y)));
         }
         let list = Arc::new(list);
+        if let Some(slot) = slot {
+            slot.write_strip(&StripRow::of(&library_list::alphabet(&list, Sorting::Name)));
+        }
         self.lists
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(key, Arc::clone(&list));
         Some(list)
+    }
+}
+
+/// Cache kind of the letter strip stored beside the first page.
+const STRIP: &str = "strip";
+
+/// The strip of the "By name" order as it is stored.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StripRow {
+    /// Key, position of the first title, label, gap.
+    entries: Vec<(String, usize, String, bool)>,
+    count: usize,
+    monthly: bool,
+}
+
+impl StripRow {
+    fn of(index: &AlphabetIndex) -> Self {
+        Self {
+            entries: index
+                .entries
+                .iter()
+                .map(|e| (e.letter.clone(), e.first, e.label.clone(), e.gap))
+                .collect(),
+            count: index.count,
+            monthly: index.monthly,
+        }
+    }
+
+    fn into_index(self) -> AlphabetIndex {
+        AlphabetIndex {
+            entries: self
+                .entries
+                .into_iter()
+                .map(|(letter, first, label, gap)| {
+                    swiftly_rules::alphabet_index::Entry::new(&letter, first, Some(&label), gap)
+                })
+                .collect(),
+            count: self.count,
+            sorting: swiftly_rules::alphabet_index::Sorting::Name,
+            monthly: self.monthly,
+        }
     }
 }
 
@@ -1804,6 +1910,16 @@ impl Remembered {
             items: page.items,
             total,
         })
+    }
+
+    /// The strip stored next to the page (same key, kind "strip").
+    fn read_strip(&self) -> Option<AlphabetIndex> {
+        let row: StripRow = self.cache.read_json(&self.scope, STRIP, &self.key)?;
+        Some(row.into_index())
+    }
+
+    fn write_strip(&self, row: &StripRow) {
+        self.cache.write_json(&self.ticket, STRIP, &self.key, row);
     }
 
     /// Stores the answer; `true` if it differs from what was stored.

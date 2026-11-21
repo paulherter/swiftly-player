@@ -38,3 +38,4 @@ pub mod track_mapping;
 pub mod track_rule;
 pub mod transcode_subtitle;
 pub mod trickplay;
+pub mod video_decoders;

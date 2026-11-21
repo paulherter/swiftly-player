@@ -43,7 +43,7 @@ struct CollectionView: View {
         self.collection = collection
         self.art = art
         let state = LibraryModel()
-        state.sorting = .erscheinung
+        state.sorting = coreCollectionPageSorting()
         _state = State(initialValue: state)
     }
 
@@ -357,7 +357,7 @@ struct ShelfControls: View {
         // (`minHeight: 30`). Without this bound the row jumped up a few points when
         // switching between "All movies" and "Collections", and the count on the right
         // jumped with it. Now the same space stays, with or without pills.
-        .frame(minHeight: 30)
+        .frame(minHeight: Theme.pillMinHeight)
     }
 }
 

@@ -34,17 +34,17 @@ final class SeerrTitleMenu {
 
     /// Opens the report sheet or prepares the delete flow for a library item.
     func start(_ kind: SwiftlyCore.SeerrMenuKind, model: AppModel, item: Item, seconds: Double?) async {
-        guard let place = await SeerrPlace.of(item, model: model, seconds: seconds) else {
-            message = String(localized: "Dieser Titel hat keine TMDB-Nummer.")
-            return
-        }
         switch kind {
         case .reportProblem:
-            report.start(place)
-            reportOpen = true
+            // The core reads the item, finds its TMDB id (an episode: its series') and fills the place.
+            if await report.prepare(itemID: item.id, seconds: seconds, model: model) {
+                reportOpen = true
+            } else {
+                message = String(localized: "Dieser Titel hat keine TMDB-Nummer.")
+            }
         case .deleteFromServer:
-            let size = SeerrSize.text(item.mediaSources?.first?.size)
-            if await delete.prepare(place, standardSize: size, model: model) {
+            // The core reads the item, finds its TMDB id and file size, and wires "done" to the Home reload.
+            if await delete.prepare(itemID: item.id, model: model) {
                 deleteOpen = true
             } else {
                 message = String(localized: "Seerr kennt diesen Titel nicht.")
@@ -63,7 +63,7 @@ struct SeerrTitleMenuSheets: View {
     var body: some View {
         @Bindable var bound = menu
         ZStack {
-            ReportIssueSheet(opened: $bound.reportOpen, flow: menu.report, model: model)
+            ReportIssueSheet(opened: $bound.reportOpen, flow: menu.report)
             DeleteFlowSheet(opened: $bound.deleteOpen, flow: menu.delete, finished: deleted)
         }
         .zIndex(20)

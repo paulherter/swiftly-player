@@ -5,7 +5,7 @@
 use crate::browse::wide;
 use crate::forms::{self, Fm};
 use crate::home::{ins, rgba, text};
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::color;
 use swiftly_downloads::{DownloadItem, DownloadQuality, DownloadRules, DownloadState};
 use swiftly_layout::{Align, Alignment, Axis};
 use swiftly_render::Color;
@@ -165,12 +165,12 @@ pub fn ring(
     hover_key: &str,
     reveal: bool,
 ) -> Node {
-    let quiet = color(colour::FONT_VERY_QUIET);
-    let track = rgba(colour::FONT, 0.3);
+    let quiet = color(color::TEXT_TERTIARY);
+    let track = rgba(color::TEXT_PRIMARY, 0.3);
     let glyph = |name: &str, size: f32, c: Color| icons.node(name, size, false, c);
     let mut face = match state {
-        None => circle(color(colour::FONT_QUIET), 1.5).overlay(
-            icons.node("arrow-down", 12.0, true, color(colour::FONT)),
+        None => circle(color(color::TEXT_SECONDARY), 1.5).overlay(
+            icons.node("arrow-down", 12.0, true, color(color::TEXT_PRIMARY)),
             Alignment::CENTER,
         ),
         Some(RowState::Waiting) => {
@@ -178,11 +178,11 @@ pub fn ring(
         }
         Some(RowState::Loading) => circle(track, 2.0)
             .overlay(
-                arc(cx, share, color(colour::MARK_ACCENT), RING),
+                arc(cx, share, color(crate::look_glow::accent()), RING),
                 Alignment::CENTER,
             )
             .overlay(
-                Node::rect(color(colour::MARK_ACCENT), 1.5).frame(
+                Node::rect(color(crate::look_glow::accent()), 1.5).frame(
                     Some(RING * 0.32),
                     Some(RING * 0.32),
                     Alignment::CENTER,
@@ -191,24 +191,22 @@ pub fn ring(
             ),
         Some(RowState::Paused) => circle(track, 2.0)
             .overlay(
-                arc(cx, share, color(colour::FONT_QUIET), RING),
+                arc(cx, share, color(color::TEXT_SECONDARY), RING),
                 Alignment::CENTER,
             )
             .overlay(
-                glyph("play.fill", 10.0, color(colour::FONT)),
+                glyph("play.fill", 10.0, color(color::TEXT_PRIMARY)),
                 Alignment::CENTER,
             ),
         // An arrow, not a check: the check means "watched".
-        Some(RowState::Done) => Node::rect(color(colour::MARK_ACCENT), RING / 2.0)
+        Some(RowState::Done) => Node::rect(color(crate::look_glow::accent()), RING / 2.0)
             .frame(Some(RING), Some(RING), Alignment::CENTER)
             .overlay(
-                icons.node("arrow-down", 12.0, true, color(colour::REASON)),
+                icons.node("arrow-down", 12.0, true, color(color::SURFACE_BASE)),
                 Alignment::CENTER,
             ),
-        Some(RowState::Failed) => circle(color(colour::ORIGINAL_WARNING), 2.0).overlay(
-            exclamation(color(colour::ORIGINAL_WARNING)),
-            Alignment::CENTER,
-        ),
+        Some(RowState::Failed) => circle(color(color::STATE_WARNING), 2.0)
+            .overlay(exclamation(color(color::STATE_WARNING)), Alignment::CENTER),
     };
     let label = ring_label(state);
     // The face is keyed by its state: a new state is a new node, and with `reveal` it comes in (opacity and scale 0.8
@@ -232,13 +230,16 @@ pub fn ring(
 
 /// The thin bar under a row's lines: 3 pt, track white 30 %, fill in the accent.
 pub fn bar(share: f32, w: f32) -> Node {
-    let fill = Node::rect(color(colour::MARK_ACCENT), 1.5).frame(
+    let fill = Node::rect(color(crate::look_glow::accent()), 1.5).frame(
         Some((w * share.clamp(0.0, 1.0)).max(0.0)),
         Some(3.0),
         Alignment::LEADING,
     );
     fill.frame(Some(w), Some(3.0), Alignment::LEADING)
-        .background(Node::rect(rgba(colour::FONT, 0.3), 1.5), Alignment::CENTER)
+        .background(
+            Node::rect(rgba(color::TEXT_PRIMARY, 0.3), 1.5),
+            Alignment::CENTER,
+        )
 }
 
 /// `ActionButton`: a 48 pt square field (corner 10, area colour, hover surface), the glyph in the accent while `active`.
@@ -253,15 +254,18 @@ pub fn action_button(
     active: bool,
 ) -> Node {
     let c = color(if active {
-        colour::MARK_ACCENT
+        crate::look_glow::accent()
     } else {
-        colour::FONT
+        color::TEXT_PRIMARY
     });
     let n = icons
         .node(symbol, 17.0, !filled, c)
         .frame(Some(48.0), Some(48.0), Alignment::CENTER)
-        .background(Node::rect(color(colour::AREA), 10.0), Alignment::CENTER)
-        .hover_surface(color(colour::HOVER_AREA), 10.0);
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 10.0),
+            Alignment::CENTER,
+        )
+        .hover_surface(color(color::SURFACE_HOVER), 10.0);
     forms::tappable(n, f, key, 10.0)
         .a11y(A11yNode::new("", Role::Button, label).with_selected(active))
 }
@@ -272,7 +276,7 @@ pub fn primary_button(cx: &Cx, f: &Fm, key: &str, label: &str, enabled: bool) ->
         cx,
         label,
         st(17.0, 600),
-        colour::REASON,
+        color::SURFACE_BASE,
         Some(1),
         swiftly_text::Align::Center,
     );
@@ -288,7 +292,10 @@ pub fn primary_button(cx: &Cx, f: &Fm, key: &str, label: &str, enabled: bool) ->
         align: Some(Alignment::CENTER),
         ..swiftly_layout::FlexFrame::default()
     })
-    .background(Node::rect(color(colour::FONT), 10.0), Alignment::CENTER)
+    .background(
+        Node::rect(color(color::TEXT_PRIMARY), 10.0),
+        Alignment::CENTER,
+    )
     .hover_surface(Color::new(0.0, 0.0, 0.0, 0.12), 10.0);
     if enabled {
         forms::tappable(n, f, key, 10.0)
@@ -398,8 +405,10 @@ pub fn mac_page(
         None => col,
     };
     let scroll = Node::scroll(Axis::Vertical, None, content).key("form-scroll");
-    let p = fill_frame(scroll, Alignment::TOP_LEADING)
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER);
+    let p = fill_frame(scroll, Alignment::TOP_LEADING).background(
+        Node::rect(color(color::SURFACE_BASE), 0.0),
+        Alignment::CENTER,
+    );
     let p = fill_frame(p, Alignment::TOP_LEADING);
     match overlay {
         Some(o) => p.overlay(o, Alignment::TOP_LEADING),

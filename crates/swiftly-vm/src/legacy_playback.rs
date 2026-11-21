@@ -21,6 +21,7 @@ use swiftly_playback::track_mapping::{PlayerTrack, SubtitleFile, TrackImprint, T
 use swiftly_playback::track_rule::{
     self, Choice, LanguageWishes, OriginalStep, Subtitle, SubtitleInput,
 };
+use swiftly_playback::video_decoders::VideoDecoders;
 use swiftly_rules::buffer_level::BufferLevel;
 use swiftly_rules::chapter::{Chapter, ChapterBar};
 use swiftly_rules::playback_levels::bitrate_limit_of;
@@ -99,6 +100,10 @@ pub(crate) struct State {
     pub(crate) megabit: i64,
     pub(crate) server_extracts_text: bool,
     pub(crate) no_dolby_vision_decoder: bool,
+    /// What `MediaCodecList` says the device decodes (default: not reported).
+    pub(crate) video_decoders: VideoDecoders,
+    /// The title whose start the device's decoder refused: its plan is a server transcode (once per title).
+    pub(crate) decoder_refused: Option<String>,
     pub(crate) downloads: String,
     pub(crate) without_network: bool,
     pub(crate) ready: Option<ReadyStart>,
@@ -220,6 +225,8 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
                 megabit: 0,
                 server_extracts_text: false,
                 no_dolby_vision_decoder: false,
+                video_decoders: VideoDecoders::default(),
+                decoder_refused: None,
                 downloads: "[]".into(),
                 without_network: false,
                 ready: None,
@@ -299,6 +306,18 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
         self.locked(|s| s.no_dolby_vision_decoder = on);
     }
 
+    /// The video decoders of the device (`MediaCodecList`, asked once by the host): a title none of them decodes is planned as a
+    /// server transcode ([`swiftly_playback::video_decoders`]). `entries` are `(codec, ten_bit, max width, max height)`; an
+    /// empty list means the device decodes no video of the codecs the core knows.
+    pub fn set_video_decoders(&self, entries: &[(String, bool, u32, u32)]) {
+        let decoders = entries
+            .iter()
+            .fold(VideoDecoders::probed(), |all, (codec, ten_bit, w, h)| {
+                all.with(codec, *ten_bit, *w, *h)
+            });
+        self.locked(|s| s.video_decoders = decoders);
+    }
+
     /// A group plays without a next episode (`_withoutNext`).
     pub fn set_without_next(&self, on: bool) {
         self.locked(|s| s.without_next = on);
@@ -336,21 +355,32 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
         id: &str,
         source_id: &str,
     ) -> Result<(ReadyStart, PlayDisplay), ErrorKind> {
-        let (always, megabit, extracts, no_dv, downloads, without_network, ordered) =
-            self.locked(|s| {
-                (
-                    s.always_direct_play,
-                    s.megabit,
-                    s.server_extracts_text,
-                    s.no_dolby_vision_decoder,
-                    s.downloads.clone(),
-                    s.without_network,
-                    s.ordered
-                        .clone()
-                        .filter(|(item, _)| item == id)
-                        .map(|(_, t)| t),
-                )
-            });
+        let (
+            always,
+            megabit,
+            extracts,
+            no_dv,
+            decoders,
+            refused,
+            downloads,
+            without_network,
+            ordered,
+        ) = self.locked(|s| {
+            (
+                s.always_direct_play,
+                s.megabit,
+                s.server_extracts_text,
+                s.no_dolby_vision_decoder,
+                s.video_decoders,
+                s.decoder_refused.as_deref() == Some(id),
+                s.downloads.clone(),
+                s.without_network,
+                s.ordered
+                    .clone()
+                    .filter(|(item, _)| item == id)
+                    .map(|(_, t)| t),
+            )
+        });
         let request = StartRequest {
             item_id: id.to_owned(),
             source_id: (!source_id.is_empty()).then(|| source_id.to_owned()),
@@ -358,6 +388,8 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
             flavour: Flavour::Media3,
             hardware_av1: false,
             no_dolby_vision_decoder: no_dv,
+            video_decoders: decoders,
+            decoder_refused: refused,
             ask_versions: false,
             downloaded: None,
             ordered,

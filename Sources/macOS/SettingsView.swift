@@ -135,6 +135,12 @@ struct SettingsView: View {
                        under: feed.under("seerr"),
                        value: model.seerr.connected ? String(localized: "Verbunden") : nil,
                        action: { navigator.openIt(.seerr, in: section) })
+            // The core's switch: every "Vom Server löschen" entry asks it, no copy of the rule here.
+            if let row = feed.row("loeschenSperren") {
+                GroupLine()
+                ToggleRow(symbol: SettingsRowsFeed.symbol("loeschenSperren"), title: row.titleText,
+                          under: row.underText, an: feed.binding("loeschenSperren"))
+            }
         }
         // **In the sandbox it is not shown at all.** Discord's socket lives in a `TMPDIR`
         // the sandbox replaces, the WebSocket rejects a missing Origin, and the HTTP

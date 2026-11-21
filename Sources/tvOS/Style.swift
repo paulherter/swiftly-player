@@ -123,15 +123,15 @@ extension Theme {
     /// Only `cornerSmall` stands out: it **drops** from 16 to 14 while everything else
     /// grows. Same math: small badges grow less from phone to TV than the rest (24 →
     /// 41…47).
-    static let corner: CGFloat = TVSpec.corner
+    static let corner: CGFloat = CGFloat(SwiftlyDesignTokens.Tv.radiusControl)   // token radius.control
     /// Posters and tiles. On the iPhone the same number as the button (both 10); here
     /// two more than the button because the poster grew more than it did. Two points
     /// are no rank at three meters, just honest rounding: to merge them, use 18 for
     /// both.
-    static let cornerTile: CGFloat = TVSpec.cornerTile
+    static let cornerTile: CGFloat = CGFloat(SwiftlyDesignTokens.Tv.radiusTile)   // token radius.tile (24; was 18)
     /// **The small corner, for badges and pills.** Used by the `ProofRow` badge,
     /// `Badge.far` and the badge on top of a tile, all between 36 and 47 pt high.
-    static let cornerSmall: CGFloat = TVSpec.cornerSmall
+    static let cornerSmall: CGFloat = CGFloat(SwiftlyDesignTokens.Tv.radiusSmall)   // token radius.small
     /// **A surface or board of its own:** the `Handlungstafel` and the season sheet
     /// of the Seerr page, both 620 pt wide with rows of `rowsHeight`.
     ///
@@ -139,7 +139,7 @@ extension Theme {
     /// 342 on the iPhone, but content width is 1760 against 354. By width the corner
     /// would come out at 80, clearly no longer a board. The row is the thing the
     /// roundness is read from.
-    static let cornerArea: CGFloat = TVSpec.cornerArea
+    static let cornerArea: CGFloat = CGFloat(SwiftlyDesignTokens.Tv.radiusArea)   // token radius.area (26; was 24)
 
     /// **Not a ladder level, but a placeholder bar.** A `Ladefeld` standing for a
     /// line of text is 16 to 30 pt high; the same 0.23 as for the small field gives 4
@@ -487,8 +487,8 @@ extension Theme {
     /// of those values was double, and `tile` still carried the old 14 as its
     /// template. Changing a level on the iPhone changes the TV with it; that is the
     /// point of the rule.
-    static let titleLarge = Font.app(size: 56, weight: .bold)       // iOS 28
-    static let subpageTitle = Font.app(size: 44, weight: .semibold) // iOS 22
+    static let titleLarge = Font.app(size: CGFloat(SwiftlyDesignTokens.Tv.textTitleLargeSize), weight: .bold)       // token text.title-large: 48/700 (was 56)
+    static let subpageTitle = Font.app(size: CGFloat(SwiftlyDesignTokens.Tv.textTitleSubpageSize), weight: .bold) // token text.title-subpage: 48/700 (was 44/600)
     /// Row and group headings: 44 bold, the step the new design gave them so a heading
     /// reads as one above the tiles from three meters.
     static let rail      = Font.app(size: 44, weight: .bold)   // iOS 22
@@ -504,9 +504,9 @@ extension Theme {
 
     // MARK: Tracking — the em value from the type scale times the point size
     /// 56 · −0.021 em
-    static let lockTitle      = -1.176
+    static let lockTitle      = SwiftlyDesignTokens.Tv.textTitleLargeTracking
     /// 44 · −0.014 em
-    static let lockSubpage = -0.616
+    static let lockSubpage = SwiftlyDesignTokens.Tv.textTitleSubpageTracking
     /// 34 · −0.008 em
     static let lockCategory     = -0.272
     /// 22 · +0.14 em
@@ -765,6 +765,39 @@ struct DisturbState: View {
             title: copy.title,
             hint: copy.text,
             button: retry.map { perform in (title: LocalizedStringKey("Erneut versuchen"), perform: perform) })
+    }
+}
+
+/// **The same notice over rows that are already there** (the stored Start page, shown at once, when the
+/// server then does not answer). Where `DisturbState` is a whole page, this one stands at the top of the page
+/// with the rows below it, left-aligned like the page, and the retry button waits while a retry runs.
+struct DisturbNotice: View {
+    let model: AppModel
+    var trouble: Trouble = .unreachable
+    /// A retry is on its way: the button waits instead of vanishing.
+    var loads = false
+    let retry: () -> Void
+
+    var body: some View {
+        let copy = trouble.copy(server: model.serverAddress ?? String(localized: "Der Server"))
+        HStack(alignment: .top, spacing: 20) {
+            Image(icon: "externaldrive.badge.xmark")
+                .font(.app(size: 88))
+                .foregroundStyle(Theme.fontVeryQuiet)
+            VStack(alignment: .leading, spacing: 20) {
+                Text(copy.title)
+                    .font(Theme.rail)
+                    .foregroundStyle(Theme.font)
+                Text(copy.text)
+                    .font(Theme.body)
+                    .foregroundStyle(Theme.fontQuiet)
+                    .frame(maxWidth: TVSpec.messageWidth, alignment: .leading)
+                Button("Erneut versuchen", action: retry)
+                    .buttonStyle(ThemedButtonStyle())
+                    .disabled(loads)
+            }
+        }
+        .transition(.opacity)
     }
 }
 

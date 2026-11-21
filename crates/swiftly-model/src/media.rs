@@ -354,6 +354,16 @@ pub struct MediaStream {
         skip_serializing_if = "Option::is_none"
     )]
     pub width: Option<i64>,
+    /// Bits per colour channel of a video track (`8`, `10`); absent when the server does not know.
+    #[serde(
+        default,
+        deserialize_with = "crate::lenient::whole_number",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub bit_depth: Option<i64>,
+    /// Codec profile as the server names it (`Main 10`, `High`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
     /// `VideoRangeType` as text; see [`MediaStream::video_range_type`].
     #[serde(rename = "VideoRangeType", skip_serializing_if = "Option::is_none")]
     pub video_range_type_raw: Option<String>,

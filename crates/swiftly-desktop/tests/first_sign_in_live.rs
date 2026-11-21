@@ -124,9 +124,7 @@ fn start_loads_after_the_very_first_sign_in() {
         println!("skipped: build xtask first (cargo build -p xtask)");
         return;
     }
-    let tmp =
-        std::env::temp_dir().join(format!("swiftly-first-sign-in-logs-{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&tmp);
+    let tmp = swiftly_desktop::testdir::TestDir::new("swiftly-first-sign-in-logs");
     let (fx, addr) = Fixture::start(&xtask, tmp.join("fx.log"));
     let core = Arc::new(Core::open().expect("core"));
     assert!(core.account().is_none(), "a fresh config has no account");

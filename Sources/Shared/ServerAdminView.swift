@@ -195,7 +195,7 @@ struct ServerAdminView: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                .padding(.vertical, Theme.rowPadV)
             if !page.counts.isEmpty {
                 SheetLine()
                 ServerNumbers(entries: page.counts)
@@ -326,7 +326,7 @@ private struct ServerNumbers: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.vertical, Theme.rowPadV)
         .accessibilityElement(children: .combine)
     }
 }
@@ -354,7 +354,7 @@ private struct ServerMeterRow: View {
             if let share { ServerBar(share: share, tint: warn ? Theme.warning : Theme.accent) }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, Theme.rowPadV)
         .accessibilityElement(children: .combine)
     }
 }
@@ -434,7 +434,7 @@ private struct ServerTaskView: View {
             ServerBar(share: task.progress ?? 0, tint: Theme.accent)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, Theme.rowPadV)
     }
 }
 

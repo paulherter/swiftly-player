@@ -15,13 +15,8 @@ use swiftly_render::{Color, GpuContext, WgpuRenderer};
 
 use crate::host::{Host, TextKind};
 
-/// The ground colour behind everything (`colour::REASON`, as on the desktop).
-const CLEAR_OPAQUE: Color = Color {
-    r: 0.0627451,
-    g: 0.0627451,
-    b: 0.0627451,
-    a: 1.0,
-};
+/// The ground colour behind everything (`surface.base`, as on the desktop).
+const CLEAR_OPAQUE: Color = swiftly_ui::components::GROUND;
 
 /// The UI surface lies over a video `SurfaceView` (G3): clear to transparent and ask for a premultiplied surface.
 static TRANSPARENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);

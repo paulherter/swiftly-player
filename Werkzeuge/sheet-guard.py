@@ -32,7 +32,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SYSTEM_SHEET = re.compile(r"\.sheet\((?!opened:)")
+# `.sheet(offered:)` is the core shelf's data function (RustHome.swift, returns a FilterSheetPart), not a SwiftUI sheet.
+SYSTEM_SHEET = re.compile(r"\.sheet\((?!opened:|offered:)")
 DECOUPLE = re.compile(r"\.animation\(nil|\$0\.animation\s*=\s*nil|\.transition\(\.move\(edge:\s*\.bottom")
 LATE_LOAD = re.compile(r"\.task\(id:\s*[\w.]*[oO]pen")
 PARTIAL = re.compile(r"\.presentationDetents\(\[[^\]]*\.(height|medium|fraction|custom)")

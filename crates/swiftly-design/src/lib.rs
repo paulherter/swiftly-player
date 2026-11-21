@@ -13,4 +13,7 @@ pub mod types;
 #[rustfmt::skip]
 pub mod tokens;
 
+#[rustfmt::skip]
+pub mod tokens_generated;
+
 pub use types::{Colour, Curve, LayoutSet, Shadow, TextStyle};

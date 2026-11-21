@@ -14,7 +14,7 @@ use swiftly_seerr::types::{RequestRow, TitleCard};
 use swiftly_seerr::{AskError, CookieJar, SeerrClient};
 
 use crate::seerr_lists::{
-    HubCounts, RailId, RequestPill, SeerrDiscoverRails, SeerrDiscoverVm, SeerrHomeInfo,
+    HubCounts, LibraryHit, RailId, RequestPill, SeerrDiscoverRails, SeerrDiscoverVm, SeerrHomeInfo,
     SeerrHomeVm, SeerrHubInfo, SeerrHubVm, SeerrRequestsInfo, SeerrSearchInfo, SeerrSearchVm,
     TitleCache, request_status,
 };
@@ -522,7 +522,14 @@ impl<T: HttpTransport, J: CookieJar> SeerrListsScreen<T, J> {
     /// Searches Seerr for `term`; an empty term resets. Returns when the answer is in.
     pub async fn search(&self, term: String) -> SeerrSearchInfo {
         lock(&self.search).begin(&term);
-        if term.trim().is_empty() || !self.hub.ensure().await {
+        if term.trim().is_empty() {
+            return self.search_info();
+        }
+        if !self.hub.ensure().await {
+            // The session read itself got no answer: the library line says so instead of an endless wait.
+            if self.hub.info().state == crate::HubState::Offline {
+                lock(&self.search).offline(&term);
+            }
             return self.search_info();
         }
         let Some(c) = self.hub.client() else {
@@ -560,6 +567,11 @@ impl<T: HttpTransport, J: CookieJar> SeerrListsScreen<T, J> {
         self.my.withdraw(id).await
     }
 
+    /// The card of one of the account's own requests (with "Zurückziehen" while it waits).
+    pub async fn request_detail(&self, id: i64) -> Option<crate::SeerrRequestCard> {
+        self.my.request_detail(id).await
+    }
+
     // ---- home block
 
     /// The home block now (`show` false = draw nothing).
@@ -579,7 +591,7 @@ impl<T: HttpTransport, J: CookieJar> SeerrListsScreen<T, J> {
     ) -> SeerrHomeInfo
     where
         F: Fn(String, i64) -> Fut,
-        Fut: std::future::Future<Output = Option<String>>,
+        Fut: std::future::Future<Output = Option<LibraryHit>>,
     {
         let began = std::time::Instant::now();
         let info = self
@@ -598,7 +610,7 @@ impl<T: HttpTransport, J: CookieJar> SeerrListsScreen<T, J> {
     ) -> SeerrHomeInfo
     where
         F: Fn(String, i64) -> Fut,
-        Fut: std::future::Future<Output = Option<String>>,
+        Fut: std::future::Future<Output = Option<LibraryHit>>,
     {
         let ok = self.hub.ensure().await;
         {
@@ -629,12 +641,20 @@ impl<T: HttpTransport, J: CookieJar> SeerrListsScreen<T, J> {
         }
         let candidates = lock(&self.home).arrival_candidates();
         let mut found = Vec::new();
+        let mut covers = Vec::new();
         for cand in candidates {
-            if let Some(id) = find(cand.art.clone(), cand.tmdb).await {
-                found.push((cand.request_id, id));
+            if let Some(hit) = find(cand.art.clone(), cand.tmdb).await {
+                if let Some(cover) = hit.cover {
+                    covers.push((hit.id.clone(), cover));
+                }
+                found.push((cand.request_id, hit.id));
             }
         }
-        lock(&self.home).arrivals_found(found);
+        {
+            let mut h = lock(&self.home);
+            h.arrival_covers(covers);
+            h.arrivals_found(found);
+        }
         lock(&self.home).answered();
         self.home()
     }
@@ -652,7 +672,7 @@ impl<T: HttpTransport, J: CookieJar> SeerrListsScreen<T, J> {
     ) -> bool
     where
         F: Fn(String, i64) -> Fut,
-        Fut: std::future::Future<Output = Option<String>>,
+        Fut: std::future::Future<Output = Option<LibraryHit>>,
     {
         if !self.hub.untouched() {
             return false;

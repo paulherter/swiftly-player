@@ -156,6 +156,7 @@ struct SeriesDetailView: View {
                         .padding(.bottom, 8)
                         description
                     }
+                    .readColumn(wide: wide)
                     .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 4)
                     .padding(.bottom, 22)
@@ -182,7 +183,7 @@ struct SeriesDetailView: View {
                     }
 
                     switch tab {
-                    case 0: episodesList
+                    case 0: episodesList.readColumn(wide: wide, inset: Theme.margin(wide: wide))
                     case 1: cast
                     case 3 where more?.extras.isEmpty == false: extrasSection
                     default: similarSection
@@ -372,13 +373,14 @@ struct SeriesDetailView: View {
                 .transaction { $0.animation = nil }
                 .accessibilityLabel(Text(verbatim: button?.label ?? ""))
             }
-            .buttonStyle(PrimaryButtonStyle(stretches: true))
+            .buttonStyle(PrimaryButtonStyle(stretches: true, corner: Theme.primaryDetailCorner,
+                                            progress: button?.progress.map(Double.init)))
+            // The remaining time is not drawn any more (the line inside the button says it); VoiceOver still gets it.
+            .accessibilityValue(Text(verbatim: button?.remaining ?? ""))
             // A tap starts the next episode's default version; a long press lists its versions (and only them).
             // **Gray while the next episode is still being found** (the core enables it, and enables it again
             // when the fresh load failed so that a press tries once more) and while a plan is on its way.
             .disabled(prepares || button?.enabled != true)
-
-            ResumeSlot(remaining: button?.remaining, progress: button?.progress)
         }
         #if DEBUG
         .background { openMoreHook }
@@ -907,11 +909,10 @@ struct EpisodesRow: View {
         // `runtimeSeconds` is 0, not nil, for an episode without a value; the rule in
         // the package catches both. This exact check was once missing on TV, and the
         // series showed "0 min.".
-        guard DisplayRules.runtimeShow(seconds: episode.runtimeSeconds),
-              let total = episode.runtimeSeconds else { return "" }
+        guard let minutes = DisplayRules.runtimeMinutes(seconds: episode.runtimeSeconds) else { return "" }
         // Runtime only: the file size is in the load selection, and on the episode it is
         // a number without a question behind it.
-        return episode.remainingTimeText ?? String(localized: "\(Int(total / 60)) Min.")
+        return episode.remainingTimeText ?? String(localized: "\(minutes) Min.")
     }
 }
 

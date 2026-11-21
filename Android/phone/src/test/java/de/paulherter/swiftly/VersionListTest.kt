@@ -22,4 +22,14 @@ class VersionListTest {
         assertTrue(title("[]").versions.isEmpty())
         assertNull(title("[]").versions.firstOrNull { it.isDefault })
     }
+
+    @Test fun aLongPressOffersTheListOnlyWhenThereIsAChoice() {
+        val two = title("""[{"id":"a","label":"A","standard":true},{"id":"b","label":"B","standard":false}]""")
+        val one = title("""[{"id":"a","label":"A","standard":true}]""")
+        assertEquals(listOf("a", "b"), versionsOffered(two, onDevice = false).map { it.id })
+        assertTrue(versionsOffered(one, onDevice = false).isEmpty())
+        assertTrue(versionsOffered(two, onDevice = true).isEmpty())
+        // A series carries no versions itself: the TV and phone series pages ask the state episode instead.
+        assertTrue(versionsOffered(null, onDevice = false).isEmpty())
+    }
 }

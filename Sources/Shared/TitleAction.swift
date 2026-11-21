@@ -63,8 +63,8 @@ extension Item {
     /// "52 Min", and where something is started, the remainder behind it.
     var stripDurationLine: String? {
         var parts: [String] = []
-        if DisplayRules.runtimeShow(seconds: runtimeSeconds), let seconds = runtimeSeconds {
-            parts.append(String(localized: "\(Int(seconds / 60)) Min."))
+        if let minutes = DisplayRules.runtimeMinutes(seconds: runtimeSeconds) {
+            parts.append(String(localized: "\(minutes) Min."))
         }
         // "Watched" shows as a check mark in the image, not as a word.
         if let rest = remainingTimeText { parts.append(rest) }

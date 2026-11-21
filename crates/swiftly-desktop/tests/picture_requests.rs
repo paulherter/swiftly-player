@@ -201,3 +201,42 @@ fn the_app_asks_for_the_posters_the_mac_asks_for() {
     );
     swiftly_vm::set_tile_image_sizes(0, 0);
 }
+
+/// The mood colour of a page comes from the picture the page drew. The slot asks for a larger address than the core
+/// names (`sized_for_device`), so the tones must be read under the drawn address: before, `ImageHub::tones` looked up the
+/// core's own address, found nothing and every title page ran without its backdrop colour.
+#[test]
+fn the_tones_of_a_drawn_picture_are_found_by_the_cores_address() {
+    let cx = Cx::deterministic().with_image_page(4096);
+    let decoded = Rc::new(RefCell::new(Vec::new()));
+    let backend = Noting {
+        inner: ImageLoader::new(Arc::new(Resizing), None, Device::Mac),
+        decoded,
+    };
+    let hub = ImageHub::new(Box::new(backend), &cx, 2.0, Device::Mac);
+    let screen: HubSlot = Rc::new(RefCell::new(None));
+    screen.attach(Rc::clone(&hub));
+    let image = ImageRef {
+        address: "http://h/Items/back1/Images/Backdrop?tag=t&maxWidth=1200&quality=90".to_owned(),
+        kind: ImageKind::Poster,
+        wanted_width: 1451,
+        wanted_height: 454,
+    };
+    assert!(hub.tones(&image).is_none(), "nothing is loaded yet");
+    let mut ready = false;
+    for round in 0..3 {
+        screen.begin_build();
+        let slot = hub.slot(Some(&image), 1451.0, 454.0, Priority::Visible);
+        screen.finish(&mut swiftly_render::DrawList::new(100.0, 100.0, 1.0));
+        ready = matches!(slot, RemoteSlot::Ready { .. });
+        if ready {
+            break;
+        }
+        hub.settle(1000.0 * f64::from(round + 1));
+    }
+    assert!(ready, "the backdrop never became ready");
+    assert!(
+        hub.tones(&image).is_some(),
+        "tones of the drawn backdrop are missing"
+    );
+}

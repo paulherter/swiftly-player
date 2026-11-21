@@ -50,5 +50,10 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>StartBackground</string>
+	</dict>
 </dict>
 </plist>

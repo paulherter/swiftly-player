@@ -202,6 +202,8 @@ struct SeerrDetailView: View {
     @FocusState private var atButton: Bool
     /// The request being decided (its buttons are off until the page has read again).
     @State private var adminBusy: Int64?
+    /// The season menu of the episode list: the pill and its panel are the series page's (`SeasonPill`, `ActionPanel`).
+    @State private var episodeSeasonsOpen = false
 
     private var info: SwiftlyCore.SeerrTitleInfo? { flow?.info }
     private var sheet: SwiftlyCore.SeerrSheetInfo? { flow?.sheet }
@@ -221,7 +223,7 @@ struct SeerrDetailView: View {
 
                 // The episodes of a series, in the page's own flow right under the header (`SeerrEpisodes`).
                 if let flow, flow.episodeSeasonRow != nil {
-                    SeerrEpisodes(flow: flow, margin: Theme.edgePage)
+                    SeerrEpisodes(flow: flow, margin: Theme.edgePage, pickerOpen: $episodeSeasonsOpen)
                         .padding(.top, Theme.railsHeaderPadding)
                         .padding(.bottom, Theme.railsSpacing - Theme.railsPadding - Theme.railsHeaderPadding)
                 }
@@ -269,13 +271,32 @@ struct SeerrDetailView: View {
         // While the panel is open the rest is not a focus target, like the More sheet of the detail page.
         .defaultFocus($atButton, true, priority: .userInitiated)
         .onChange(of: seasonsOpen) { _, opened in if !opened { atButton = true } }
-        .disabled(seasonsOpen)
+        .disabled(seasonsOpen || episodeSeasonsOpen)
         // Below the request button, at its edge; see `PanelAnchor`.
         .panel(under: seasonsOpen ? "staffeln" : nil) {
             requestPanel.transition(.opacity)
         }
+        .panel(under: episodeSeasonsOpen ? "staffel" : nil) {
+            if let flow {
+                ActionPanel(actions: episodeSeasonActions(flow), opened: $episodeSeasonsOpen,
+                            start: flow.episodeSeasons.firstIndex { $0.number == flow.episodeSeasonRow?.number } ?? 0)
+                    .transition(.opacity)
+            }
+        }
         .animation(Theme.focusAnimation, value: seasonsOpen)
+        .animation(Theme.motion(.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)), value: episodeSeasonsOpen)
         .task { await load() }
+    }
+
+    /// One row per season of the episode list, the current one ticked, as on the series page.
+    private func episodeSeasonActions(_ flow: SeerrTitleFlow) -> [TitleAction] {
+        flow.episodeSeasons.map { season in
+            let current = flow.episodeSeasonRow?.number == season.number
+            return TitleAction(symbol: current ? "checkmark.circle.fill" : "circle", wording: season.title) {
+                guard !current else { return }
+                flow.pickEpisodeSeason(season.number)
+            }
+        }
     }
 
     private func load() async {
@@ -350,7 +371,8 @@ struct SeerrDetailView: View {
     private var action: some View {
         if let info, info.primary.kind == .request || info.primary.kind == .locked {
             VStack(alignment: .leading, spacing: 20) {
-                Button(info.primary.text) { flow?.open(season: nil) }
+                // The same plus the iPhone and the Mac put on this button (`DetailPlayButton`, "plus").
+                Button { flow?.open(season: nil) } label: { Label(info.primary.text, icon: "plus") }
                     .buttonStyle(ThemedButtonStyle())
                     .disabled(!info.primary.enabled)
                     .focused($atButton)
@@ -501,67 +523,5 @@ private struct WatchTile<ContentBody: View>: View {
             .animation(Theme.focusAnimation, value: focus)
             .focusable()
             .focused($focus)
-    }
-}
-
-// MARK: - Home block
-
-/// **What Seerr adds to the Home rows on the TV**, in two sections that sit in the Home row order like any other row:
-/// "Anfrage ist da" (the arrival stack, `DesktopArrivalSection`: select opens it, a focusable X removes a card) and
-/// "Meine Anfragen" (a rail of Seerr tiles). The core decides every word and whether anything shows (`SeerrHomeInfo`);
-/// the Home page loads this together with its rows, so the block is there when the page appears. The administrator's
-/// line, the lists and the queue stay out on the TV.
-struct TVSeerrHomeBlock: View {
-    enum Part { case arrival, requests }
-
-    let part: Part
-    let model: AppModel
-    let flow: SeerrHomeFlow
-    /// True while focus is on a control of the arrival stack (the Start page makes room for the open stack).
-    var focusWithin: Binding<Bool> = .constant(false)
-    /// Set by the Start page to put focus on the front card when the stack is the first row.
-    var claimFocus: Binding<Bool> = .constant(false)
-
-    @State private var arrived: Item?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let info = flow.block(model) {
-                switch part {
-                case .arrival where !info.arrivals.isEmpty:
-                    DesktopArrivalSection(arrivals: info.arrivals, expanded: info.arrivalsExpanded,
-                                          pending: info.state == .pending,
-                                          play: { id in Task { arrived = await model.item(id: id) } },
-                                          openTitle: { id in Task { arrived = await model.item(id: id) } },
-                                          close: { flow.dismissArrival($0) },
-                                          setExpanded: { flow.setArrivalsExpanded($0) },
-                                          focusWithin: focusWithin, claimFocus: claimFocus)
-                        .padding(.bottom, Theme.railsSpacing)
-                        .transition(.opacity)
-                case .requests where !info.rail.isEmpty:
-                    railsSection {
-                        RailTitle(name: info.railTitle)
-                    } content: {
-                        ScrollView(.horizontal) {
-                            LazyHStack(alignment: .top, spacing: Theme.gridColumn) {
-                                ForEach(info.rail) { card in
-                                    NavigationLink(value: card.route) { SeerrTile(card: card, width: Theme.posterWidth) }
-                                        .buttonStyle(TileStyle())
-                                }
-                            }
-                            .padding(.horizontal, Theme.edgePage)
-                        }
-                        .scrollClipDisabled()
-                    }
-                    // Pending: blank content of the last start's shape keeps the room; nothing shows or takes focus.
-                    .modifier(SeerrReserved(pending: info.state == .pending))
-                default:
-                    EmptyView()
-                }
-            }
-        }
-        .navigationDestination(item: $arrived) { item in
-            DetailView(model: model, item: item)
-        }
     }
 }

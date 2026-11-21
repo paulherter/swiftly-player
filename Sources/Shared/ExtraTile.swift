@@ -39,9 +39,8 @@ struct ExtraTile: View {
                     }
                 // An extra without a runtime reports 0, not nothing; without the rule it
                 // would read "0 min.".
-                } else if DisplayRules.runtimeShow(seconds: extra.runtimeSeconds),
-                   let s = extra.runtimeSeconds {
-                    Text(runtime(s)).font(Theme.small)
+                } else if let line = runtimeLine(extra.runtimeSeconds) {
+                    Text(line).font(Theme.small)
                         .foregroundStyle(Theme.fontVeryQuiet)
                 }
                 }

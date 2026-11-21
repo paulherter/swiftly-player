@@ -136,10 +136,14 @@ import Testing
         #expect(model.playFromStart() == .start(itemId: "m1", since: 0, sourceId: nil))
     }
 
-    @Test @MainActor func aTitleNotStartedSaysAbspielenAndHasNoRemainingTime() async throws {
+    @Test @MainActor func aTitleNotStartedSaysAbspielenAndShowsItsRuntimeUnderPlay() async throws {
         let (model, item) = try await page(Self.movie(progress: nil, sources: 1))
         #expect(model.actions.play.label == oldLabel(item))
-        #expect(model.actions.play.remaining == nil)
+        // No resume point, so no remaining time (the old rule is unchanged); the core fills the reserved slot under
+        // Play with the runtime instead of leaving it empty (RunTimeTicks 72000000000 = two hours).
+        #expect(item.remainingTimeText == nil)
+        #expect(model.actions.play.remaining == runtimeLine(item.runtimeSeconds))
+        #expect(model.actions.play.remaining != nil)  // the wording follows the test language ("2 h 0 min")
         #expect(model.actions.play.progress == nil)
     }
 

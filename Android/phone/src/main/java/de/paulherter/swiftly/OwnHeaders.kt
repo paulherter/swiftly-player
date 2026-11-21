@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +40,7 @@ import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Glyph
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import org.json.JSONArray
 import org.json.JSONObject
@@ -146,7 +146,7 @@ fun AdvancedSection(rows: SnapshotStateList<HeaderRow>, expanded: Boolean = fals
                 }
                 // `SecondaryButtonStyle` with symbol and word, as on iPhone.
                 Row(Modifier.padding(top = 4.dp).fillMaxWidth().heightIn(min = Theme.buttonHeight)
-                        .background(Theme.area, RoundedCornerShape(Theme.corner)).tapOn { rows.add(HeaderRow()) },
+                        .background(Theme.area, smoothRoundedShape(Theme.corner)).tapOn { rows.add(HeaderRow()) },
                     horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     Symbol(Glyph.Plus, 15.dp, color = Theme.font)
                     Spacer(Modifier.width(9.dp))

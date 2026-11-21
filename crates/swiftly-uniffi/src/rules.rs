@@ -289,6 +289,26 @@ mod tests {
     }
 
     #[test]
+    fn the_delete_lock_reaches_the_host_store_and_counts_after_a_restart() {
+        use swiftly_model::switches;
+        let store = Arc::new(Mem::default());
+        let settings = Settings::new(Backing::Native(Arc::clone(&store) as _));
+        settings
+            .set(&swiftly_settings::keys::LOESCHEN_SPERREN, true)
+            .unwrap();
+        // The host keeps the plain key as a Bool (Apple: the `UserDefaults` key, Android: the SharedPreferences key).
+        assert!(matches!(
+            store.get("loeschenSperren".into()),
+            Some(SettingValue::Bool { value: true })
+        ));
+        // A new process starts with the cell at its default; the start fills it from the host store.
+        switches::set_server_delete_locked(false);
+        apply_stored_on(Backing::Native(store));
+        assert!(switches::server_delete_locked());
+        switches::set_server_delete_locked(false);
+    }
+
+    #[test]
     fn cues_are_found_by_time() {
         let idx = SubtitleCueIndex::parse(
             "1\n00:00:01,000 --> 00:00:03,000\nHello\n\n2\n00:00:05,000 --> 00:00:06,000\nBye\n"

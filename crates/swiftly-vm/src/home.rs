@@ -22,10 +22,11 @@ use swiftly_library::home::GenreRail;
 use swiftly_library::home_state::{Fixed, HomeFinish, HomeRun, Step};
 use swiftly_library::{HomeCommand, HomeLoader, HomeState, HomeStore, LoadRequest, StartRail};
 use swiftly_model::Item;
-use swiftly_net::{ErrorKind, HttpTransport};
+use swiftly_net::{ErrorKind, HttpTransport, Priority, RequestOptions, scoped};
 
 use crate::account::AccountRef;
 use crate::bell::{Bell, Changed, part};
+use crate::home_fail_fast::FailFast;
 use crate::home_views::ViewsOnce;
 use crate::host::{Host, Shared};
 use crate::load_state::{Load, LoadFailure};
@@ -746,31 +747,49 @@ impl<T: HttpTransport + 'static> Inner<T> {
         live.abort = Some(handle);
         self.publish(live);
         let inner = Arc::clone(self);
-        self.host.spawner.spawn(Box::pin(async move {
-            let mut guard = guard;
-            let ctx = RunCtx {
-                inner,
-                run,
-                switch,
-                client,
-                key,
-            };
-            let source = ctx.client.clone();
-            let offering = crate::offered::Whose::new(&ctx.key, &ctx.inner.host);
-            if Abortable::new(ctx.drive(commands), registration)
-                .await
-                .is_ok()
-            {
-                guard.armed = false;
-                // The rows are up: ask what the account offers around its titles (its collections) while nobody
-                // waits, so the first detail page finds it ready (`HomePageModel` -> `offeringLoad`).
-                let server = match source {
-                    Source::Jellyfin(c) => crate::detail::Server::Jelly(c),
-                    Source::Plex(c) => crate::detail::Server::Plex(c),
+        // The whole run, what it asks after the rows included, sends each call once (`one_try`).
+        self.host
+            .spawner
+            .spawn(Box::pin(scoped(one_try(), async move {
+                let mut guard = guard;
+                let page = Arc::clone(&inner);
+                let ctx = RunCtx {
+                    inner,
+                    run,
+                    switch,
+                    client,
+                    key,
                 };
-                server.refresh_offering(&offering).await;
-            }
-        }));
+                let source = ctx.client.clone();
+                let offering = crate::offered::Whose::new(&ctx.key, &ctx.inner.host);
+                if Abortable::new(ctx.drive(commands), registration)
+                    .await
+                    .is_ok()
+                {
+                    guard.armed = false;
+                    // The rows are up: ask what the account offers around its titles (its collections) while nobody
+                    // waits, so the first detail page finds it ready (`HomePageModel` -> `offeringLoad`).
+                    // Not when the server did not answer: there is nothing to ask it, and the page says so already.
+                    if page.live().state.disrupted {
+                        return;
+                    }
+                    let server = match source {
+                        Source::Jellyfin(c) => crate::detail::Server::Jelly(c),
+                        Source::Plex(c) => crate::detail::Server::Plex(c),
+                    };
+                    server.refresh_offering(&offering).await;
+                }
+            })));
+    }
+}
+
+/// The requests of a home run: sent once, ahead of background work (the page is showing). A refused server is not asked
+/// three times by the network layer (1.5 s to 2 s per refused connect on Apple and Windows); the retry is the page's own
+/// ("try again", a refresh), and `home_fail_fast` ends the run at the first call that did not get through.
+fn one_try() -> RequestOptions {
+    RequestOptions {
+        retry: false,
+        ..RequestOptions::with_priority(Priority::Visible)
     }
 }
 
@@ -831,6 +850,8 @@ impl<T: HttpTransport + 'static> RunCtx<T> {
 
     /// The run against any page source.
     async fn drive_with(&self, client: &impl HomePageSource, commands: Vec<HomeCommand>) {
+        // After the first call that does not get through, the rest of the run is not sent (`home_fail_fast`).
+        let client = &FailFast::new(client);
         let (inner, run) = (&self.inner, self.run);
         let prefs = &inner.prefs;
 
@@ -871,12 +892,15 @@ impl<T: HttpTransport + 'static> RunCtx<T> {
                 client: self.client.clone(),
                 key: String::new(),
             };
-            inner.host.spawner.spawn(Box::pin(async move {
-                match again.client.clone() {
-                    Source::Jellyfin(c) => again.load_views(&*c).await,
-                    Source::Plex(c) => again.load_views(&*c).await,
-                }
-            }));
+            inner
+                .host
+                .spawner
+                .spawn(Box::pin(scoped(one_try(), async move {
+                    match again.client.clone() {
+                        Source::Jellyfin(c) => again.load_views(&*c).await,
+                        Source::Plex(c) => again.load_views(&*c).await,
+                    }
+                })));
         }
         {
             let mut live = inner.live();

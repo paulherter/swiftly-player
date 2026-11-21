@@ -281,6 +281,20 @@ fn push(list: &mut Vec<MenuEntry>, text: &TitleText, kind: MenuKind, key: &str) 
     });
 }
 
+/// What the More panel's rules need to know about a title. A detail view model reads it from its own state; a host that
+/// runs no view model (Android) states it itself, so the one rule below still builds the list.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MoreFacts {
+    /// The page is a series page.
+    pub series: bool,
+    /// Movie: the playback plan is known. Series: an episode to continue with exists.
+    pub plan_known: bool,
+    /// Movie: the viewer has begun it (a resume position).
+    pub begun: bool,
+    /// The host's menu context (devices in reach, together, download button).
+    pub cx: MenuContext,
+}
+
 /// The More panel of a movie (`TitleActions.playOn` + `forMovie`).
 pub(crate) fn more_menu(
     text: &TitleText,
@@ -288,8 +302,26 @@ pub(crate) fn more_menu(
     plan_known: bool,
     cx: &MenuContext,
 ) -> Vec<MenuEntry> {
+    more_entries(
+        text,
+        &MoreFacts {
+            series: false,
+            plan_known,
+            begun: begun(item),
+            cx: cx.clone(),
+        },
+    )
+}
+
+/// The entries of the More panel of a movie or a series (`TitleActions.forMovie` / `forSeries`), in order: "Abspielen auf
+/// <Gerät>" first, one for each device in reach.
+pub(crate) fn more_entries(text: &TitleText, facts: &MoreFacts) -> Vec<MenuEntry> {
+    let cx = &facts.cx;
     let mut list: Vec<MenuEntry> = Vec::new();
-    if plan_known {
+    if facts.series && cx.download_button {
+        push(&mut list, text, MenuKind::Trailer, "Trailer");
+    }
+    if facts.plan_known {
         for (id, name) in &cx.play_on {
             list.push(MenuEntry {
                 kind: MenuKind::PlayOn {
@@ -303,23 +335,46 @@ pub(crate) fn more_menu(
             });
         }
     }
-    if plan_known && begun(item) {
-        push(
-            &mut list,
-            text,
-            MenuKind::PlayFromStart,
-            "Von vorn abspielen",
-        );
-        push(
-            &mut list,
-            text,
-            MenuKind::ResetProgress,
-            "Fortschritt zurücksetzen",
-        );
+    if facts.series {
+        if facts.plan_known {
+            push(
+                &mut list,
+                text,
+                MenuKind::PlayEpisodeFromStart,
+                "Folge von vorn abspielen",
+            );
+            if cx.together {
+                push(&mut list, text, MenuKind::Together, "Gemeinsam schauen");
+            } else {
+                push(
+                    &mut list,
+                    text,
+                    MenuKind::NextEpisode,
+                    "Nächste Folge abspielen",
+                );
+            }
+        }
+        push(&mut list, text, MenuKind::Shuffle, "Zufällig abspielen");
+    } else {
+        if facts.plan_known && facts.begun {
+            push(
+                &mut list,
+                text,
+                MenuKind::PlayFromStart,
+                "Von vorn abspielen",
+            );
+            push(
+                &mut list,
+                text,
+                MenuKind::ResetProgress,
+                "Fortschritt zurücksetzen",
+            );
+        }
+        if facts.plan_known && cx.together {
+            push(&mut list, text, MenuKind::Together, "Gemeinsam schauen");
+        }
     }
-    if plan_known && cx.together {
-        push(&mut list, text, MenuKind::Together, "Gemeinsam schauen");
-    }
+    // No "<season> als gesehen" row on a series: the Watched button on top of the page already does it.
     push(
         &mut list,
         text,
@@ -327,6 +382,15 @@ pub(crate) fn more_menu(
         "Metadaten neu einlesen",
     );
     list
+}
+
+/// [`more_entries`] for a host without a detail view model, in the given language tag.
+#[must_use]
+pub fn more_menu_for(language: &str, facts: &MoreFacts) -> Vec<MenuEntry> {
+    more_entries(
+        &TitleText::new(swiftly_l10n::Locale::parse(language)),
+        facts,
+    )
 }
 
 /// The age rating as the proof row shows it: a plain number reads "ab 12"; empty is none.
@@ -540,5 +604,97 @@ mod tests {
     #[test]
     fn rating_uses_a_comma() {
         assert_eq!(rating_text(7.54), "7,5");
+    }
+}
+
+#[cfg(test)]
+mod more_menu_tests {
+    use super::{MenuContext, MenuKind, MoreFacts, more_menu_for};
+
+    fn cx() -> MenuContext {
+        MenuContext {
+            play_on: vec![("d1".into(), "Wohnzimmer".into())],
+            together: true,
+            ..Default::default()
+        }
+    }
+
+    fn kinds(facts: &MoreFacts) -> Vec<MenuKind> {
+        more_menu_for("de", facts)
+            .into_iter()
+            .map(|e| e.kind)
+            .collect()
+    }
+
+    #[test]
+    fn a_movie_lists_the_devices_first_and_reads_their_name() {
+        let facts = MoreFacts {
+            series: false,
+            plan_known: true,
+            begun: true,
+            cx: cx(),
+        };
+        let list = more_menu_for("de", &facts);
+        assert_eq!(list[0].text, "Abspielen auf „Wohnzimmer“");
+        assert_eq!(
+            kinds(&facts),
+            vec![
+                MenuKind::PlayOn {
+                    id: "d1".into(),
+                    name: "Wohnzimmer".into()
+                },
+                MenuKind::PlayFromStart,
+                MenuKind::ResetProgress,
+                MenuKind::Together,
+                MenuKind::RefreshMetadata,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_movie_without_a_plan_only_refreshes() {
+        let facts = MoreFacts {
+            series: false,
+            plan_known: false,
+            begun: true,
+            cx: cx(),
+        };
+        assert_eq!(kinds(&facts), vec![MenuKind::RefreshMetadata]);
+    }
+
+    #[test]
+    fn a_series_lists_devices_episode_actions_shuffle_and_refresh() {
+        let mut c = cx();
+        c.together = false;
+        let facts = MoreFacts {
+            series: true,
+            plan_known: true,
+            begun: false,
+            cx: c,
+        };
+        assert_eq!(
+            kinds(&facts),
+            vec![
+                MenuKind::PlayOn {
+                    id: "d1".into(),
+                    name: "Wohnzimmer".into()
+                },
+                MenuKind::PlayEpisodeFromStart,
+                MenuKind::NextEpisode,
+                MenuKind::Shuffle,
+                MenuKind::RefreshMetadata,
+            ]
+        );
+    }
+
+    #[test]
+    fn the_entries_follow_the_language() {
+        let facts = MoreFacts {
+            series: false,
+            plan_known: true,
+            begun: false,
+            cx: cx(),
+        };
+        assert_eq!(more_menu_for("en", &facts)[0].text, "Play on “Wohnzimmer”");
     }
 }

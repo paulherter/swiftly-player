@@ -158,12 +158,9 @@
 
 "(Original)" = "(Original)";
 
-"VLC, Dolby Vision und HDR mit AVPlayer" = "VLC, Dolby Vision und HDR mit AVPlayer";
 
 "Immer AVPlayer" = "Immer AVPlayer";
 
-"Immer VLC" = "Immer VLC";
-"Aether, bei Problemen VLC" = "Aether, bei Problemen VLC";
 
 /* Present in the en and ru tables, missing here */
 "Die Anmeldung bei Plex ist abgelaufen. Bitte noch einmal starten." = "Die Anmeldung bei Plex ist abgelaufen. Bitte noch einmal starten.";

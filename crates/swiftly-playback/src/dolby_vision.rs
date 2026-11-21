@@ -11,6 +11,7 @@
 use swiftly_model::MediaSource;
 
 use crate::device_profile::Flavour;
+use crate::video_decoders::VideoDecoders;
 
 /// Whether the source is AV1 Dolby Vision profile 10 with base-layer compatibility id 0 (or
 /// none given), the one variant with no HDR10 fallback picture.
@@ -46,6 +47,11 @@ pub struct HostDecoders {
     /// The device has no Dolby Vision decoder at all (an emulator, many TVs): profile 5 has no HDR10 base layer to fall
     /// back to, so the server must transcode it.
     pub no_dolby_vision: bool,
+    /// The video decoders the device has (Android: `MediaCodecList`); a title they cannot decode is transcoded.
+    pub video: VideoDecoders,
+    /// The device's decoder refused this very title when it started: the server transcodes it whatever the
+    /// source data says (the host asked again after a decoder error).
+    pub decoder_refused: bool,
 }
 
 impl HostDecoders {
@@ -53,7 +59,7 @@ impl HostDecoders {
     pub fn av1(hardware_av1: bool) -> Self {
         Self {
             hardware_av1,
-            no_dolby_vision: false,
+            ..Self::default()
         }
     }
 }
@@ -71,6 +77,8 @@ pub fn needs_server_transcode(source: &MediaSource, flavour: Flavour, host: Host
     (is_av1_dolby_vision_without_base_layer(source)
         && !device_shows_av1_dolby_vision_10(flavour, host.hardware_av1))
         || (host.no_dolby_vision && is_dolby_vision_5(source))
+        || host.video.lacks_decoder(source)
+        || host.decoder_refused
 }
 
 #[cfg(test)]
@@ -175,8 +183,8 @@ mod tests {
     fn dolby_vision_5_is_transcoded_only_without_a_dolby_vision_decoder() {
         let five = source("hevc", Some(5), Some(0));
         let none = HostDecoders {
-            hardware_av1: false,
             no_dolby_vision: true,
+            ..HostDecoders::default()
         };
         for flavour in [Flavour::Media3, Flavour::Aether, Flavour::Mpv] {
             assert!(needs_server_transcode(&five, flavour, none), "{flavour:?}");
@@ -195,6 +203,78 @@ mod tests {
             &source("hevc", None, None),
             Flavour::Media3,
             none
+        ));
+    }
+    fn plain(codec: &str, bit_depth: i64) -> MediaSource {
+        let stream = MediaStream {
+            type_: Some("Video".into()),
+            codec: Some(codec.into()),
+            bit_depth: Some(bit_depth),
+            width: Some(1920),
+            height: Some(1080),
+            ..MediaStream::default()
+        };
+        MediaSource {
+            media_streams: Some(vec![stream]),
+            ..MediaSource::default()
+        }
+    }
+
+    /// The plan with and without the decoders the device reports (Android: `MediaCodecList`).
+    #[test]
+    fn a_title_the_device_cannot_decode_is_transcoded_and_the_rest_is_not() {
+        let no_av1_no_main10 = HostDecoders {
+            video: VideoDecoders::probed()
+                .with("h264", false, 4096, 2304)
+                .with("hevc", false, 4096, 2304),
+            ..HostDecoders::default()
+        };
+        let all = HostDecoders {
+            video: VideoDecoders::probed()
+                .with("h264", false, 4096, 2304)
+                .with("hevc", true, 4096, 2304)
+                .with("av1", true, 4096, 2304),
+            ..HostDecoders::default()
+        };
+        let av1 = plain("av1", 8);
+        let hevc10 = plain("hevc", 10);
+        let h264 = plain("h264", 8);
+        for flavour in [Flavour::Media3, Flavour::Mpv] {
+            assert!(needs_server_transcode(&av1, flavour, no_av1_no_main10));
+            assert!(needs_server_transcode(&hevc10, flavour, no_av1_no_main10));
+            assert!(!needs_server_transcode(&h264, flavour, no_av1_no_main10));
+            assert!(!needs_server_transcode(&av1, flavour, all));
+            assert!(!needs_server_transcode(&hevc10, flavour, all));
+            assert!(!needs_server_transcode(&h264, flavour, all));
+            // A host that did not report decoders leaves every title as it is.
+            assert!(!needs_server_transcode(
+                &av1,
+                flavour,
+                HostDecoders::default()
+            ));
+            assert!(!needs_server_transcode(
+                &hevc10,
+                flavour,
+                HostDecoders::default()
+            ));
+        }
+    }
+
+    #[test]
+    fn a_title_the_decoder_refused_at_the_start_is_transcoded_whatever_it_is() {
+        let refused = HostDecoders {
+            decoder_refused: true,
+            ..HostDecoders::default()
+        };
+        assert!(needs_server_transcode(
+            &plain("h264", 8),
+            Flavour::Media3,
+            refused
+        ));
+        assert!(!needs_server_transcode(
+            &plain("h264", 8),
+            Flavour::Media3,
+            HostDecoders::default()
         ));
     }
 }

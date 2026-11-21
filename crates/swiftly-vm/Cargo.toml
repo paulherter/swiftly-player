@@ -30,6 +30,8 @@ futures-util = { version = "0.3", default-features = false, features = ["alloc",
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 
 [dev-dependencies]
+# The catalogue guards want every text of the sources; the Play core builds `swiftly-l10n` without the direct-only ones.
+swiftly-l10n = { path = "../swiftly-l10n", features = ["supporter-key"] }
 futures-executor = { version = "0.3", features = ["thread-pool"] }
 serde_json = "1"
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "time", "sync"] }

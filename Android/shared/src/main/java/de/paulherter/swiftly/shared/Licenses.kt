@@ -18,7 +18,7 @@ data class OfferingSection(val title: String, val paragraphs: List<String>)
 
 data class LicenseState(val components: List<LicenseComponent>, val offeringTitle: String,
                          val offering: List<OfferingSection>, val sourceSwiftly: String) {
-    /** Player (libVLC) first, then the rest. */
+    /** Player (Media3, FFmpeg) first, then the rest. */
     fun group(name: String) = components.filter { it.group == name }
 
     companion object {
@@ -52,8 +52,11 @@ data class LicenseState(val components: List<LicenseComponent>, val offeringTitl
 }
 
 /** Intro sentence at the top of the page. The obligation depends on its wording, so it is the same in both versions. */
-fun licenseInLine(): String = translated("Swiftly Player nutzt libVLC von VideoLAN unter der LGPL 2.1 oder später")
+fun licenseInLine(): String = translated("Swiftly Player spielt mit AetherEngine und FFmpeg (Apple), Media3 (Android) und libmpv (Windows, Linux). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.")
 
-/** The sources listed at the top: Swiftly's own repo and the libVLC upstream. */
+/** Short pointer under the offer link: earlier versions contained VLCKit and libVLC, the written offer for their source stays. */
+fun licenseEarlierLine(): String = translated("Frühere Versionen enthielten VLCKit und libVLC (LGPL 2.1 oder später). Das schriftliche Angebot für ihren Quelltext gilt weiter, siehe „Quelltext und schriftliches Angebot“.")
+
+/** The sources listed at the top: Swiftly's own repo, Media3 and FFmpeg upstream. */
 fun licenseSources(inventory: LicenseState): List<String> =
-    listOf(inventory.sourceSwiftly, "https://code.videolan.org/videolan/vlc-android", "https://www.videolan.org/vlc/")
+    listOf(inventory.sourceSwiftly, "https://github.com/androidx/media", "https://ffmpeg.org/")

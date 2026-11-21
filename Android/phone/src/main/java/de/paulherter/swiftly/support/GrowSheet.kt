@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,6 +59,7 @@ import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.motionReduced
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import android.os.Handler
 import android.os.Looper
@@ -175,7 +175,7 @@ fun GrowSheetBody(app: SwiftlyApplication, close: () -> Unit) {
 @Composable
 private fun PricesUnavailableCard(onRetry: () -> Unit) {
     Column(Modifier.padding(horizontal = 16.dp).padding(top = 18.dp).fillMaxWidth()
-               .clip(RoundedCornerShape(Theme.cornerField)).background(Theme.raised).padding(14.dp),
+               .clip(smoothRoundedShape(Theme.cornerField)).background(Theme.raised).padding(14.dp),
            verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(translated("Preise sind gerade nicht verfügbar"), style = giftFont(15f, FontWeight.SemiBold), color = Theme.font)
         Text(translated("Google Play hat nicht geantwortet. Das passiert ohne Internet oder wenn Käufe auf deinem Konto eingeschränkt sind. Nichts geht verloren, und Swiftly läuft wie immer."),
@@ -199,7 +199,7 @@ internal fun LegalLink(text: String, action: () -> Unit) {
 @Composable
 private fun PlanTile(badge: String?, title: String, price: String, detail: String, chosen: Boolean,
                      modifier: Modifier, choose: () -> Unit) {
-    val shape = RoundedCornerShape(Theme.cornerField)
+    val shape = smoothRoundedShape(Theme.cornerField)
     val calm = motionReduced()
     val pop = remember { Animatable(if (chosen) 1f else 0.4f) }
     LaunchedEffect(chosen) {

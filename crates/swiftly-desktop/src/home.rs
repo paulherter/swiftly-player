@@ -10,10 +10,12 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::Arc;
-use swiftly_design::tokens::{colour, desktop, touch, tv};
+use swiftly_design::tokens::{desktop, touch, tv};
+use swiftly_design::tokens_generated::color;
+use swiftly_design::tokens_generated::desktop as dsk;
 use swiftly_images::Priority;
 use swiftly_layout::{Align, Alignment, Axis, EdgeInsets, FlexFrame, Size};
-use swiftly_render::{Color, DrawList, LinearGradient, RgbaImage};
+use swiftly_render::{CORNER_REACH, Color, DrawList, LinearGradient, RgbaImage};
 use swiftly_text::TextStyle;
 use swiftly_ui::components::{color, focus_id};
 use swiftly_ui::icons::{Icons, SPOKES};
@@ -97,16 +99,16 @@ fn metrics(form: Form, pad: bool) -> Metrics {
             header_gap: tuning::RAIL_HEADER_GAP,
         },
         Form::Desktop => Metrics {
-            edge: desktop::EDGE_SPACING,
-            rails_spacing: desktop::RAILS_SPACING,
-            tile_spacing: desktop::TILE_SPACING,
-            poster: Size::new(desktop::TILE_WIDTH, desktop::TILE_HEIGHT),
+            edge: dsk::SPACE_PAGE,
+            rails_spacing: dsk::SPACE_RAIL_GAP,
+            tile_spacing: dsk::SPACE_TILE_GAP,
+            poster: Size::new(dsk::SIZE_POSTER_WIDTH, dsk::SIZE_POSTER_HEIGHT),
             // 16:9 of 280 pt as SwiftUI lays it out (159 pt in the parity render, the token says 158).
-            landscape: Size::new(desktop::LANDSCAPE_WIDTH, 159.0),
-            corner: desktop::CORNER_TILE,
-            rail: desktop::text::SECTION,
-            tile: desktop::text::TILE,
-            small: desktop::text::SMALL,
+            landscape: Size::new(dsk::SIZE_LANDSCAPE_WIDTH, 159.0),
+            corner: dsk::RADIUS_TILE,
+            rail: dsk::TEXT_HEADING_SECTION,
+            tile: dsk::TEXT_LABEL_TILE,
+            small: dsk::TEXT_CAPTION_SMALL,
             text_gap: tuning::TILE_TITLE_GAP,
             header_gap: tuning::RAIL_HEADER_GAP,
         },
@@ -217,6 +219,8 @@ struct Parts {
     mine: (bool, bool),
     glow: (crate::look_glow::Glow, u16),
     status: Arc<StatusPart>,
+    /// The page is still `Loading` but says so as trouble (see [`waiting_trouble`]): the error page with a busy button.
+    waiting: Option<swiftly_vm::LoadFailure>,
     rails: Arc<RailsPart>,
     /// The tab in front (0 = Start).
     tab: usize,
@@ -329,7 +333,7 @@ pub enum SupportTap {
 fn support_card(cx: &Cx, hours: i64) -> Node {
     use swiftly_support::SupportCopy;
     let words = |c: SupportCopy| c.de.to_owned();
-    const W: f32 = desktop::FORM_WIDTH + 60.0;
+    const W: f32 = dsk::SIZE_FORM_WIDTH + 60.0;
     let inner = W - 36.0;
     let mut lines = Vec::new();
     if hours >= SupportCopy::CARD_MINIMUM_HOURS {
@@ -337,8 +341,8 @@ fn support_card(cx: &Cx, hours: i64) -> Node {
             text(
                 cx,
                 &words(SupportCopy::CARD_WATCHED_HOURS).replace("%lld", &hours.to_string()),
-                desktop::text::LIST_TITLE,
-                colour::FONT,
+                dsk::TEXT_LABEL_ROW_TITLE,
+                color::TEXT_PRIMARY,
                 Some(2),
                 swiftly_text::Align::Start,
             )
@@ -349,8 +353,8 @@ fn support_card(cx: &Cx, hours: i64) -> Node {
         text(
             cx,
             &words(SupportCopy::CARD_ASK),
-            desktop::text::BODY,
-            colour::FONT_QUIET,
+            dsk::TEXT_BODY_DEFAULT,
+            color::TEXT_SECONDARY,
             Some(3),
             swiftly_text::Align::Start,
         )
@@ -358,14 +362,14 @@ fn support_card(cx: &Cx, hours: i64) -> Node {
     );
     let button = |label: String, key: &str, primary: bool| {
         let (fg, bg) = if primary {
-            (colour::REASON, colour::FONT)
+            (color::SURFACE_BASE, color::TEXT_PRIMARY)
         } else {
-            (colour::FONT, colour::AREA)
+            (color::TEXT_PRIMARY, color::SURFACE_CONTROL)
         };
         text(
             cx,
             &label,
-            desktop::text::LIST_TITLE,
+            dsk::TEXT_LABEL_ROW_TITLE,
             fg,
             Some(1),
             swiftly_text::Align::Center,
@@ -397,10 +401,10 @@ fn support_card(cx: &Cx, hours: i64) -> Node {
     )
     .padding(ins(18.0, 18.0, 18.0, 18.0))
     .background(
-        Node::rect(color(colour::GROUPS_AREA), desktop::CORNER_CARD),
+        Node::rect(color(color::SURFACE_GROUP), dsk::RADIUS_CARD),
         Alignment::CENTER,
     )
-    .padding(ins(0.0, desktop::EDGE_SPACING, 0.0, 0.0))
+    .padding(ins(0.0, dsk::SPACE_PAGE, 0.0, 0.0))
 }
 
 /// The tile menu sheet. The entries are computed once, when the sheet opens: the rows on show and the entry a tap
@@ -498,10 +502,11 @@ fn text_block_height(cx: &Cx, m: &Metrics) -> f32 {
 pub(crate) fn progress_bar(width: f32, corner: f32, share: f32) -> Node {
     let share = share.clamp(0.0, 1.0);
     let strip = |w: f32, color: Color| {
-        // A rounded rectangle as tall as two corner radii, bottom aligned, cut to the bottom 4 pt: exactly the tile's lower edge.
+        // A rounded rectangle tall enough for the smoothed corner (two corner zones, a shorter one would count as a
+        // capsule and stay circular; whole points, so the corner lands on the same pixels), bottom aligned, cut to the bottom 4 pt: exactly the tile's lower edge.
         let full = Node::rect(color, corner).frame(
             Some(width),
-            Some(2.0 * corner),
+            Some((2.0 * CORNER_REACH * corner).ceil()),
             Alignment::BOTTOM_LEADING,
         );
         Node::zstack(Alignment::BOTTOM_LEADING, vec![full])
@@ -512,7 +517,7 @@ pub(crate) fn progress_bar(width: f32, corner: f32, share: f32) -> Node {
         Alignment::BOTTOM_LEADING,
         vec![
             strip(width, Color::new(1.0, 1.0, 1.0, 0.30)),
-            strip(width * share, color(colour::MARK_ACCENT)),
+            strip(width * share, color(crate::look_glow::accent())),
         ],
     )
 }
@@ -552,7 +557,7 @@ fn tile_node(
     );
     let image = match (hub, tile.image.as_ref()) {
         (Some(hub), _) => {
-            let back = Node::rect(color(colour::AREA), m.corner)
+            let back = Node::rect(color(color::SURFACE_CONTROL), m.corner)
                 .pixel_snapped()
                 .frame(Some(size.w), Some(size.h), Alignment::CENTER);
             back.overlay(
@@ -561,7 +566,7 @@ fn tile_node(
                     size.w,
                     size.h,
                     m.corner,
-                    || icons.node(symbol, 22.0, true, color(colour::FONT)),
+                    || icons.node(symbol, 22.0, true, color(color::TEXT_PRIMARY)),
                 ),
                 Alignment::CENTER,
             )
@@ -569,7 +574,7 @@ fn tile_node(
         }
         (None, _) => match art.pick(landscape, &tile.id) {
             Some(id) => Node::image(id, size.w, size.h, m.corner),
-            None => Node::rect(color(colour::AREA), m.corner).frame(
+            None => Node::rect(color(color::SURFACE_CONTROL), m.corner).frame(
                 Some(size.w),
                 Some(size.h),
                 Alignment::CENTER,
@@ -577,7 +582,7 @@ fn tile_node(
         },
     };
     let mut image = image.paint(Paint::Stroke {
-        color: color(colour::TILE_BORDER),
+        color: color(color::BORDER_TILE),
         width: 1.0,
         radius: m.corner,
     });
@@ -608,7 +613,7 @@ fn tile_node(
         image = image
             .on_tap(tap)
             .focusable(focus_id(key), None)
-            .focus_ring(color(colour::MARK_ACCENT), m.corner);
+            .focus_ring(color(crate::look_glow::accent()), m.corner);
     }
     // The menu action says which row was clicked: the Continue Watching row has the entry that removes a title from it,
     // the same title in another row has not.
@@ -623,7 +628,7 @@ fn tile_node(
             cx,
             &tile.title,
             m.tile,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         )
@@ -639,7 +644,7 @@ fn tile_node(
                 cx,
                 sub,
                 m.small,
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 Some(1),
                 swiftly_text::Align::Start,
             )
@@ -697,13 +702,14 @@ pub(crate) fn paging_arrow_inset(
     at: f32,
     inset: f32,
 ) -> Node {
-    let icon = icons.node(asset, 15.0, false, color(colour::FONT)).frame(
-        Some(34.0),
-        Some(34.0),
-        Alignment::CENTER,
-    );
+    let icon = icons
+        .node(asset, 15.0, false, color(color::TEXT_PRIMARY))
+        .frame(Some(34.0), Some(34.0), Alignment::CENTER);
     let b = icon
-        .background(Node::rect(color(colour::AREA), 8.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 8.0),
+            Alignment::CENTER,
+        )
         .hover_surface(
             Color::new(1.0, 1.0, 1.0, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
             8.0,
@@ -816,7 +822,7 @@ fn rail_node(
         cx,
         &rail.title,
         m.rail,
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(1),
         swiftly_text::Align::Start,
     )
@@ -834,7 +840,7 @@ fn rail_node(
             cx,
             &rail.title,
             m.rail,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         )
@@ -858,7 +864,7 @@ fn rail_node(
                         tracking: 0.0,
                         uppercase: false,
                     },
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     Some(1),
                     swiftly_text::Align::End,
                 )
@@ -948,7 +954,7 @@ fn rail_node(
 
 pub(crate) fn load_field(w: f32, h: f32, radius: f32) -> Node {
     // `LoadField`: opacity 0.5 to 1 with `easeInOut(0.9)` forever, none under Reduce Motion (`MacComponents.swift:506-523`).
-    Node::rect(color(colour::AREA), radius)
+    Node::rect(color(color::SURFACE_CONTROL), radius)
         .frame(Some(w), Some(h), Alignment::CENTER)
         .appear_from(1.0, swiftly_ui::feel::PULSE_LOW)
         .opacity(1.0, swiftly_ui::feel::pulse())
@@ -981,7 +987,7 @@ fn chips_row(
                     tracking: 0.0,
                     uppercase: false,
                 },
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Center,
             );
@@ -993,7 +999,7 @@ fn chips_row(
                     Alignment::CENTER,
                 )
                 .paint(Paint::Stroke {
-                    color: color(colour::MARGIN),
+                    color: color(color::SURFACE_FOCUS),
                     width: 1.0,
                     radius: 17.0,
                 })
@@ -1087,18 +1093,31 @@ pub(crate) fn empty_state(
     body: &str,
     button: &str,
 ) -> Node {
+    empty_state_with(cx, icons, asset, heading, body, button, false)
+}
+
+/// [`empty_state`] with a busy button: the label is quiet and takes no tap (the page is trying again).
+fn empty_column(
+    cx: &Cx,
+    icons: &Icons,
+    asset: &str,
+    heading: &str,
+    body: &str,
+    button: &str,
+    busy: bool,
+) -> Node {
     let disc = icons
-        .node(asset, touch::EMPTY_SYMBOL, true, color(colour::FONT))
+        .node(asset, touch::EMPTY_SYMBOL, true, color(color::TEXT_PRIMARY))
         .frame(
             Some(touch::EMPTY_DISC),
             Some(touch::EMPTY_DISC),
             Alignment::CENTER,
         )
         .background(
-            Node::rect(color(colour::AREA), touch::EMPTY_DISC / 2.0),
+            Node::rect(color(color::SURFACE_CONTROL), touch::EMPTY_DISC / 2.0),
             Alignment::CENTER,
         );
-    let column = Node::vstack(
+    Node::vstack(
         Align::Center,
         Some(0.0),
         vec![
@@ -1107,7 +1126,7 @@ pub(crate) fn empty_state(
                 cx,
                 heading,
                 touch::text::SUBPAGE,
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(2),
                 swiftly_text::Align::Center,
             )
@@ -1116,7 +1135,7 @@ pub(crate) fn empty_state(
                 cx,
                 body,
                 touch::text::BODY,
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 None,
                 swiftly_text::Align::Center,
             )
@@ -1124,12 +1143,24 @@ pub(crate) fn empty_state(
             .padding(ins(0.0, 0.0, 24.0, 0.0)),
             if button.is_empty() {
                 Node::fixed(0.0, 0.0)
+            } else if busy {
+                text(
+                    cx,
+                    button,
+                    touch::text::CATEGORY,
+                    color::TEXT_SECONDARY,
+                    Some(1),
+                    swiftly_text::Align::Center,
+                )
+                .padding(EdgeInsets::symmetric(16.0, 0.0))
+                .frame(None, Some(44.0), Alignment::CENTER)
+                .key("retry-busy")
             } else {
                 text(
                     cx,
                     button,
                     touch::text::CATEGORY,
-                    colour::MARK_ACCENT,
+                    crate::look_glow::accent(),
                     Some(1),
                     swiftly_text::Align::Center,
                 )
@@ -1139,11 +1170,88 @@ pub(crate) fn empty_state(
                 .on_tap(RETRY)
             },
         ],
-    );
-    fill_frame(column, Alignment::CENTER)
+    )
+}
+
+fn empty_state_with(
+    cx: &Cx,
+    icons: &Icons,
+    asset: &str,
+    heading: &str,
+    body: &str,
+    button: &str,
+    busy: bool,
+) -> Node {
+    fill_frame(
+        empty_column(cx, icons, asset, heading, body, button, busy),
+        Alignment::CENTER,
+    )
+}
+
+/// The server notice over stored rows (the same block as the full-page one, `Trouble.copy`, in the rows' flow): the page
+/// shows what it stored and the server does not answer. Only for the two "does not answer" failures; a refused sign-in or
+/// an unreadable answer have their own page. `busy`: a retry is running, the button waits.
+fn server_notice(
+    cx: &Cx,
+    icons: &Icons,
+    server: &str,
+    failure: swiftly_vm::LoadFailure,
+    busy: bool,
+) -> Option<Node> {
+    use swiftly_vm::{FailKind, LoadFailure};
+    if !matches!(
+        failure,
+        LoadFailure::Offline | LoadFailure::Failed(FailKind::Server)
+    ) {
+        return None;
+    }
+    let (title, body) = failure.copy(server);
+    let button = if busy {
+        "Moment\u{2026}"
+    } else {
+        "Erneut versuchen"
+    };
+    Some(
+        empty_column(cx, icons, "hard-drive-x", title, &body, button, busy)
+            .flex_frame(FlexFrame {
+                max_w: Some(f32::INFINITY),
+                align: Some(Alignment::CENTER),
+                ..FlexFrame::default()
+            })
+            .padding(ins(8.0, 0.0, 0.0, 0.0))
+            .key("server-notice"),
+    )
 }
 
 const RETRY: &str = "home.retry";
+
+/// How long a Start page that shows nothing waits before it says the server is not answering (the answer may still
+/// come and fill the page). A refused connection says so at once; a server that drops packets or never replies says
+/// nothing, and grey skeletons for the transport's whole timeout look like a hang.
+pub const SILENT_AFTER_MS: f64 = 5000.0;
+
+/// Whether a `Loading` Start page without rails draws the error page with a busy button instead of skeletons: at once
+/// after "Erneut versuchen" (with the words of the failure it was pressed on), and on a cold start once
+/// [`SILENT_AFTER_MS`] have passed. `loading_from` is the page's own stopwatch; it restarts whenever the page is not
+/// waiting. `holding` (the Seerr rows are awaited on a healthy server) never counts as silence.
+fn waiting_trouble(
+    status: Status,
+    has_rails: bool,
+    holding: bool,
+    retrying: Option<swiftly_vm::LoadFailure>,
+    loading_from: &mut Option<f64>,
+    now: f64,
+) -> Option<swiftly_vm::LoadFailure> {
+    if status != Status::Loading || has_rails {
+        *loading_from = None;
+        return None;
+    }
+    let from = *loading_from.get_or_insert(now);
+    if let Some(failure) = retrying {
+        return Some(failure);
+    }
+    (!holding && now - from >= SILENT_AFTER_MS).then_some(swiftly_vm::LoadFailure::Offline)
+}
 
 // ---- chrome --------------------------------------------------------------------------------------------------------
 
@@ -1152,7 +1260,7 @@ fn wordmark(cx: &Cx, label: &str, size: swiftly_design::TextStyle) -> Node {
         cx,
         label,
         size,
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(1),
         swiftly_text::Align::Start,
     )
@@ -1169,7 +1277,7 @@ pub(crate) fn bar_strength(offset: f32, since: f32, over: f32) -> u8 {
 }
 
 /// The Mac page bars' scroll offset where the small title starts to fade in.
-pub(crate) const BAR_SINCE: f32 = desktop::CONTENT_TOP + 33.0 - desktop::TOOLBAR_HEIGHT;
+pub(crate) const BAR_SINCE: f32 = dsk::SPACE_CONTENT_TOP + 33.0 - dsk::SIZE_TOOLBAR_HEIGHT;
 /// Width reserved for the back/forward arrows in the bar (`NavArrows.width`).
 pub(crate) const ARROWS_WIDTH: f32 = 62.0;
 
@@ -1254,9 +1362,9 @@ pub(crate) fn header_backdrop(strength: f32) -> Node {
     // device pixel, which two half-covering bands paint too dark: a dark line every second row.
     let stops: Vec<(f32, Color)> = backdrop_stops()
         .into_iter()
-        .map(|(at, a)| (at, rgba(colour::REASON, a * op)))
+        .map(|(at, a)| (at, rgba(color::SURFACE_BASE, a * op)))
         .collect();
-    Node::rect(rgba(colour::REASON, 0.0), 0.0)
+    Node::rect(rgba(color::SURFACE_BASE, 0.0), 0.0)
         .paint(Paint::Stops {
             stops,
             vertical: true,
@@ -1284,7 +1392,7 @@ pub(crate) fn state_bar(cx: &Cx, title: &str, strength: u8) -> Node {
             tracking: 0.0,
             uppercase: false,
         }),
-        rgba(colour::FONT, s),
+        rgba(color::TEXT_PRIMARY, s),
         Some(1),
         swiftly_text::Align::Start,
     )
@@ -1294,7 +1402,7 @@ pub(crate) fn state_bar(cx: &Cx, title: &str, strength: u8) -> Node {
         bottom: 0.0,
         trailing: 16.0,
     })
-    .frame(None, Some(desktop::TOOLBAR_HEIGHT), Alignment::LEADING);
+    .frame(None, Some(dsk::SIZE_TOOLBAR_HEIGHT), Alignment::LEADING);
     let name = name.flex_frame(FlexFrame {
         max_w: Some(f32::INFINITY),
         align: Some(Alignment::LEADING),
@@ -1377,14 +1485,14 @@ pub(crate) fn glass_ground(width: f32, height: f32, eighths: u8, history_floor: 
     }
     let blur_stack = Node::vstack(Align::Start, Some(0.0), layers);
     let ground = ramp(
-        colour::REASON,
+        color::SURFACE_BASE,
         &[(0.0, 0.97), (0.45, 0.78), (1.0, 0.0)],
         (s * 3.0).min(1.0),
         width,
         h,
     );
     let history = ramp(
-        colour::REASON,
+        color::SURFACE_BASE,
         &[
             (0.0, 1.0),
             (0.30, 0.96),
@@ -1400,11 +1508,11 @@ pub(crate) fn glass_ground(width: f32, height: f32, eighths: u8, history_floor: 
         width,
         h,
     );
-    let line = Node::rect(rgba(colour::LINE, colour::LINE.a * s), 0.0).frame(
-        Some(width),
-        Some(1.0),
-        Alignment::CENTER,
-    );
+    let line = Node::rect(
+        rgba(color::BORDER_HAIRLINE, color::BORDER_HAIRLINE.a * s),
+        0.0,
+    )
+    .frame(Some(width), Some(1.0), Alignment::CENTER);
     // The hairline sits at the bar's foot, `gift` above the end of the gradient.
     let line = line.padding(ins(height - 1.0, 0.0, 0.0, 0.0));
     Node::fixed(width, h)
@@ -1416,7 +1524,7 @@ pub(crate) fn glass_ground(width: f32, height: f32, eighths: u8, history_floor: 
 
 pub(crate) fn header(cx: &Cx, env: &Env, p: &Bar, title: &str) -> Node {
     let height = env.safe.top + 44.0 + 12.0;
-    let profile = Node::rect(color(colour::AREA), 999.0)
+    let profile = Node::rect(color(color::SURFACE_CONTROL), 999.0)
         .frame(Some(32.0), Some(32.0), Alignment::CENTER)
         .key("profile")
         .on_tap(Action::from("profile"));
@@ -1442,6 +1550,11 @@ pub(crate) fn header(cx: &Cx, env: &Env, p: &Bar, title: &str) -> Node {
     )
 }
 
+/// The sidebar's Merkliste row: the Mac draws `bookmark.fill` in both states (`MainView.swift`, `Region.symbol`; its
+/// `tabAsset` has no outline/filled pair for it), only the colour tells selected from idle. The other rows are the tab
+/// icon set A, outline idle and filled selected ([`tab_icon`]).
+const WATCHLIST_ICON: &str = "bookmark-simple.fill";
+
 /// The icon of a tab and whether it is drawn with a stroke weight: tab icons A (design/icons/mapping.json), outline
 /// while idle and the filled variant while selected.
 fn tab_icon(i: usize, selected: bool) -> (&'static str, bool) {
@@ -1464,9 +1577,9 @@ pub(crate) fn tab_bar(cx: &Cx, env: &Env, p: &Bar, icons: &Icons) -> Node {
         .enumerate()
         .map(|(i, name)| {
             let c = if i == p.tab {
-                colour::MARK_ACCENT
+                crate::look_glow::accent()
             } else {
-                colour::FONT_VERY_QUIET
+                color::TEXT_TERTIARY
             };
             let (asset, outlined) = tab_icon(i, i == p.tab);
             let column = Node::vstack(
@@ -1504,7 +1617,8 @@ pub(crate) fn tab_bar(cx: &Cx, env: &Env, p: &Bar, icons: &Icons) -> Node {
             Some(touch::STRIP_HEIGHT + env.safe.bottom),
             Alignment::TOP_LEADING,
         );
-    let line = Node::rect(color(colour::LINE), 0.0).frame(None, Some(1.0), Alignment::TOP);
+    let line =
+        Node::rect(color(color::BORDER_HAIRLINE), 0.0).frame(None, Some(1.0), Alignment::TOP);
     fill_frame(row, Alignment::TOP_LEADING)
         .frame(
             None,
@@ -1512,7 +1626,7 @@ pub(crate) fn tab_bar(cx: &Cx, env: &Env, p: &Bar, icons: &Icons) -> Node {
             Alignment::TOP_LEADING,
         )
         .background(
-            Node::rect(rgba(colour::REASON, 0.94), 0.0),
+            Node::rect(rgba(color::SURFACE_BASE, 0.94), 0.0),
             Alignment::CENTER,
         )
         .overlay(line, Alignment::TOP)
@@ -1554,7 +1668,8 @@ pub(crate) fn quiet_to_hot(
     n
 }
 
-/// The Mac `Sidebar`: 220 wide on the `area` colour, a hairline on its right, the wordmark, the four places with their
+/// The Mac `Sidebar`: 220 wide on `surface.group`, a hairline on its right, no wordmark (the rows start `SPACE_SIDEBAR_TOP`
+/// from the top), the four places with their
 /// shortcut hints, "Meins" (Merkliste, Downloads) and the account footer (no "Profil" row). Rows are 32 high, icon 18,
 /// label 14 (semibold and accent when active), corner 8; rest `fontQuiet`, hover white with a white 6 % surface, active
 /// accent on accent 12 %.
@@ -1568,14 +1683,14 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
                action: &str,
                tip: &str| {
         let (rest, hover_c) = if active {
-            (colour::MARK_ACCENT, colour::MARK_ACCENT)
+            (crate::look_glow::accent(), crate::look_glow::accent())
         } else {
-            (colour::FONT_QUIET, colour::FONT)
+            (color::TEXT_SECONDARY, color::TEXT_PRIMARY)
         };
         let style = swiftly_design::TextStyle {
             size: 14.0,
             weight: if active { 600 } else { 500 },
-            ..desktop::text::BAR_TITLE
+            ..dsk::TEXT_LABEL_BAR_TITLE
         };
         let mut cells = vec![
             quiet_to_hot(
@@ -1605,7 +1720,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
                 cx,
                 &h,
                 st,
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 Some(1),
                 swiftly_text::Align::End,
             ));
@@ -1620,14 +1735,14 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
         );
         if active {
             n = n.background(
-                Node::rect(rgba(colour::MARK_ACCENT, 0.12), 8.0),
+                Node::rect(rgba(crate::look_glow::accent(), 0.12), 8.0),
                 Alignment::CENTER,
             );
         }
         n.hover_surface(hot, swiftly_ui::feel::SIDEBAR_HOVER_RADIUS)
             .press_style(swiftly_ui::PressStyle::Row)
             .focusable(focus_id(action), None)
-            .focus_ring(color(colour::MARK_ACCENT), 8.0)
+            .focus_ring(color(crate::look_glow::accent()), 8.0)
             .a11y(
                 swiftly_ui::a11y::A11yNode::new("", swiftly_ui::a11y::Role::Tab, name)
                     .with_selected(active),
@@ -1667,7 +1782,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
                 tracking: 0.0,
                 uppercase: false,
             },
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(1),
             swiftly_text::Align::Start,
         )
@@ -1677,12 +1792,8 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
         mine.push(row(
             p.tab == 4 && !p.downloads && !p.settings,
             "Merkliste",
-            if p.tab == 4 && !p.downloads && !p.settings {
-                "bookmark-simple.fill"
-            } else {
-                "bookmark-simple"
-            },
-            !(p.tab == 4 && !p.downloads && !p.settings),
+            WATCHLIST_ICON,
+            false,
             None,
             "go:watchlist",
             "Merkliste",
@@ -1728,7 +1839,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
                     tracking: 0.0,
                     uppercase: false,
                 },
-                colour::REASON,
+                color::SURFACE_BASE,
                 Some(1),
                 swiftly_text::Align::Center,
             )
@@ -1737,7 +1848,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
         let face = crate::hub::avatar_node(hub, p.card.picture(), 28.0, letter)
             .frame(Some(28.0), Some(28.0), Alignment::CENTER)
             .background(
-                Node::rect(color(colour::MARK_ACCENT), 14.0),
+                Node::rect(color(crate::look_glow::accent()), 14.0),
                 Alignment::CENTER,
             );
         let mut lines = vec![text(
@@ -1749,7 +1860,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
                 tracking: 0.0,
                 uppercase: false,
             },
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         )];
@@ -1763,7 +1874,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
                     tracking: 0.0,
                     uppercase: false,
                 },
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 Some(1),
                 swiftly_text::Align::Start,
             ));
@@ -1776,7 +1887,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
                 face,
                 who,
                 Node::spacer(),
-                icons.node("gear", 16.0, false, color(colour::FONT_VERY_QUIET)),
+                icons.node("gear", 16.0, false, color(color::TEXT_TERTIARY)),
             ],
         )
         .padding(EdgeInsets::symmetric(10.0, 0.0))
@@ -1785,7 +1896,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
             fill_frame(content, Alignment::LEADING).frame(None, Some(48.0), Alignment::LEADING);
         if p.settings {
             selected = selected.background(
-                Node::rect(rgba(colour::MARK_ACCENT, 0.12), 8.0),
+                Node::rect(rgba(crate::look_glow::accent(), 0.12), 8.0),
                 Alignment::CENTER,
             );
         }
@@ -1793,7 +1904,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
             .hover_surface(hot, swiftly_ui::feel::SIDEBAR_HOVER_RADIUS)
             .press_style(swiftly_ui::PressStyle::Row)
             .focusable(focus_id("profile"), None)
-            .focus_ring(color(colour::MARK_ACCENT), 8.0)
+            .focus_ring(color(crate::look_glow::accent()), 8.0)
             .a11y(
                 swiftly_ui::a11y::A11yNode::new("", swiftly_ui::a11y::Role::Button, "Konto")
                     .with_selected(p.settings),
@@ -1807,36 +1918,35 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
         Align::Start,
         Some(2.0),
         vec![
-            // `Color.clear.frame(height: signalHeight)`, then the 26 pt wordmark 4 pt below it.
-            icons
-                .wordmark(26.0, color(colour::FONT), color(colour::MARK_ACCENT))
-                .a11y(swiftly_ui::a11y::A11yNode::new(
-                    "",
-                    swiftly_ui::a11y::Role::Image,
-                    "Swiftly",
-                ))
-                .padding(ins(
-                    desktop::SIGNAL_HEIGHT + 4.0,
-                    20.0,
-                    92.0 - 44.0 - 26.0 - 2.0,
-                    20.0,
-                )),
-            Node::vstack(Align::Start, Some(2.0), top).padding(ins(0.0, 10.0, 0.0, 10.0)),
+            // No wordmark: the first row starts `SPACE_SIDEBAR_TOP` from the sidebar's top edge, right under the
+            // window buttons area (the traffic lights on the Mac, the top edge on Windows and Linux).
+            Node::vstack(Align::Start, Some(2.0), top).padding(ins(
+                dsk::SPACE_SIDEBAR_TOP,
+                10.0,
+                0.0,
+                10.0,
+            )),
             Node::vstack(Align::Start, Some(2.0), mine).padding(ins(0.0, 10.0, 0.0, 10.0)),
             Node::spacer(),
             offer_row(cx, p.offer.as_ref(), icons),
             footer,
         ],
     );
-    let hairline = Node::rect(color(colour::LINE), 0.0).frame(Some(1.0), None, Alignment::TRAILING);
+    let hairline =
+        Node::rect(color(color::BORDER_HAIRLINE), 0.0).frame(Some(1.0), None, Alignment::TRAILING);
     fill_frame(column, Alignment::TOP_LEADING)
-        .frame(Some(desktop::SIDEBAR_WIDTH), None, Alignment::TOP_LEADING)
+        .frame(Some(dsk::SIZE_SIDEBAR_WIDTH), None, Alignment::TOP_LEADING)
         .flex_frame(FlexFrame {
             max_h: Some(f32::INFINITY),
             align: Some(Alignment::TOP_LEADING),
             ..FlexFrame::default()
         })
-        .background(Node::rect(color(colour::AREA), 0.0), Alignment::CENTER)
+        // The Mac's `Theme.groupsArea`: `surface.group`, one step below the controls (it was `surface.control`, lighter
+        // than the Mac's sidebar).
+        .background(
+            Node::rect(color(color::SURFACE_GROUP), 0.0),
+            Alignment::CENTER,
+        )
         .overlay(
             fill_frame(hairline, Alignment::TRAILING),
             Alignment::TRAILING,
@@ -1856,7 +1966,7 @@ fn offer_row(cx: &Cx, offer: Option<&crate::desk::Offer>, icons: &Icons) -> Node
         tracking: 0.0,
         uppercase: false,
     };
-    let accent = color(colour::MARK_ACCENT);
+    let accent = color(crate::look_glow::accent());
     let mut cells = vec![
         icons
             .node(&o.symbol, 17.0, true, accent)
@@ -1876,7 +1986,7 @@ fn offer_row(cx: &Cx, offer: Option<&crate::desk::Offer>, icons: &Icons) -> Node
                     &o.title,
                     // `Theme.tileTitleText`: 13 medium (semibold made "Hier weiterschauen" 2 pt too wide for the row).
                     st(13.0, 500),
-                    colour::MARK_ACCENT,
+                    crate::look_glow::accent(),
                     Some(1),
                     swiftly_text::Align::Start,
                 )
@@ -1885,7 +1995,7 @@ fn offer_row(cx: &Cx, offer: Option<&crate::desk::Offer>, icons: &Icons) -> Node
                     cx,
                     &o.under,
                     st(12.0, 400),
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 )
@@ -1903,7 +2013,7 @@ fn offer_row(cx: &Cx, offer: Option<&crate::desk::Offer>, icons: &Icons) -> Node
                 cx,
                 &o.count.to_string(),
                 st(10.0, 600),
-                colour::REASON,
+                color::SURFACE_BASE,
                 Some(1),
                 swiftly_text::Align::Center,
             )
@@ -1932,9 +2042,12 @@ fn offer_row(cx: &Cx, offer: Option<&crate::desk::Offer>, icons: &Icons) -> Node
             trailing,
         })
         .frame(None, Some(desktop::BADGE_HEIGHT), Alignment::LEADING)
-        .background(Node::rect(color(colour::REASON), 999.0), Alignment::CENTER)
         .background(
-            Node::rect(rgba(colour::MARK_ACCENT, 0.18), 999.0),
+            Node::rect(color(color::SURFACE_BASE), 999.0),
+            Alignment::CENTER,
+        )
+        .background(
+            Node::rect(rgba(crate::look_glow::accent(), 0.18), 999.0),
             Alignment::CENTER,
         );
     let label = if o.count > 1 {
@@ -1967,9 +2080,9 @@ fn offer_row(cx: &Cx, offer: Option<&crate::desk::Offer>, icons: &Icons) -> Node
 /// accent line (left/right 28, bottom 2), focused a white capsule with `reason` text.
 fn tv_tab(cx: &Cx, i: usize, name: &str, selected: bool) -> Node {
     let rest = if selected {
-        colour::FONT
+        color::TEXT_PRIMARY
     } else {
-        colour::FONT_QUIET
+        color::TEXT_SECONDARY
     };
     let mut label = Node::text(
         cx,
@@ -1993,7 +2106,7 @@ fn tv_tab(cx: &Cx, i: usize, name: &str, selected: bool) -> Node {
                 text,
                 style,
                 rest: color(rest),
-                focused: color(colour::REASON),
+                focused: color(color::SURFACE_BASE),
                 lines,
                 align,
             },
@@ -2011,7 +2124,7 @@ fn tv_tab(cx: &Cx, i: usize, name: &str, selected: bool) -> Node {
             Alignment::CENTER,
         );
     if selected {
-        let line = Node::rect(color(colour::MARK_ACCENT), 999.0)
+        let line = Node::rect(color(crate::look_glow::accent()), 999.0)
             .frame(None, Some(4.0), Alignment::BOTTOM)
             .padding(ins(0.0, tv::TAB_PADDING, 2.0, tv::TAB_PADDING));
         n = n.overlay(fill_frame(line, Alignment::BOTTOM), Alignment::BOTTOM);
@@ -2040,12 +2153,15 @@ pub(crate) fn header_bar(cx: &Cx, p: &Bar, initial: &str) -> Node {
         cx,
         initial,
         tv::text::BUTTON,
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(1),
         swiftly_text::Align::Center,
     )
     .frame(Some(60.0), Some(60.0), Alignment::CENTER)
-    .background(Node::rect(color(colour::AREA), 30.0), Alignment::CENTER)
+    .background(
+        Node::rect(color(color::SURFACE_CONTROL), 30.0),
+        Alignment::CENTER,
+    )
     .key("profile")
     .on_tap(Action::from("profile"))
     .focusable(
@@ -2072,7 +2188,7 @@ fn spinner(icons: &Icons, p: &Parts) -> Node {
             None if k < usize::from(p.pulled) => 0.85,
             None => continue,
         };
-        spokes.push(icons.spoke(k, size, rgba(colour::FONT_QUIET, alpha)));
+        spokes.push(icons.spoke(k, size, rgba(color::TEXT_SECONDARY, alpha)));
     }
     // Always a node of the same shape, so the tree (and the scroll state under it) does not change when it comes and goes.
     Node::zstack(Alignment::CENTER, spokes).frame(Some(size), Some(size), Alignment::CENTER)
@@ -2084,7 +2200,7 @@ fn spinner(icons: &Icons, p: &Parts) -> Node {
 /// second line and the time left at the leading edge (`HeaderInfo`). Not drawn: the description (not in `HomeVm`
 /// tiles), the 250 ms image switch delay and the radial `HeaderShadow` spot.
 fn hero(cx: &Cx, m: &Metrics, ctx: &Ctx, tile: Option<&Tile>) -> Node {
-    let ground = colour::REASON;
+    let ground = color::SURFACE_BASE;
     let clear = rgba(ground, 0.0);
     let backdrop_w = 1280.0;
     let hub = ctx.hub.borrow().clone();
@@ -2135,7 +2251,7 @@ fn hero(cx: &Cx, m: &Metrics, ctx: &Ctx, tile: Option<&Tile>) -> Node {
             cx,
             &t.title,
             tv::text::PLAYER_TITLE,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         ));
@@ -2149,7 +2265,7 @@ fn hero(cx: &Cx, m: &Metrics, ctx: &Ctx, tile: Option<&Tile>) -> Node {
                         weight: 600,
                         ..tv::text::BODY
                     },
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 )
@@ -2162,7 +2278,7 @@ fn hero(cx: &Cx, m: &Metrics, ctx: &Ctx, tile: Option<&Tile>) -> Node {
                     cx,
                     line,
                     tv::text::BODY,
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 )
@@ -2191,8 +2307,8 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
         text(
             cx,
             s,
-            desktop::text::TITLE_LARGE,
-            colour::FONT,
+            dsk::TEXT_TITLE_LARGE,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         )
@@ -2205,13 +2321,13 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
             Some(0.0),
             vec![heading(TABS[p.tab.min(TABS.len() - 1)])],
         )
-        .padding(ins(desktop::CONTENT_TOP, 0.0, 0.0, 0.0));
+        .padding(ins(dsk::SPACE_CONTENT_TOP, 0.0, 0.0, 0.0));
         return fill_frame(column, Alignment::TOP_LEADING);
     }
     let has_rails = !p.rails.rails.is_empty();
     let top = match form {
         Form::Touch => env.safe.top + 58.0 + 8.0,
-        Form::Desktop => desktop::CONTENT_TOP,
+        Form::Desktop => dsk::SPACE_CONTENT_TOP,
         Form::Tv => 0.0,
     };
     let bottom = match form {
@@ -2245,6 +2361,22 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
     };
     if !has_rails {
         return match p.status.status {
+            Status::Loading if p.waiting.is_some() => {
+                let server = p.card.server_name();
+                let (title, body) = p
+                    .waiting
+                    .unwrap_or(swiftly_vm::LoadFailure::Offline)
+                    .copy(&server);
+                empty_state_with(
+                    cx,
+                    &ctx.icons,
+                    "hard-drive-x",
+                    title,
+                    &body,
+                    "Moment…",
+                    true,
+                )
+            }
             Status::Loading => {
                 let column = with_heading(vec![
                     rails_placeholder(&m, true),
@@ -2308,7 +2440,7 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
         };
         let page_w = env.size.w
             - if form == Form::Desktop {
-                desktop::SIDEBAR_WIDTH
+                dsk::SIZE_SIDEBAR_WIDTH
             } else {
                 0.0
             };
@@ -2332,6 +2464,16 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
                 rails.insert((*at + put).min(rails.len()), block);
                 put += 1;
             }
+        }
+    }
+    // A silent server over rows that are already there (the stored page): the rows stay, the server notice stands above
+    // them. While a retry runs (`waiting`) the button waits instead of vanishing, so the block keeps its height.
+    let notice_busy = p.status.status == Status::Loading && p.waiting.is_some();
+    if p.status.status == Status::Offline || notice_busy {
+        let failure = p.waiting.unwrap_or_else(|| ctx.vm.failure());
+        if let Some(n) = server_notice(cx, &ctx.icons, &p.card.server_name(), failure, notice_busy)
+        {
+            rails.insert(0, n);
         }
     }
     // At the very end, after the last row; never above the content.
@@ -2432,7 +2574,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
             let content_side = crate::look_glow::behind(
                 fill_frame(body, Alignment::TOP_LEADING).overlay(strip, Alignment::TOP),
                 p.glow,
-                env.size.w - desktop::SIDEBAR_WIDTH,
+                env.size.w - dsk::SIZE_SIDEBAR_WIDTH,
             );
             Node::hstack(
                 Align::Start,
@@ -2473,8 +2615,10 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
         )),
         Sheet::Load(_) => Some(crate::load_panel::load_sheet(cx, &ctx.icons, env, &p.load)),
     };
-    let page = fill_frame(page, Alignment::TOP_LEADING)
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER);
+    let page = fill_frame(page, Alignment::TOP_LEADING).background(
+        Node::rect(color(color::SURFACE_BASE), 0.0),
+        Alignment::CENTER,
+    );
     let page = match p.menu.overlay(cx, env) {
         Some(m) => page.overlay(m, Alignment::TOP_LEADING),
         None => page,
@@ -2512,6 +2656,10 @@ pub struct HomeScreen {
     /// Tiles the pointer rested on for 150 ms (the Mac's `TileWrapper` prefetch hint), in order.
     rested: Vec<String>,
     refreshes: u32,
+    /// "Erneut versuchen" was pressed and the answer is not in yet: the words of the failure it was pressed on.
+    retrying: Option<swiftly_vm::LoadFailure>,
+    /// Since when the page has been `Loading` with nothing to show.
+    loading_from: Option<f64>,
     tab: usize,
     now: f64,
     pulling: bool,
@@ -2593,6 +2741,7 @@ impl HomeScreen {
             mine: (true, true),
             glow: (crate::look_glow::Glow::default(), 0),
             status: vm.status(),
+            waiting: None,
             rails: vm.rails(),
             tab: 0,
             header: 0,
@@ -2626,6 +2775,8 @@ impl HomeScreen {
             resumed: Vec::new(),
             rested: Vec::new(),
             refreshes: 0,
+            retrying: None,
+            loading_from: None,
             tab: 0,
             now: 0.0,
             pulling: false,
@@ -2796,6 +2947,9 @@ impl HomeScreen {
         } else {
             (status, rails)
         };
+        if status.status != Status::Loading {
+            self.retrying = None;
+        }
         self.ui.set_parts(Parts {
             downloads: crate::desk::downloads_front(),
             settings: crate::desk::settings_front(),
@@ -2803,6 +2957,20 @@ impl HomeScreen {
             offer: crate::desk::offer(),
             mine: crate::desk::mine(),
             glow: crate::look_glow::bar_state(offset as f64),
+            // Over stored rows a retry in flight also counts (the server notice's button waits).
+            waiting: waiting_trouble(
+                status.status,
+                !rails.rails.is_empty(),
+                holding,
+                self.retrying,
+                &mut self.loading_from,
+                self.now,
+            )
+            .or_else(|| {
+                (status.status == Status::Loading && !rails.rails.is_empty())
+                    .then_some(self.retrying)
+                    .flatten()
+            }),
             status,
             rails,
             tab: self.tab,
@@ -2931,6 +3099,11 @@ impl HomeScreen {
         self.ui.inherit_dismissed_tooltip(text);
     }
 
+    /// Whether Start has its rails (the page the "Was ist neu" sheet waits for).
+    pub fn loaded(&self) -> bool {
+        !self.vm.rails().rails.is_empty()
+    }
+
     /// Whether the support card is shown.
     pub fn support_shown(&self) -> bool {
         self.support.is_some()
@@ -3038,6 +3211,9 @@ impl HomeScreen {
             Entry::Watched | Entry::Unwatched | Entry::Together => {
                 self.requests.push(format!("{e:?}:{id}"));
             }
+            // The suite reads the title's place and opens the report sheet over the page.
+            Entry::Report => crate::desk::request_report(id, None),
+            Entry::Delete => crate::desk::request_delete(id, false),
             // The core takes the title out of the row at once and tells the server in the background.
             Entry::Remove => {
                 self.vm.send(HomeIntent::RemoveFromContinue {
@@ -3200,6 +3376,17 @@ impl HomeScreen {
         true
     }
 
+    /// The shortcut of `entry` (Ctrl+D, Ctrl+Shift+G, Ctrl+I) while the right-click menu is open. False when it did nothing.
+    pub fn menu_shortcut(&mut self, entry: &crate::tile_menu::Entry) -> bool {
+        match self.menu.pick_entry(entry) {
+            Some(pick) => {
+                self.picked(pick);
+                true
+            }
+            None => false,
+        }
+    }
+
     fn picked(&mut self, pick: crate::desk::Pick) {
         if let crate::desk::Pick::Row(id, i) = pick {
             // The entry the popover showed on that row (its list was computed when it opened), not a new list.
@@ -3347,6 +3534,7 @@ impl HomeScreen {
                     continue;
                 }
                 if action == Action::from(RETRY) {
+                    self.retrying = Some(self.vm.failure());
                     self.reload();
                 }
                 for i in 0..=TABS.len() {
@@ -3554,7 +3742,7 @@ mod backdrop_tests {
             let (a, b) = (stops[i], stops[i + 1]);
             a.1 + (b.1 - a.1) * (t - a.0) / (b.0 - a.0)
         };
-        let reason = colour::REASON.r;
+        let reason = color::SURFACE_BASE.r;
         let mut worst = 0.0_f32;
         for y in 0..rows {
             let a = alpha_at((y as f32 + 0.5) / rows as f32);
@@ -3669,10 +3857,13 @@ mod progress_bar_tests {
                         for x in 0..pw {
                             let (b, t) = (bare.pixel(x, y), with.pixel(x, y));
                             if b[0] < 8 && b[3] > 0 {
-                                // Outside the tile (the clear colour): the bar must not draw here.
-                                assert_eq!(
-                                    t, b,
-                                    "bar pixel outside the corner at ({x},{y}), scale {scale}, corner {corner}, share {share}"
+                                // Outside the tile (the clear colour): the bar must not draw here. A smoothed corner
+                                // leaves pixels the tile covers by 1 to 3 %; the bar covers them by the same share (its
+                                // colour is not the tile's), so a difference under 8 levels is the corner's own edge.
+                                let leak = (0..4).map(|c| t[c].abs_diff(b[c])).max().unwrap();
+                                assert!(
+                                    leak < 8,
+                                    "bar pixel outside the corner at ({x},{y}), scale {scale}, corner {corner}, share {share}: {t:?} vs {b:?}"
                                 );
                             } else if t != b {
                                 bar_pixels += 1;
@@ -4408,5 +4599,105 @@ mod seerr_block_tests {
         i.arrivals.clear();
         assert_eq!(SeerrTap::of(&i, &|k| k == "arrival-play:18"), None);
         assert_eq!(SeerrTap::of(&i, &|k| k == "arrival-dismiss:18"), None);
+    }
+}
+
+#[cfg(test)]
+mod sidebar_icon_fill {
+    use super::*;
+
+    fn mac_source() -> Option<String> {
+        std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../Sources/macOS/MainView.swift"),
+        )
+        .ok()
+    }
+
+    /// Mac: `.watchlist: "bookmark.fill"` and no tab asset pair for it, so the row is filled idle and selected.
+    #[test]
+    fn the_watchlist_row_is_filled_like_the_mac_in_both_states() {
+        assert!(WATCHLIST_ICON.ends_with(".fill"));
+        if let Some(mac) = mac_source() {
+            assert!(
+                mac.contains(r#"case .watchlist: "bookmark.fill""#),
+                "the Mac's Merkliste symbol changed: update WATCHLIST_ICON"
+            );
+            assert!(
+                mac.contains("case .watchlist:  return nil"),
+                "the Mac's Merkliste gained a tab asset pair: draw it like the other rows"
+            );
+        }
+    }
+
+    /// Mac `tabAsset(selected:)`: `base` idle, `base.fill` selected, for Start, Filme, Serien and Suche.
+    #[test]
+    fn the_four_tabs_are_outline_idle_and_filled_selected() {
+        for i in 0..TABS.len() {
+            let (idle, idle_outlined) = tab_icon(i, false);
+            let (on, on_outlined) = tab_icon(i, true);
+            assert!(!idle.ends_with(".fill") && idle_outlined, "tab {i} idle");
+            assert_eq!(on, format!("{idle}.fill"), "tab {i} selected");
+            assert!(!on_outlined, "tab {i} selected");
+        }
+    }
+}
+
+#[cfg(test)]
+mod waiting_tests {
+    use super::*;
+    use swiftly_vm::LoadFailure;
+
+    /// A cold start that gets no answer says so after `SILENT_AFTER_MS`, not before; a page with data, or one that is
+    /// not loading, never does, and its stopwatch starts over.
+    #[test]
+    fn a_silent_cold_start_says_so_after_the_patience() {
+        let mut from = None;
+        let ask = |status, rails, holding, retry, from: &mut Option<f64>, now| {
+            waiting_trouble(status, rails, holding, retry, from, now)
+        };
+        assert_eq!(
+            ask(Status::Loading, false, false, None, &mut from, 100.0),
+            None
+        );
+        assert_eq!(
+            ask(Status::Loading, false, false, None, &mut from, 5099.0),
+            None
+        );
+        assert_eq!(
+            ask(Status::Loading, false, false, None, &mut from, 5100.0),
+            Some(LoadFailure::Offline)
+        );
+        // Data arrived: no trouble, and the stopwatch is gone.
+        assert_eq!(
+            ask(Status::Loading, true, false, None, &mut from, 5200.0),
+            None
+        );
+        assert_eq!(from, None);
+        // The Seerr rows are awaited on a healthy server: that is not silence.
+        assert_eq!(
+            ask(Status::Loading, false, true, None, &mut from, 9000.0),
+            None
+        );
+        assert_eq!(
+            ask(Status::Loading, false, true, None, &mut from, 20000.0),
+            None
+        );
+    }
+
+    /// "Erneut versuchen" shows the error page at once, with the words of the failure it was pressed on, until the page
+    /// leaves `Loading`.
+    #[test]
+    fn a_retry_keeps_the_error_page_while_it_waits() {
+        let mut from = None;
+        let denied = LoadFailure::Failed(swiftly_vm::FailKind::Denied);
+        assert_eq!(
+            waiting_trouble(Status::Loading, false, false, Some(denied), &mut from, 0.0),
+            Some(denied)
+        );
+        assert_eq!(
+            waiting_trouble(Status::Offline, false, false, Some(denied), &mut from, 20.0),
+            None
+        );
     }
 }

@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -62,7 +61,7 @@ fun PrimaryButton(text: String, released: Boolean = true, stretches: Boolean = t
             .then(if (stretches) Modifier.fillMaxWidth() else Modifier)
             .heightIn(min = Theme.buttonHeight)
             .graphicsLayer { scaleX = mass; scaleY = mass }
-            .background(area, RoundedCornerShape(Theme.corner))
+            .background(area, smoothRoundedShape(Theme.corner))
             .clickable(enabled = released, interactionSource = source, indication = null, onClick = action)
             .padding(horizontal = if (stretches) 0.dp else 28.dp),
         contentAlignment = Alignment.Center
@@ -92,7 +91,7 @@ fun SecondaryButton(text: String, released: Boolean = true, stretches: Boolean =
             .then(if (stretches) Modifier.fillMaxWidth() else Modifier)
             .heightIn(min = Theme.buttonHeight)
             .graphicsLayer { scaleX = mass; scaleY = mass }
-            .background(if (pressed) Theme.pressedArea else Theme.area, RoundedCornerShape(Theme.corner))
+            .background(if (pressed) Theme.pressedArea else Theme.area, smoothRoundedShape(Theme.corner))
             .clickable(enabled = released, interactionSource = source, indication = null, onClick = action)
             .padding(horizontal = if (stretches) 0.dp else 22.dp),
         contentAlignment = Alignment.Center
@@ -141,7 +140,7 @@ fun InputField(
     val focus = remember { FocusRequester() }
     if (secret) VisibilityProtection()
     Row(
-        Modifier.fillMaxWidth().height(Theme.buttonHeight).background(Theme.area, RoundedCornerShape(Theme.cornerField))
+        Modifier.fillMaxWidth().height(Theme.buttonHeight).background(Theme.area, smoothRoundedShape(Theme.cornerField))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { focus.requestFocus() }
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically

@@ -41,6 +41,24 @@ pub const SWAP_SECONDS: f64 = 0.6;
 pub const IMAGE_FADE: f64 = 0.4;
 /// Scale of the ring while the pointer rests on the card.
 pub const RING_HOVER: f32 = 1.06;
+/// Width of the card at rest (`EpisodeCard.iPhone.width` 240, `large` x 1.25); at most [`SHARE`] of the window.
+pub const WIDTH: f32 = 300.0;
+/// Share of the window width the card may take.
+pub const SHARE: f32 = 0.3;
+/// Corner radius of the card.
+pub const CORNER: f32 = 12.0;
+/// Diameter of the countdown ring (`EpisodeCard.iPhone.ring`); its stroke is 3/56 of it.
+pub const RING: f32 = 52.0;
+/// Gap between the card and the two lines under it.
+pub const SPACING: f32 = 12.0;
+/// Font size of the small line ("S1 · F2" left, "in 4 s" right).
+pub const SMALL: f32 = 12.0;
+/// Font size of the title line.
+pub const TITLE: f32 = 17.0;
+/// Height of the two lines under the card (12 pt and 17 pt at 1.2, 3 apart), without the gap above them.
+pub const LINES: f32 = 15.0 + 3.0 + 21.0;
+/// Where the close button's centre sits from the card's top right corner.
+pub const X_INSET: f32 = 16.0;
 
 /// The curve of every card tween, in one place: how far catalogue curve `id` has come (0 to 1) `t` seconds after its
 /// start, or the Reduce Motion fade (`Reduced`, linear 0.14 s) when `reduce`. Details use `CardDetailsOut`, the ring
@@ -378,27 +396,40 @@ impl CardStill {
     }
 }
 
-/// The card's rectangle in the window: bottom right, 16:9, at most 30 % of the width (`EC:22-205`); zoomed it grows to
-/// the 30 %. `edge` is the right margin, `bottom` the distance from the bottom edge.
+/// The card's rectangle in the window (`EpisodeCardsView.swift:46-57`): 16:9, [`WIDTH`] wide but at most [`SHARE`] of the
+/// window, its right edge at the page margin `edge`. `bottom` is where the two lines under the card end (the skip pill's
+/// bottom edge), so the card itself stands [`SPACING`] + [`LINES`] higher. Zoomed (`CardsShape`, `EpisodeCard.frameRect`)
+/// the frame grows linearly to the whole window, from its corner to the opposite one; a drag no longer applies then.
 pub fn card_rect(win_w: f32, win_h: f32, edge: f32, bottom: f32, look: &CardLook) -> Rect {
-    let rest = (win_w * 0.22).min(340.0);
-    let big = (win_w * 0.30).min(440.0);
-    let w = rest + (big - rest) * look.zoom;
+    let w = (win_w * SHARE).min(WIDTH);
     let h = w * 9.0 / 16.0;
+    let card = (
+        f64::from(win_w - edge - w),
+        f64::from(win_h - bottom - LINES - SPACING - h),
+        f64::from(w),
+        f64::from(h),
+    );
+    let (x, y, w, h) = swiftly_rules::episodes_card::frame_rect(
+        card,
+        (f64::from(win_w), f64::from(win_h)),
+        f64::from(look.zoom),
+    );
+    let drag = if look.zoom > 0.0 {
+        (0.0, 0.0)
+    } else {
+        look.drag
+    };
     Rect::new(
-        win_w - edge - w + look.dx + look.drag.0,
-        win_h - bottom - h + look.drag.1,
-        w,
-        h,
+        x as f32 + look.dx + drag.0,
+        y as f32 + drag.1,
+        w as f32,
+        h as f32,
     )
 }
 
-/// The close button's hit box inside the card (24 pt disc, 10 pt in from the top right corner, 32 pt to hit).
+/// The close button's hit box inside the card (24 pt disc centred 16 pt in from the top right corner, 32 pt to hit).
 pub fn x_rect(card: Rect) -> Rect {
-    let (cx, cy) = (
-        card.x + card.w - 10.0 - X_SIZE / 2.0,
-        card.y + 10.0 + X_SIZE / 2.0,
-    );
+    let (cx, cy) = (card.x + card.w - X_INSET, card.y + X_INSET);
     Rect::new(cx - X_HIT / 2.0, cy - X_HIT / 2.0, X_HIT, X_HIT)
 }
 
@@ -461,9 +492,32 @@ mod tests {
         let z = m.look(5.0, false);
         assert!(z.zoom > 0.99);
         let r = card_rect(1280.0, 800.0, 28.0, 76.0, &z);
-        assert!(r.w <= 1280.0 * 0.30 + 0.01 && (r.h - r.w * 9.0 / 16.0).abs() < 0.01);
+        // Zoomed, the card is the whole window (`EpisodeCard.frameRect` at 1), not a third of it.
+        assert!((r.w - 1280.0).abs() < 0.5 && (r.h - 800.0).abs() < 0.5);
+        assert!(r.x.abs() < 0.5 && r.y.abs() < 0.5);
+        // Half way it is half way between the two frames.
+        let half = card_rect(
+            1280.0,
+            800.0,
+            28.0,
+            76.0,
+            &CardLook {
+                zoom: 0.5,
+                ..CardLook::default()
+            },
+        );
+        assert!(
+            (half.w - (300.0 + 1280.0) / 2.0).abs() < 0.01
+                && (half.h - (168.75 + 800.0) / 2.0).abs() < 0.01
+        );
         let r0 = card_rect(1280.0, 800.0, 28.0, 76.0, &CardLook::default());
         assert!(r0.w < r.w);
+        // The Mac's numbers (`EpisodeCardsView`): 300 wide, right edge 28 in, the lines (12 gap + 39) end 76 above the bottom.
+        assert!((r0.w - 300.0).abs() < 0.01 && (r0.x + r0.w - (1280.0 - 28.0)).abs() < 0.01);
+        assert!((r0.y + r0.h + SPACING + LINES - (800.0 - 76.0)).abs() < 0.01);
+        // A narrow window caps it at 30 % of the width.
+        let narrow = card_rect(800.0, 500.0, 28.0, 76.0, &CardLook::default());
+        assert!((narrow.w - 240.0).abs() < 0.01);
         let x = x_rect(r0);
         assert!(inside(r0, x.x + 1.0, x.y + 1.0));
     }

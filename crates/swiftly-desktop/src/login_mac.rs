@@ -8,7 +8,7 @@ use crate::browse::wide;
 use crate::forms::{self, Fm};
 use crate::home::{fill_frame, ins, rgba, tabular_text, text};
 use crate::login_screen::{Ctx, Field, Parts, Step};
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::color;
 use swiftly_layout::{Align, Alignment};
 use swiftly_render::Color;
 use swiftly_ui::components::{color, focus_id};
@@ -312,17 +312,17 @@ pub fn input_row(
     let w = if focused { 2.0 } else { 1.0 };
     let mut row = vec![
         icons
-            .node(symbol, 17.0, false, color(colour::FONT_VERY_QUIET))
+            .node(symbol, 17.0, false, color(color::TEXT_TERTIARY))
             .frame(Some(20.0), None, Alignment::CENTER),
     ];
     if let (true, Some(d)) = (focused, edit) {
         // The shared field: caret, selection and composition come from the editor (keyed `field.text`).
         let look = swiftly_ui::field::FieldLook {
             style: swiftly_text::TextStyle::new(FIELD_SIZE, 400),
-            text: color(colour::FONT),
-            placeholder: color(colour::FONT_VERY_QUIET),
-            caret: color(colour::MARK_ACCENT),
-            selection: rgba(colour::MARK_ACCENT, 0.35),
+            text: color(color::TEXT_PRIMARY),
+            placeholder: color(color::TEXT_TERTIARY),
+            caret: color(color::ACCENT_SELECTION),
+            selection: rgba(color::ACCENT_SELECTION, 0.35),
             caret_height: Some(18.0),
         };
         let view = swiftly_ui::field::FieldView {
@@ -340,7 +340,7 @@ pub fn input_row(
             placeholder,
             FIELD_SIZE,
             400,
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             1,
             swiftly_text::Align::Start,
         ));
@@ -355,7 +355,7 @@ pub fn input_row(
             &shown,
             FIELD_SIZE,
             400,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             1,
             swiftly_text::Align::Start,
         ));
@@ -365,9 +365,15 @@ pub fn input_row(
         .padding(ins(0.0, 12.0, 0.0, 12.0))
         .frame(None, Some(38.0 - 2.0 * w), Alignment::LEADING);
     let n = wide(inner, Alignment::LEADING)
-        .background(Node::rect(color(colour::AREA), 12.0 - w), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 12.0 - w),
+            Alignment::CENTER,
+        )
         .padding(ins(w, w, w, w))
-        .background(Node::rect(color(colour::MARGIN), 12.0), Alignment::CENTER);
+        .background(
+            Node::rect(color(color::SURFACE_FOCUS), 12.0),
+            Alignment::CENTER,
+        );
     forms::tappable(n, f, key, 12.0)
 }
 
@@ -391,14 +397,14 @@ pub fn primary(cx: &Cx, icons: &Icons, f: &Fm, key: &str, label: &str, enabled: 
     // `PrimaryButton(symbol: "arrow.right")`: the arrow stands before the label, both in the 17 semibold of `categoryLarge`.
     let parts = vec![
         icons
-            .node("arrow-right", 17.0, true, color(colour::REASON))
+            .node("arrow-right", 17.0, true, color(color::SURFACE_BASE))
             .a11y_hidden(),
         t(
             cx,
             label,
             17.0,
             600,
-            colour::REASON,
+            color::SURFACE_BASE,
             1,
             swiftly_text::Align::Center,
         ),
@@ -407,7 +413,10 @@ pub fn primary(cx: &Cx, icons: &Icons, f: &Fm, key: &str, label: &str, enabled: 
         Node::hstack(Align::Center, Some(9.0), parts).frame(None, Some(48.0), Alignment::CENTER),
         Alignment::CENTER,
     )
-    .background(Node::rect(color(colour::FONT), 10.0), Alignment::CENTER)
+    .background(
+        Node::rect(color(color::TEXT_PRIMARY), 10.0),
+        Alignment::CENTER,
+    )
     .opacity(if enabled { 1.0 } else { 0.4 }, Motion::Instant);
     if enabled {
         forms::tappable(n, f, key, 10.0)
@@ -420,27 +429,29 @@ pub fn primary(cx: &Cx, icons: &Icons, f: &Fm, key: &str, label: &str, enabled: 
 /// the symbol and the label (15 medium) in the accent.
 pub fn outline(cx: &Cx, icons: &Icons, f: &Fm, key: &str, label: &str, symbol: &str) -> Node {
     let parts = vec![
-        icons.node(symbol, 15.0, true, color(colour::MARK_ACCENT)),
+        icons.node(symbol, 15.0, true, color(color::ACCENT_SELECTION)),
         t(
             cx,
             label,
             15.0,
             500,
-            colour::MARK_ACCENT,
+            color::ACCENT_SELECTION,
             1,
             swiftly_text::Align::Center,
         ),
     ];
     let inner =
         Node::hstack(Align::Center, Some(9.0), parts).frame(None, Some(48.0), Alignment::CENTER);
-    let n = wide(inner, Alignment::CENTER)
-        .background(Node::rect(color(colour::AREA), 10.0), Alignment::CENTER);
+    let n = wide(inner, Alignment::CENTER).background(
+        Node::rect(color(color::SURFACE_CONTROL), 10.0),
+        Alignment::CENTER,
+    );
     forms::tappable(n, f, key, 10.0)
 }
 
 fn kind_mark(icons: &Icons, kind: Kind, size: f32, grey: bool) -> Node {
     let c = if grey {
-        color(colour::FONT_VERY_QUIET)
+        color(color::TEXT_TERTIARY)
     } else {
         kind.tint()
     };
@@ -451,23 +462,23 @@ fn kind_mark(icons: &Icons, kind: Kind, size: f32, grey: bool) -> Node {
 
 fn hair() -> Node {
     wide(
-        Node::rect(color(colour::LINE), 0.0).frame(None, Some(1.0), Alignment::CENTER),
+        Node::rect(color(color::BORDER_HAIRLINE), 0.0).frame(None, Some(1.0), Alignment::CENTER),
         Alignment::CENTER,
     )
 }
 
 fn dot7() -> Node {
-    Node::rect(color(colour::MARK_ACCENT), 3.5).frame(Some(7.0), Some(7.0), Alignment::CENTER)
+    Node::rect(color(color::ACCENT_SELECTION), 3.5).frame(Some(7.0), Some(7.0), Alignment::CENTER)
 }
 
 /// `Theme.warning` 12: the error line of the Jellyfin pages (the Emby and Plex pages use `warn_error`).
 fn warn(cx: &Cx, s: &str) -> Node {
-    warn_in(cx, s, colour::ORIGINAL_WARNING)
+    warn_in(cx, s, color::STATE_WARNING)
 }
 
 /// `Theme.error` 12: the error line of the Emby and Plex pages.
 fn warn_error(cx: &Cx, s: &str) -> Node {
-    warn_in(cx, s, colour::ERROR)
+    warn_in(cx, s, color::STATE_ERROR)
 }
 
 fn warn_in(cx: &Cx, s: &str, c: swiftly_design::Colour) -> Node {
@@ -479,7 +490,7 @@ fn warn_in(cx: &Cx, s: &str, c: swiftly_design::Colour) -> Node {
 }
 
 fn skeleton(w: f32, h: f32, r: f32) -> Node {
-    Node::rect(color(colour::AREA), r).frame(Some(w), Some(h), Alignment::CENTER)
+    Node::rect(color(color::SURFACE_CONTROL), r).frame(Some(w), Some(h), Alignment::CENTER)
 }
 
 /// The busy mark breathes between full opacity and this (`KindCard`: 1 to 0.45).
@@ -501,9 +512,9 @@ fn kind_card(cx: &Cx, icons: &Icons, m: &Mac, i: usize) -> Node {
     let open = m.available[i];
     let preparing = m.busy == Some(i);
     let (name_c, line_c) = if open {
-        (colour::FONT, colour::FONT_QUIET)
+        (color::TEXT_PRIMARY, color::TEXT_SECONDARY)
     } else {
-        (colour::FONT_VERY_QUIET, colour::FONT_VERY_QUIET)
+        (color::TEXT_TERTIARY, color::TEXT_TERTIARY)
     };
     let line = if preparing {
         "Einen Moment\u{2026}"
@@ -542,19 +553,19 @@ fn kind_card(cx: &Cx, icons: &Icons, m: &Mac, i: usize) -> Node {
     );
     let mut parts = vec![mark, wide(words, Alignment::LEADING)];
     if open {
-        parts.push(icons.node("caret-right", 13.0, true, color(colour::FONT_VERY_QUIET)));
+        parts.push(icons.node("caret-right", 13.0, true, color(color::TEXT_TERTIARY)));
     }
     let card = wide(
         Node::hstack(Align::Center, Some(14.0), parts).padding(ins(16.0, 12.0, 16.0, 16.0)),
         Alignment::LEADING,
     )
     .background(
-        Node::rect(color(colour::GROUPS_AREA), 14.0),
+        Node::rect(color(color::SURFACE_GROUP), 14.0),
         Alignment::CENTER,
     );
     let key = format!("kind:{i}");
     if open && m.busy.is_none() {
-        card.hover_surface(color(colour::PRESSED_AREA), 14.0)
+        card.hover_surface(color(color::SURFACE_PRESSED), 14.0)
             .key(key.as_str())
             .on_tap(swiftly_ui::Action::from(key.as_str()))
             .focusable(focus_id(key.as_str()), Some(FocusLook::tile(14.0)))
@@ -563,7 +574,30 @@ fn kind_card(cx: &Cx, icons: &Icons, m: &Mac, i: usize) -> Node {
     }
 }
 
-/// The picker: first start (wordmark, question, cards) or the "Server hinzufügen" page.
+/// The app icon on the first-start and sign-in pages, in place of the wordmark.
+const APP_ICON_SIZE: f32 = 64.0;
+/// The corner of the macOS app icon shape, as a share of its side.
+const APP_ICON_CORNER: f32 = 0.2237;
+/// Space between the app icon and the title under it.
+const ICON_TO_TITLE: f32 = 24.0;
+
+/// The app icon (`assets/app-icon-256.png`, the picture the window uses) [`APP_ICON_SIZE`] points across, drawn one
+/// texel to one device pixel. An empty box of the same size when the picture cannot be decoded.
+fn app_icon(icons: &Icons) -> Node {
+    match crate::app_icon::app_icon_picture() {
+        Some((rgba, w, h)) => icons.picture(
+            "app.icon",
+            rgba,
+            *w,
+            *h,
+            APP_ICON_SIZE,
+            APP_ICON_SIZE * APP_ICON_CORNER,
+        ),
+        None => Node::fixed(APP_ICON_SIZE, APP_ICON_SIZE),
+    }
+}
+
+/// The picker: first start (app icon, question, cards) or the "Server hinzufügen" page.
 fn kind_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
     let cards = Node::vstack(
         Align::Start,
@@ -577,7 +611,7 @@ fn kind_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
                 "Du bleibst bei allen angemeldet und wechselst auf der Profilseite zwischen ihnen.",
                 15.0,
                 400,
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 4,
                 swiftly_text::Align::Start,
             ))
@@ -599,8 +633,8 @@ fn kind_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
         Align::Center,
         Some(0.0),
         vec![
-            // `MacKindPicker.swift:35`: `Wordmark(height: 44)`, the mark, not set type.
-            icons.wordmark(44.0, color(colour::FONT), color(colour::MARK_ACCENT)),
+            // The app icon (the logo picture itself), the app shows no wordmark any more.
+            app_icon(icons),
             text(
                 cx,
                 "Was l\u{00E4}uft bei dir?",
@@ -608,7 +642,7 @@ fn kind_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
                     tracking: -0.4,
                     ..st(28.0, 700)
                 },
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Center,
             )
@@ -618,7 +652,7 @@ fn kind_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
                 "Weitere Server kannst du sp\u{00E4}ter dazunehmen, auch gemischt.",
                 15.0,
                 400,
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 2,
                 swiftly_text::Align::Center,
             )
@@ -628,8 +662,10 @@ fn kind_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
                 .padding(ins(28.0, 0.0, 0.0, 0.0)),
         ],
     );
-    fill_frame(col, Alignment::CENTER)
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+    fill_frame(col, Alignment::CENTER).background(
+        Node::rect(color(color::SURFACE_BASE), 0.0),
+        Alignment::CENTER,
+    )
 }
 
 /// `MacAdvanced`: the "Erweitert" line and, when open, the header rows.
@@ -645,11 +681,11 @@ fn advanced(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Node {
                     "Erweitert",
                     12.0,
                     400,
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     1,
                     swiftly_text::Align::Start,
                 ),
-                icons.node("caret-right", 10.0, true, color(colour::FONT_QUIET)),
+                icons.node("caret-right", 10.0, true, color(color::TEXT_SECONDARY)),
             ],
         )
         .frame(None, Some(24.0), Alignment::LEADING),
@@ -659,7 +695,7 @@ fn advanced(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Node {
     );
     let mut b = vec![left(head)];
     if m.advanced {
-        b.push(left(t(cx, "F\u{00FC}r einen Dienst vor deinem Server, etwa Cloudflare Access, Authelia oder Pangolin. Swiftly schickt die Header nur an diese Adresse.", 13.0, 400, colour::FONT_VERY_QUIET, 4, swiftly_text::Align::Start)));
+        b.push(left(t(cx, "F\u{00FC}r einen Dienst vor deinem Server, etwa Cloudflare Access, Authelia oder Pangolin. Swiftly schickt die Header nur an diese Adresse.", 13.0, 400, color::TEXT_TERTIARY, 4, swiftly_text::Align::Start)));
         for (i, (name, value)) in m.headers.iter().enumerate() {
             let remove = forms::tappable(
                 t(
@@ -667,7 +703,7 @@ fn advanced(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Node {
                     "\u{2212}",
                     18.0,
                     400,
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     1,
                     swiftly_text::Align::Center,
                 )
@@ -716,13 +752,13 @@ fn advanced(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Node {
                 Align::Center,
                 Some(6.0),
                 vec![
-                    icons.node("plus", 12.0, true, color(colour::FONT_QUIET)),
+                    icons.node("plus", 12.0, true, color(color::TEXT_SECONDARY)),
                     t(
                         cx,
                         "Header hinzuf\u{00FC}gen",
                         12.0,
                         400,
-                        colour::FONT_QUIET,
+                        color::TEXT_SECONDARY,
                         1,
                         swiftly_text::Align::Start,
                     ),
@@ -748,7 +784,7 @@ fn found(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Option<Node> {
             "Im Netzwerk gefunden",
             13.0,
             600,
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             1,
             swiftly_text::Align::Start,
         ))
@@ -765,7 +801,7 @@ fn found(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Option<Node> {
                     name,
                     15.0,
                     600,
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     1,
                     swiftly_text::Align::Start,
                 )),
@@ -774,7 +810,7 @@ fn found(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Option<Node> {
                     addr,
                     12.0,
                     400,
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     1,
                     swiftly_text::Align::Start,
                 )),
@@ -787,13 +823,13 @@ fn found(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Option<Node> {
                 dot7(),
                 words.frame(None, None, Alignment::LEADING),
                 Node::spacer(),
-                icons.node("caret-right", 13.0, true, color(colour::FONT)),
+                icons.node("caret-right", 13.0, true, color(color::TEXT_PRIMARY)),
             ],
         )
         .padding(ins(14.0, 0.0, 14.0, 0.0));
         b.push(
             forms::tappable(wide(row, Alignment::LEADING), f, &format!("found:{i}"), 0.0)
-                .hover_surface(color(colour::PRESSED_AREA), 8.0),
+                .hover_surface(color(color::SURFACE_PRESSED), 8.0),
         );
         b.push(hair());
     }
@@ -812,7 +848,7 @@ fn address_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts, emby: bool
                 "Wo steht dein Emby-Server?",
                 15.0,
                 400,
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 2,
                 swiftly_text::Align::Start,
             ))
@@ -839,7 +875,7 @@ fn address_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts, emby: bool
                 "https:// kannst du weglassen.",
                 12.0,
                 400,
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 2,
                 swiftly_text::Align::Start,
             ))
@@ -875,7 +911,7 @@ fn address_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts, emby: bool
                 "Wo steht dein Jellyfin-Server?",
                 15.0,
                 400,
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 2,
                 swiftly_text::Align::Start,
             ))
@@ -935,13 +971,13 @@ fn address_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts, emby: bool
 /// `DisturbHint`: "Server ist abgetaucht" with the address and a retry.
 fn disturb(cx: &Cx, icons: &Icons, f: &Fm, address: &str, _error: &str) -> Node {
     let b = vec![
-        icons.node("hard-drives", 30.0, true, color(colour::FONT_QUIET)),
+        icons.node("hard-drives", 30.0, true, color(color::TEXT_SECONDARY)),
         t(
             cx,
             "Server ist abgetaucht",
             20.0,
             600,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             2,
             swiftly_text::Align::Center,
         )
@@ -953,7 +989,7 @@ fn disturb(cx: &Cx, icons: &Icons, f: &Fm, address: &str, _error: &str) -> Node 
             ),
             15.0,
             400,
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             4,
             swiftly_text::Align::Center,
         )
@@ -966,7 +1002,7 @@ fn disturb(cx: &Cx, icons: &Icons, f: &Fm, address: &str, _error: &str) -> Node 
                 "Erneut versuchen",
                 15.0,
                 500,
-                colour::MARK_ACCENT,
+                color::ACCENT_SELECTION,
                 1,
                 swiftly_text::Align::Center,
             )
@@ -993,7 +1029,7 @@ fn header_block(cx: &Cx, version_line: &str, name: &str, dot: bool) -> Node {
                     version_line,
                     12.0,
                     400,
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     1,
                     swiftly_text::Align::Start,
                 ),
@@ -1005,7 +1041,7 @@ fn header_block(cx: &Cx, version_line: &str, name: &str, dot: bool) -> Node {
             version_line,
             12.0,
             400,
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             1,
             swiftly_text::Align::Center,
         )
@@ -1020,7 +1056,7 @@ fn header_block(cx: &Cx, version_line: &str, name: &str, dot: bool) -> Node {
                 name,
                 26.0,
                 700,
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 2,
                 swiftly_text::Align::Start,
             )),
@@ -1044,9 +1080,9 @@ fn character(
         .map(|c| c.to_uppercase().collect())
         .unwrap_or_default();
     let ring = if selected {
-        color(colour::MARK_ACCENT)
+        color(color::ACCENT_SELECTION)
     } else {
-        color(colour::LINE)
+        color(color::BORDER_HAIRLINE)
     };
     let face = crate::hub::avatar_node(&hub.0, pic, 56.0, || {
         t(
@@ -1054,13 +1090,16 @@ fn character(
             &initial,
             24.0,
             700,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             1,
             swiftly_text::Align::Center,
         )
     })
     .frame(Some(56.0), Some(56.0), Alignment::CENTER)
-    .background(Node::rect(color(colour::RAISED), 28.0), Alignment::CENTER)
+    .background(
+        Node::rect(color(color::SURFACE_RAISED), 28.0),
+        Alignment::CENTER,
+    )
     .padding(ins(2.0, 2.0, 2.0, 2.0))
     .background(Node::rect(ring, 30.0), Alignment::CENTER);
     let n = Node::vstack(
@@ -1073,14 +1112,14 @@ fn character(
                 name,
                 12.0,
                 400,
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 1,
                 swiftly_text::Align::Center,
             ),
         ],
     )
     .padding(ins(6.0, 6.0, 6.0, 6.0));
-    forms::tappable(n, f, key, 14.0).hover_surface(color(colour::PRESSED_AREA), 14.0)
+    forms::tappable(n, f, key, 14.0).hover_surface(color(color::SURFACE_PRESSED), 14.0)
 }
 
 /// `Wer schaut?` with a skeleton while the users load.
@@ -1091,7 +1130,7 @@ fn who(cx: &Cx, f: &Fm, p: &Parts, picked: &str, key: &str) -> Option<Node> {
         "Wer schaut?",
         13.0,
         600,
-        colour::FONT_VERY_QUIET,
+        color::TEXT_TERTIARY,
         1,
         swiftly_text::Align::Start,
     ));
@@ -1180,7 +1219,7 @@ fn quick_choice(cx: &Cx, icons: &Icons, f: &Fm) -> Vec<Node> {
                     "oder",
                     12.0,
                     400,
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     1,
                     swiftly_text::Align::Center,
                 ),
@@ -1209,7 +1248,7 @@ fn credentials_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Nod
             &m.server_name,
             26.0,
             700,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             2,
             swiftly_text::Align::Start,
         ))
@@ -1223,7 +1262,7 @@ fn credentials_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Nod
             },
             12.0,
             400,
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             1,
             swiftly_text::Align::Start,
         ))
@@ -1257,7 +1296,7 @@ fn credentials_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Nod
     forms::page(cx, icons, env, f, "Server hinzuf\u{00FC}gen", None, b, None)
 }
 
-/// `SignInView` as the window shows it after the address: the wordmark, the server (28 bold, tracking -0.6) and its
+/// `SignInView` as the window shows it after the address: the app icon, the server (28 bold, tracking -0.6) and its
 /// version, the fields, "Anmelden", "oder" and Quick Connect, all centred in the window with no page header.
 fn signin_centred(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Node {
     let m = &p.mac;
@@ -1271,22 +1310,22 @@ fn signin_centred(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Node {
         format!("Jellyfin {}", m.version)
     };
     let mut b = vec![
-        icons.wordmark(44.0, color(colour::FONT), color(colour::MARK_ACCENT)),
+        app_icon(icons),
         text(
             cx,
             &m.server_name,
             title,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(2),
             swiftly_text::Align::Center,
         )
-        .padding(ins(34.0, 0.0, 0.0, 0.0)),
+        .padding(ins(ICON_TO_TITLE, 0.0, 0.0, 0.0)),
         t(
             cx,
             &version,
             12.0,
             400,
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             1,
             swiftly_text::Align::Center,
         )
@@ -1316,8 +1355,10 @@ fn signin_centred(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Node {
     }
     // The fields and buttons are `formWidth` (420) wide; the heading lines centre over them.
     let col = Node::vstack(Align::Center, Some(0.0), b).frame(Some(f.col), None, Alignment::TOP);
-    fill_frame(col, Alignment::CENTER)
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+    fill_frame(col, Alignment::CENTER).background(
+        Node::rect(color(color::SURFACE_BASE), 0.0),
+        Alignment::CENTER,
+    )
 }
 
 /// `QuickConnectCode` (hint, the code in one copyable box, the countdown) and the way back, the rows under the server's
@@ -1333,7 +1374,7 @@ fn quick_rows(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
                 e,
                 12.0,
                 400,
-                colour::ORIGINAL_WARNING,
+                color::STATE_WARNING,
                 3,
                 swiftly_text::Align::Start,
             ))
@@ -1347,7 +1388,7 @@ fn quick_rows(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
                 "Gib diesen Code in Jellyfin auf einem Ger\u{00E4}t ein, an dem du schon angemeldet bist.",
                 12.0,
                 400,
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 4,
                 swiftly_text::Align::Start,
             ))
@@ -1361,26 +1402,24 @@ fn quick_rows(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
                 tracking: 6.0,
                 ..st(30.0, 700)
             },
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Center,
         )
         .frame(None, None, Alignment::CENTER);
-        let boxed = wide(code.padding(ins(18.0, 0.0, 18.0, 0.0)), Alignment::CENTER)
-            .background(Node::rect(color(colour::AREA), 12.0), Alignment::CENTER);
-        b.push(forms::tappable(boxed, f, "copy", 12.0).padding(ins(14.0, 0.0, 0.0, 0.0)));
-        let line = if p.mac.copied {
-            "Code kopiert".to_owned()
-        } else {
-            format!("L\u{00E4}uft ab in {}:{:02}", p.left / 60, p.left % 60)
-        };
+        let boxed = wide(code.padding(ins(18.0, 0.0, 18.0, 0.0)), Alignment::CENTER).background(
+            Node::rect(color(color::SURFACE_CONTROL), 12.0),
+            Alignment::CENTER,
+        );
+        b.push(copyable(cx, boxed, f, p.mac.copied).padding(ins(14.0, 0.0, 0.0, 0.0)));
+        let line = format!("L\u{00E4}uft ab in {}:{:02}", p.left / 60, p.left % 60);
         b.push(
             left(tt(
                 cx,
                 &line,
                 12.0,
                 400,
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 1,
                 swiftly_text::Align::Start,
             ))
@@ -1398,7 +1437,7 @@ fn quick_rows(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
     b
 }
 
-/// The Quick Connect step: at first start it is `SignInView` with the code under the server's name (wordmark, name
+/// The Quick Connect step: at first start it is `SignInView` with the code under the server's name (app icon, name
 /// 28 bold, version), in "Server hinzuf\u{00FC}gen" the page of the added server.
 fn quick_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
     let m = &p.mac;
@@ -1408,16 +1447,16 @@ fn quick_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
             ..st(28.0, 700)
         };
         let mut b = vec![
-            icons.wordmark(44.0, color(colour::FONT), color(colour::MARK_ACCENT)),
+            app_icon(icons),
             text(
                 cx,
                 &m.server_name,
                 title,
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(2),
                 swiftly_text::Align::Center,
             )
-            .padding(ins(34.0, 0.0, 0.0, 0.0)),
+            .padding(ins(ICON_TO_TITLE, 0.0, 0.0, 0.0)),
             t(
                 cx,
                 &if m.version.is_empty() {
@@ -1427,7 +1466,7 @@ fn quick_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
                 },
                 12.0,
                 400,
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 1,
                 swiftly_text::Align::Center,
             )
@@ -1436,8 +1475,10 @@ fn quick_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
         b.extend(quick_rows(cx, icons, f, p));
         let col =
             Node::vstack(Align::Center, Some(0.0), b).frame(Some(f.col), None, Alignment::TOP);
-        return fill_frame(col, Alignment::CENTER)
-            .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER);
+        return fill_frame(col, Alignment::CENTER).background(
+            Node::rect(color(color::SURFACE_BASE), 0.0),
+            Alignment::CENTER,
+        );
     }
     let mut b = vec![
         left(t(
@@ -1445,7 +1486,7 @@ fn quick_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
             &m.server_name,
             26.0,
             700,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             2,
             swiftly_text::Align::Start,
         ))
@@ -1503,7 +1544,7 @@ fn step_line(cx: &Cx, n: u8, s: &str) -> Node {
                 &n.to_string(),
                 12.0,
                 400,
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 1,
                 swiftly_text::Align::Start,
             )
@@ -1513,7 +1554,7 @@ fn step_line(cx: &Cx, n: u8, s: &str) -> Node {
                 s,
                 15.0,
                 400,
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 3,
                 swiftly_text::Align::Start,
             ),
@@ -1525,14 +1566,14 @@ fn step_line(cx: &Cx, n: u8, s: &str) -> Node {
 fn plex_intro(cx: &Cx, icons: &Icons, f: &Fm, opening: bool) -> Vec<Node> {
     vec![
         left(kind_mark(icons, Kind::Plex, 34.0, false)).padding(ins(22.0, 0.0, 0.0, 0.0)),
-        left(t(cx, "Die Anmeldung l\u{00E4}uft auf der Seite von Plex. Dein Passwort bekommt Swiftly Player nie zu sehen.", 14.0, 400, colour::FONT_QUIET, 4, swiftly_text::Align::Start)).padding(ins(18.0, 0.0, 0.0, 0.0)),
+        left(t(cx, "Die Anmeldung l\u{00E4}uft auf der Seite von Plex. Dein Passwort bekommt Swiftly Player nie zu sehen.", 14.0, 400, color::TEXT_SECONDARY, 4, swiftly_text::Align::Start)).padding(ins(18.0, 0.0, 0.0, 0.0)),
         primary(cx, icons, f, "plexstart", if opening { "Wird ge\u{00F6}ffnet\u{2026}" } else { "Mit Plex anmelden" }, !opening).padding(ins(24.0, 0.0, 0.0, 0.0)),
         Node::vstack(
             Align::Start,
             Some(0.0),
             vec![
                 hair(),
-                left(t(cx, "So gehts", 15.0, 600, colour::FONT_QUIET, 1, swiftly_text::Align::Start)).padding(ins(18.0, 0.0, 0.0, 0.0)),
+                left(t(cx, "So gehts", 15.0, 600, color::TEXT_SECONDARY, 1, swiftly_text::Align::Start)).padding(ins(18.0, 0.0, 0.0, 0.0)),
                 step_line(cx, 1, "Die Seite von Plex geht hier in der App auf"),
                 step_line(cx, 2, "Dort anmelden, dann schlie\u{00DF}t sie sich von selbst"),
                 step_line(cx, 3, "Server aussuchen, fertig"),
@@ -1540,6 +1581,37 @@ fn plex_intro(cx: &Cx, icons: &Icons, f: &Fm, opening: bool) -> Vec<Node> {
         )
         .padding(ins(30.0, 0.0, 0.0, 0.0)),
     ]
+}
+
+/// `copyable`: a click copies the text; the chip "Kopiert" lies over the bottom edge of the display (the Mac's
+/// `Copyable`: raised surface, no accent, 12 medium, 16 down, it goes by itself), hover says "Zum Kopieren klicken".
+fn copyable(cx: &Cx, n: Node, f: &Fm, copied: bool) -> Node {
+    let chip = tt(
+        cx,
+        "Kopiert",
+        12.0,
+        500,
+        color::TEXT_PRIMARY,
+        1,
+        swiftly_text::Align::Center,
+    )
+    .padding(ins(5.0, 10.0, 5.0, 10.0))
+    .background(
+        Node::rect(color(color::SURFACE_CONTROL), 12.0),
+        Alignment::CENTER,
+    )
+    .offset(0.0, 16.0, Motion::Instant)
+    .opacity(
+        if copied { 1.0 } else { 0.0 },
+        Motion::of(if copied {
+            swiftly_motion::catalogue::Id::CopiedIn
+        } else {
+            swiftly_motion::catalogue::Id::CopiedOut
+        }),
+    );
+    forms::tappable(n, f, "copy", 12.0)
+        .tooltip("Zum Kopieren klicken")
+        .overlay(chip, Alignment::BOTTOM)
 }
 
 /// `CodeBoxes`: one 46 x 60 box per character (30 semibold), the box the next digit goes into with the stronger edge.
@@ -1553,7 +1625,7 @@ fn code_boxes(cx: &Cx, chars: &[char], active: Option<usize>) -> Node {
                 cx,
                 &c.to_string(),
                 st(30.0, 600),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Center,
             )
@@ -1562,10 +1634,15 @@ fn code_boxes(cx: &Cx, chars: &[char], active: Option<usize>) -> Node {
                 Some(60.0 - 2.0 * w),
                 Alignment::CENTER,
             )
-            .background(Node::rect(color(colour::AREA), 12.0 - w), Alignment::CENTER);
+            .background(
+                Node::rect(color(color::SURFACE_CONTROL), 12.0 - w),
+                Alignment::CENTER,
+            );
             if w > 0.0 {
-                face.padding(ins(w, w, w, w))
-                    .background(Node::rect(color(colour::MARGIN), 12.0), Alignment::CENTER)
+                face.padding(ins(w, w, w, w)).background(
+                    Node::rect(color(color::SURFACE_FOCUS), 12.0),
+                    Alignment::CENTER,
+                )
             } else {
                 face
             }
@@ -1588,9 +1665,12 @@ fn plex_empty(
     quiet: Option<(&str, &str)>,
 ) -> Vec<Node> {
     let disc = icons
-        .node(symbol, 44.0, true, color(colour::FONT_QUIET))
+        .node(symbol, 44.0, true, color(color::TEXT_SECONDARY))
         .frame(Some(78.0), Some(78.0), Alignment::CENTER)
-        .background(Node::rect(color(colour::AREA), 39.0), Alignment::CENTER);
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 39.0),
+            Alignment::CENTER,
+        );
     let mut col = vec![
         disc.padding(ins(0.0, 0.0, 22.0, 0.0)),
         t(
@@ -1598,7 +1678,7 @@ fn plex_empty(
             head,
             20.0,
             600,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             2,
             swiftly_text::Align::Center,
         )
@@ -1608,7 +1688,7 @@ fn plex_empty(
             body,
             15.0,
             400,
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             6,
             swiftly_text::Align::Center,
         )
@@ -1619,7 +1699,7 @@ fn plex_empty(
                 primary.0,
                 15.0,
                 500,
-                colour::MARK_ACCENT,
+                color::ACCENT_SELECTION,
                 1,
                 swiftly_text::Align::Center,
             )
@@ -1638,7 +1718,7 @@ fn plex_empty(
                 label,
                 12.0,
                 400,
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 1,
                 swiftly_text::Align::Center,
             )
@@ -1668,7 +1748,7 @@ fn plex_waiting(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
             "Melde dich auf der Seite von Plex an. Danach gehts hier von selbst weiter.",
             15.0,
             400,
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             4,
             swiftly_text::Align::Start,
         ))
@@ -1682,20 +1762,15 @@ fn plex_waiting(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
                 "Kein Fenster zu sehen? Auf plex.tv/link geht es auch, mit diesem Code.",
                 12.0,
                 400,
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 3,
                 swiftly_text::Align::Start,
             ))
             .padding(ins(30.0, 0.0, 0.0, 0.0)),
         );
         b.push(
-            left(forms::tappable(
-                code_boxes(cx, &chars, None),
-                f,
-                "copy",
-                12.0,
-            ))
-            .padding(ins(12.0, 0.0, 0.0, 0.0)),
+            left(copyable(cx, code_boxes(cx, &chars, None), f, p.mac.copied))
+                .padding(ins(12.0, 0.0, 0.0, 0.0)),
         );
     }
     b.push(
@@ -1703,7 +1778,7 @@ fn plex_waiting(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
             Align::Center,
             Some(9.0),
             vec![
-                Node::rect(color(colour::MARK_ACCENT), 4.0).frame(
+                Node::rect(color(color::ACCENT_SELECTION), 4.0).frame(
                     Some(8.0),
                     Some(8.0),
                     Alignment::CENTER,
@@ -1713,7 +1788,7 @@ fn plex_waiting(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
                     &format!("Warte auf Plex \u{00B7} noch {}:{:02}", l / 60, l % 60),
                     12.0,
                     400,
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     1,
                     swiftly_text::Align::Start,
                 ),
@@ -1776,7 +1851,7 @@ fn plex_profiles(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
             "Jedes Profil hat seinen eigenen Fortschritt.",
             12.0,
             400,
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             2,
             swiftly_text::Align::Start,
         ))
@@ -1792,12 +1867,12 @@ fn plex_pin(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
         .get(p.mac.profile)
         .map_or("", |x| x.0.as_str());
     let (line, c) = match p.mac.pin_state {
-        PinState::Checking => (Some("Wird gepr\u{00FC}ft\u{2026}"), colour::FONT_QUIET),
+        PinState::Checking => (Some("Wird gepr\u{00FC}ft\u{2026}"), color::TEXT_SECONDARY),
         PinState::Wrong => (
             Some("Die PIN passt nicht. Versuchs noch mal."),
-            colour::ERROR,
+            color::STATE_ERROR,
         ),
-        PinState::Idle => (None, colour::FONT_QUIET),
+        PinState::Idle => (None, color::TEXT_SECONDARY),
     };
     let initial = name
         .chars()
@@ -1815,13 +1890,16 @@ fn plex_pin(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
             &initial,
             18.0,
             700,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             1,
             swiftly_text::Align::Center,
         )
     })
     .frame(Some(44.0), Some(44.0), Alignment::CENTER)
-    .background(Node::rect(color(colour::RAISED), 22.0), Alignment::CENTER);
+    .background(
+        Node::rect(color(color::SURFACE_RAISED), 22.0),
+        Alignment::CENTER,
+    );
     let typed = p.mac.pin.chars().count().min(4);
     let dots: Vec<char> = (0..4)
         .map(|i| if i < typed { '\u{2022}' } else { ' ' })
@@ -1838,7 +1916,7 @@ fn plex_pin(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
                     name,
                     15.0,
                     600,
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     2,
                     swiftly_text::Align::Start,
                 ),
@@ -1850,7 +1928,7 @@ fn plex_pin(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
             "Dieses Profil hat eine PIN. Gib sie hier ein.",
             15.0,
             400,
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             2,
             swiftly_text::Align::Start,
         ))
@@ -1894,14 +1972,14 @@ fn plex_servers(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
         let busy = m.server_busy == Some(i);
         let failed = m.server_failed.contains(&i);
         let (line, c) = if busy {
-            ("Verbinden\u{2026}", colour::FONT)
+            ("Verbinden\u{2026}", color::TEXT_PRIMARY)
         } else if failed {
             (
                 "Antwortet gerade nicht. Tipp f\u{00FC}r einen neuen Versuch.",
-                colour::ERROR,
+                color::STATE_ERROR,
             )
         } else {
-            (d.as_str(), colour::FONT_VERY_QUIET)
+            (d.as_str(), color::TEXT_TERTIARY)
         };
         let words = Node::vstack(
             Align::Start,
@@ -1912,7 +1990,7 @@ fn plex_servers(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
                     n,
                     15.0,
                     600,
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     2,
                     swiftly_text::Align::Start,
                 )),
@@ -1921,13 +1999,13 @@ fn plex_servers(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
         );
         let mut parts = vec![
             icons
-                .node("hard-drives", 17.0, true, color(colour::FONT_QUIET))
+                .node("hard-drives", 17.0, true, color(color::TEXT_SECONDARY))
                 .frame(Some(20.0), None, Alignment::CENTER),
             words.frame(None, None, Alignment::LEADING),
             Node::spacer(),
         ];
         if !busy {
-            parts.push(icons.node("caret-right", 13.0, true, color(colour::FONT_VERY_QUIET)));
+            parts.push(icons.node("caret-right", 13.0, true, color(color::TEXT_TERTIARY)));
         }
         let row = wide(
             Node::hstack(Align::Center, Some(14.0), parts).padding(ins(14.0, 14.0, 14.0, 14.0)),
@@ -1941,11 +2019,11 @@ fn plex_servers(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
             row.opacity(if busy { 1.0 } else { 0.5 }, Motion::Instant)
         } else {
             forms::tappable(row, f, &format!("server:{i}"), 14.0)
-                .hover_surface(color(colour::PRESSED_AREA), 14.0)
+                .hover_surface(color(color::SURFACE_PRESSED), 14.0)
         });
     }
     let card = Node::vstack(Align::Start, Some(0.0), rows).background(
-        Node::rect(color(colour::GROUPS_AREA), 14.0),
+        Node::rect(color(color::SURFACE_GROUP), 14.0),
         Alignment::CENTER,
     );
     let mut under = vec![
@@ -1954,7 +2032,7 @@ fn plex_servers(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
             "Deine Server",
             13.0,
             600,
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             1,
             swiftly_text::Align::Start,
         )),
@@ -1964,7 +2042,7 @@ fn plex_servers(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
             &format!("Als {name}"),
             12.0,
             400,
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             1,
             swiftly_text::Align::Start,
         ))
@@ -1975,7 +2053,7 @@ fn plex_servers(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
         "Anderes Plex-Konto",
         12.0,
         400,
-        colour::FONT_VERY_QUIET,
+        color::TEXT_TERTIARY,
         1,
         swiftly_text::Align::Start,
     )
@@ -1999,7 +2077,7 @@ pub(crate) fn share_rows(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node>
             ""
         },
         st(30.0, 700),
-        colour::FONT_VERY_QUIET,
+        color::TEXT_TERTIARY,
         Some(1),
         swiftly_text::Align::Center,
     );
@@ -2010,20 +2088,22 @@ pub(crate) fn share_rows(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node>
             cx,
             &p.shown(Field::Share),
             st(30.0, 700),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Center,
         )
     };
-    let field = wide(shown.padding(ins(16.0, 0.0, 16.0, 0.0)), Alignment::CENTER)
-        .background(Node::rect(color(colour::AREA), 12.0), Alignment::CENTER);
+    let field = wide(shown.padding(ins(16.0, 0.0, 16.0, 0.0)), Alignment::CENTER).background(
+        Node::rect(color(color::SURFACE_CONTROL), 12.0),
+        Alignment::CENTER,
+    );
     let mut b = vec![
         left(t(
             cx,
             "Auf dem anderen Ger\u{00E4}t steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an.",
             15.0,
             400,
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             5,
             swiftly_text::Align::Start,
         ))
@@ -2037,7 +2117,7 @@ pub(crate) fn share_rows(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node>
                 "Freigegeben. Das andere Ger\u{00E4}t ist gleich angemeldet.",
                 15.0,
                 400,
-                colour::MARK_ACCENT,
+                color::ACCENT_SELECTION,
                 3,
                 swiftly_text::Align::Start,
             ))
@@ -2049,7 +2129,7 @@ pub(crate) fn share_rows(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node>
                 e,
                 15.0,
                 400,
-                colour::ERROR,
+                color::STATE_ERROR,
                 3,
                 swiftly_text::Align::Start,
             ))

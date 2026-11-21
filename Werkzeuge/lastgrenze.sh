@@ -30,11 +30,11 @@ schwer() {   # usage: schwer <command...>
     for i in 1 2 3 4 5 6 7 8; do
       if mkdir "$SLOTS/$i" 2>/dev/null; then got=$i; echo $$ > "$SLOTS/$i/pid"; break; fi
       # free a slot whose owner died
-      if [ -f "$SLOTS/$i/pid" ] && ! kill -0 "$(cat "$SLOTS/$i/pid")" 2>/dev/null; then rm -rf "$SLOTS/$i"; fi
+      if [ -f "${SLOTS:?}/$i/pid" ] && ! kill -0 "$(cat "${SLOTS:?}/$i/pid")" 2>/dev/null; then rm -rf "${SLOTS:?}/$i"; fi
     done
     [ -z "$got" ] && sleep 5
   done
   nice -n 8 "$@"; local rc=$?
-  rm -rf "$SLOTS/$got"
+  rm -rf "${SLOTS:?}/$got"
   return $rc
 }

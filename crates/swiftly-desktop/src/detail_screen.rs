@@ -12,7 +12,9 @@ use crate::title_data;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use swiftly_design::tokens::{colour, desktop, touch, tv};
+use swiftly_design::tokens::{desktop, touch, tv};
+use swiftly_design::tokens_generated::color;
+use swiftly_design::tokens_generated::desktop as dsk;
 use swiftly_layout::{Align, Alignment, Axis, EdgeInsets, FlexFrame, Size};
 use swiftly_render::{Color, DrawList, LinearGradient, RgbaImage};
 use swiftly_text::TextStyle;
@@ -112,7 +114,7 @@ pub(crate) fn rgba(c: swiftly_design::Colour, a: f32) -> Color {
 /// font's own line (44 x 1.21 = 53.2 pt) is taller than the frame, so SwiftUI scales the text (size and tracking)
 /// down to fit the height, and further for a title wider than the frame, but never below half.
 fn fitted_hero_title(cx: &Cx, title: &str, width: f32, height: f32) -> swiftly_design::TextStyle {
-    let full = weight(desktop::text::DETAIL_TITLE, 44.0, 800);
+    let full = weight(dsk::TEXT_TITLE_DETAIL, 44.0, 800);
     let natural = cx.measure_text(
         title,
         &swiftly_text::TextStyle::from(full),
@@ -267,9 +269,11 @@ impl Art {
     pub(crate) fn node(&self, landscape: bool, id: &str, w: f32, h: f32, radius: f32) -> Node {
         match self.pick(landscape, id) {
             Some(i) => Node::image(i, w, h, radius),
-            None => {
-                Node::rect(color(colour::AREA), radius).frame(Some(w), Some(h), Alignment::CENTER)
-            }
+            None => Node::rect(color(color::SURFACE_CONTROL), radius).frame(
+                Some(w),
+                Some(h),
+                Alignment::CENTER,
+            ),
         }
     }
 }
@@ -357,6 +361,52 @@ pub(crate) fn mood_strips(
     Node::vstack(Align::Start, Some(0.0), strips).padding(ins(y0 - origin, 0.0, 0.0, 0.0))
 }
 
+/// `ImageMood.reveal` for a screen's mood backdrop: a tone that is there at the first build stands at once; one that
+/// arrives later (after the push has settled) only fades in place with `Mood` (smooth 0.55 s). The backdrop is laid
+/// out at its final size from the first frame (`mood_strips` sizes by the page, never by the tone), so the fade is the
+/// only thing that moves.
+#[derive(Default)]
+pub(crate) struct MoodFade {
+    since: Option<f64>,
+    busy: bool,
+}
+
+impl MoodFade {
+    /// Whether the fade still needs frames.
+    pub(crate) fn is_busy(&self) -> bool {
+        self.busy
+    }
+
+    /// `(held, alpha)` for this frame: `held` while the push still slides and the tone was not there at the first
+    /// build; `alpha` 1 when the tone was there, else the quantised `Mood` progress since it became visible.
+    pub(crate) fn step(
+        &mut self,
+        tones: bool,
+        first: bool,
+        travelling: bool,
+        now: f64,
+        reduce_motion: bool,
+    ) -> (bool, f32) {
+        let hold = travelling && !first;
+        self.busy = false;
+        if !tones || hold || first {
+            return (hold, 1.0);
+        }
+        let t0 = *self.since.get_or_insert(now);
+        let p = swiftly_motion::catalogue::Id::Mood
+            .curve()
+            .progress((now - t0) / 1000.0) as f32;
+        // Quantised: the page is rebuilt when the value changes, not every frame of the last decimals.
+        let alpha = if reduce_motion {
+            1.0
+        } else {
+            (p.clamp(0.0, 1.0) * 64.0).round() / 64.0
+        };
+        self.busy = alpha < 1.0;
+        (hold, alpha)
+    }
+}
+
 /// Sizes that differ by form factor.
 pub(crate) struct Look {
     pub form: Form,
@@ -400,13 +450,13 @@ pub(crate) fn look(env: &Env) -> Look {
             pad,
             edge: desktop::DETAIL_LEFT,
             sections: 26.0,
-            tile_gap: desktop::TILE_SPACING,
-            poster: Size::new(desktop::TILE_WIDTH, desktop::TILE_HEIGHT),
-            corner: desktop::CORNER_TILE,
-            rail: desktop::text::RAIL,
-            tile: desktop::text::TILE,
-            small: desktop::text::SMALL,
-            body: desktop::text::BODY,
+            tile_gap: dsk::SPACE_TILE_GAP,
+            poster: Size::new(dsk::SIZE_POSTER_WIDTH, dsk::SIZE_POSTER_HEIGHT),
+            corner: dsk::RADIUS_TILE,
+            rail: dsk::TEXT_HEADING_RAIL,
+            tile: dsk::TEXT_LABEL_TILE,
+            small: dsk::TEXT_CAPTION_SMALL,
+            body: dsk::TEXT_BODY_DEFAULT,
             row_height: 36.0,
         },
         Form::Tv => Look {
@@ -514,11 +564,11 @@ fn root_page(cx: &Cx, env: &Env, art: &Art) -> Node {
                 vec![
                     art.node(false, &id, lk.poster.w, lk.poster.h, lk.corner)
                         .paint(Paint::Stroke {
-                            color: color(colour::TILE_BORDER),
+                            color: color(color::BORDER_TILE),
                             width: 1.0,
                             radius: lk.corner,
                         }),
-                    txt(cx, "Nordlicht", lk.tile, colour::FONT, Some(1)),
+                    txt(cx, "Nordlicht", lk.tile, color::TEXT_PRIMARY, Some(1)),
                 ],
             )
             .key(format!("poster:{i}").as_str())
@@ -543,8 +593,14 @@ fn root_page(cx: &Cx, env: &Env, art: &Art) -> Node {
         Align::Start,
         Some(12.0),
         vec![
-            txt(cx, "Zuletzt hinzugefügt", lk.rail, colour::FONT, Some(1))
-                .padding(ins(0.0, lk.edge, 0.0, 0.0)),
+            txt(
+                cx,
+                "Zuletzt hinzugefügt",
+                lk.rail,
+                color::TEXT_PRIMARY,
+                Some(1),
+            )
+            .padding(ins(0.0, lk.edge, 0.0, 0.0)),
             Node::scroll(Axis::Horizontal, None, row).frame(
                 None,
                 Some(lk.poster.h + 40.0),
@@ -553,8 +609,10 @@ fn root_page(cx: &Cx, env: &Env, art: &Art) -> Node {
         ],
     )
     .padding(ins(top, 0.0, 0.0, 0.0));
-    fill_frame(col, Alignment::TOP_LEADING)
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+    fill_frame(col, Alignment::TOP_LEADING).background(
+        Node::rect(color(color::SURFACE_BASE), 0.0),
+        Alignment::CENTER,
+    )
 }
 
 impl<D: Clone + PartialEq + 'static> Pushed<D> {
@@ -930,7 +988,7 @@ pub(crate) fn proof_row(k: &Kit, h: &Head) -> Node {
     let mut kids = Vec::new();
     if let Some((direct, hint, rating, age)) = &h.proof {
         let mac = k.lk.form == Form::Desktop;
-        let area = color(colour::AREA);
+        let area = color(color::SURFACE_CONTROL);
         // Mac: accent chip on a quiet accent surface, warning on 15 % warning, rating and age white on 8 % white.
         let quiet = |c: swiftly_design::Colour| if mac { rgba(c, 0.15) } else { area };
         let plain = if mac {
@@ -939,37 +997,11 @@ pub(crate) fn proof_row(k: &Kit, h: &Head) -> Node {
             area
         };
         let (rate_c, rate_w) = if mac {
-            (colour::FONT, 600)
+            (color::TEXT_PRIMARY, 600)
         } else {
-            (colour::FONT_QUIET, 600)
+            (color::TEXT_SECONDARY, 600)
         };
-        if h.proof_pending {
-            // The playback chip of the plan is not there yet: a skeleton of its size, replaced in place.
-            kids.push(Node::rect(plain, 13.0).frame(Some(97.3), Some(26.0), Alignment::CENTER));
-        } else if *direct {
-            kids.push(mark(
-                k,
-                Some(("check", color(colour::MARK_ACCENT))),
-                "Direct Play",
-                colour::MARK_ACCENT,
-                600,
-                quiet(colour::MARK_ACCENT),
-            ));
-        } else if let Some(hint) = hint {
-            let hc = if mac {
-                colour::ORIGINAL_WARNING
-            } else {
-                colour::FONT
-            };
-            kids.push(mark(
-                k,
-                Some(("warning.fill", color(colour::ORIGINAL_WARNING))),
-                hint,
-                hc,
-                if mac { 600 } else { 400 },
-                quiet(colour::ORIGINAL_WARNING),
-            ));
-        }
+        // Mac `ProofRow`: stars, age rating, then the playback mark last (its width is the only unknown).
         if let Some(r) = rating {
             kids.push(mark(
                 k,
@@ -982,6 +1014,33 @@ pub(crate) fn proof_row(k: &Kit, h: &Head) -> Node {
         }
         if let Some(a) = age {
             kids.push(mark(k, None, a, rate_c, rate_w, plain));
+        }
+        if h.proof_pending {
+            // The playback chip of the plan is not there yet: a skeleton of its size, replaced in place.
+            kids.push(Node::rect(plain, 13.0).frame(Some(97.3), Some(26.0), Alignment::CENTER));
+        } else if *direct {
+            kids.push(mark(
+                k,
+                Some(("check", color(crate::look_glow::accent()))),
+                "Direct Play",
+                crate::look_glow::accent(),
+                600,
+                quiet(crate::look_glow::accent()),
+            ));
+        } else if let Some(hint) = hint {
+            let hc = if mac {
+                color::STATE_WARNING
+            } else {
+                color::TEXT_PRIMARY
+            };
+            kids.push(mark(
+                k,
+                Some(("warning.fill", color(color::STATE_WARNING))),
+                hint,
+                hc,
+                if mac { 600 } else { 400 },
+                quiet(color::STATE_WARNING),
+            ));
         }
     }
     Node::hstack(Align::Center, Some(8.0), kids).frame(None, Some(26.0), Alignment::LEADING)
@@ -1018,26 +1077,26 @@ pub(crate) fn play_button(k: &Kit, h: &Head, action: &str) -> Node {
     let on = h.enabled;
     // The Mac's `DetailPlayButton` has no disabled look: it stays white (a press without an episode does nothing).
     let (fg, bg) = if on || lk.form == Form::Desktop {
-        (colour::REASON, colour::FONT)
+        (color::SURFACE_BASE, color::TEXT_PRIMARY)
     } else {
-        (colour::FONT_VERY_QUIET, colour::AREA)
+        (color::TEXT_TERTIARY, color::SURFACE_CONTROL)
     };
     if lk.form == Form::Tv {
         // `ThemedButtonStyle`: 76 high, 40 side, corner 16, white 10 % at rest, white and `reason` text when focused.
         let rest = if on {
-            colour::FONT
+            color::TEXT_PRIMARY
         } else {
-            colour::FONT_VERY_QUIET
+            color::TEXT_TERTIARY
         };
         let label = focus_tint(
             txt(k.cx, &h.label, tv::text::BUTTON, rest, Some(1)),
             color(rest),
-            color(colour::REASON),
+            color(color::SURFACE_BASE),
         );
         let tri = focus_tint(
             k.icons.node("play.fill", 30.0, false, color(rest)),
             color(rest),
-            color(colour::REASON),
+            color(color::SURFACE_BASE),
         );
         let row = Node::hstack(Align::Center, Some(10.0), vec![tri, label])
             .padding(ins(0.0, 40.0, 0.0, 40.0))
@@ -1046,7 +1105,7 @@ pub(crate) fn play_button(k: &Kit, h: &Head, action: &str) -> Node {
             if on {
                 Color::new(1.0, 1.0, 1.0, swiftly_ui::tuning::FOCUS_BUTTON_REST_ALPHA)
             } else {
-                color(colour::AREA)
+                color(color::SURFACE_CONTROL)
             },
             16.0,
         )
@@ -1081,7 +1140,7 @@ pub(crate) fn play_button(k: &Kit, h: &Head, action: &str) -> Node {
         // A long press (touch) lists them too, but only when there is a choice: else a slow click must still play.
         let n = with_versions_hold(n, h);
         return if on {
-            n.hover_surface(rgba(colour::REASON, 0.12), 10.0)
+            n.hover_surface(rgba(color::SURFACE_BASE, 0.12), 10.0)
                 .press_style(PressStyle::Button)
         } else {
             n.disabled(false).press_style(PressStyle::None)
@@ -1127,9 +1186,9 @@ pub(crate) fn resume_info(k: &Kit, h: &Head, width: Option<f32>) -> Vec<Node> {
     v.push(match &h.remaining {
         Some(rest) => {
             let c = if k.lk.form == Form::Desktop {
-                colour::FONT_VERY_QUIET
+                color::TEXT_TERTIARY
             } else {
-                colour::FONT_QUIET
+                color::TEXT_SECONDARY
             };
             txt(k.cx, rest, weight(k.lk.small, 12.0, 400), c, Some(1)).frame(
                 None,
@@ -1151,7 +1210,7 @@ pub(crate) fn resume_info(k: &Kit, h: &Head, width: Option<f32>) -> Vec<Node> {
                         Some(4.0),
                         Alignment::CENTER,
                     ),
-                    Node::rect(color(colour::MARK_ACCENT), 2.0).frame(
+                    Node::rect(color(crate::look_glow::accent()), 2.0).frame(
                         Some(w * p),
                         Some(4.0),
                         Alignment::CENTER,
@@ -1167,9 +1226,9 @@ pub(crate) fn resume_info(k: &Kit, h: &Head, width: Option<f32>) -> Vec<Node> {
 fn action_button(k: &Kit, key: &str, icon: &str, caption: &str, active: bool) -> Node {
     let lk = &k.lk;
     let tint = if active {
-        colour::MARK_ACCENT
+        crate::look_glow::accent()
     } else {
-        colour::FONT
+        color::TEXT_PRIMARY
     };
     match lk.form {
         Form::Touch => {
@@ -1183,9 +1242,9 @@ fn action_button(k: &Kit, key: &str, icon: &str, caption: &str, active: bool) ->
                 caption,
                 weight(lk.small, 12.0, 400),
                 if active {
-                    colour::MARK_ACCENT
+                    crate::look_glow::accent()
                 } else {
-                    colour::FONT_QUIET
+                    color::TEXT_SECONDARY
                 },
                 1,
             );
@@ -1199,9 +1258,9 @@ fn action_button(k: &Kit, key: &str, icon: &str, caption: &str, active: bool) ->
         Form::Desktop => {
             // `DetailIconButton`: 48 x 56, glyph only (no field), 85 % white at rest, accent when on.
             let c = if active {
-                color(colour::MARK_ACCENT)
+                color(crate::look_glow::accent())
             } else {
-                rgba(colour::FONT, 0.85)
+                rgba(color::TEXT_PRIMARY, 0.85)
             };
             k.icons
                 .node(icon, 22.0, !icon.ends_with(".fill"), c)
@@ -1218,7 +1277,7 @@ fn action_button(k: &Kit, key: &str, icon: &str, caption: &str, active: bool) ->
                 k.icons
                     .node(icon, 30.0, !icon.ends_with(".fill"), color(tint)),
                 color(tint),
-                color(colour::REASON),
+                color(color::SURFACE_BASE),
             )
             .frame(Some(76.0), Some(76.0), Alignment::CENTER);
             let surface = Node::rect(
@@ -1382,7 +1441,7 @@ pub(crate) fn description(k: &Kit, h: &Head, open: bool) -> Option<Node> {
         k.cx,
         &shown,
         &style,
-        color(colour::FONT_QUIET),
+        color(color::TEXT_SECONDARY),
         lines,
         swiftly_text::Align::Start,
     )
@@ -1418,7 +1477,7 @@ pub(crate) fn description(k: &Kit, h: &Head, open: bool) -> Option<Node> {
                 k.cx,
                 "Mehr",
                 &more_style,
-                color(colour::MARK_ACCENT),
+                color(crate::look_glow::accent()),
                 Some(1),
                 swiftly_text::Align::Start,
             );
@@ -1470,13 +1529,19 @@ pub(crate) fn description(k: &Kit, h: &Head, open: bool) -> Option<Node> {
                     "Regie",
                     s,
                     if mac {
-                        colour::FONT_VERY_QUIET
+                        color::TEXT_TERTIARY
                     } else {
-                        colour::FONT_QUIET
+                        color::TEXT_SECONDARY
                     },
                     Some(1),
                 ),
-                txt(k.cx, &h.directors.join(", "), s, colour::FONT, Some(1)),
+                txt(
+                    k.cx,
+                    &h.directors.join(", "),
+                    s,
+                    color::TEXT_PRIMARY,
+                    Some(1),
+                ),
             ],
         ));
     }
@@ -1530,7 +1595,7 @@ pub(crate) fn curve_at(c: &[(f32, f32)], t: f32) -> f32 {
 
 /// The page ground (mood colour) at `(x fraction of the page, y points)`; the plain ground without hues.
 pub(crate) fn mood_sampler(tones: &[f64], since: f32) -> impl Fn(f32, f32) -> Color {
-    let ground = color(colour::REASON);
+    let ground = color(color::SURFACE_BASE);
     let mesh =
         (!tones.is_empty()).then(|| swiftly_images::mood::detail_mesh(tones, f64::from(since)));
     let total = since + swiftly_images::mood::RUN_OUT as f32;
@@ -1687,7 +1752,7 @@ fn strip_cover(sample: &dyn Fn(f32, f32) -> Color, w: f32, bw: f32, height: f32)
 /// Design name: DetailHero
 pub(crate) fn hero(k: &Kit, h: &Head, buttons: Vec<Node>) -> Node {
     let lk = &k.lk;
-    let ground = colour::REASON;
+    let ground = color::SURFACE_BASE;
     let clear = rgba(ground, 0.0);
     let w = k.env.size.w;
     match lk.form {
@@ -1730,14 +1795,14 @@ pub(crate) fn hero(k: &Kit, h: &Head, buttons: Vec<Node>) -> Node {
                         k.cx,
                         &h.title,
                         weight(touch::text::TITLE_LARGE, 30.0, 700),
-                        colour::FONT,
+                        color::TEXT_PRIMARY,
                         Some(2),
                     ),
                     txt(
                         k.cx,
                         &h.secondary,
                         weight(lk.small, 12.0, 400),
-                        colour::FONT_QUIET,
+                        color::TEXT_SECONDARY,
                         Some(1),
                     ),
                 ],
@@ -1753,27 +1818,30 @@ pub(crate) fn hero(k: &Kit, h: &Head, buttons: Vec<Node>) -> Node {
             // `DetailHero`: the block sits at 36 / 172; the backdrop is right aligned, `max(62 % page, 520)` wide and 454 high,
             // faded by two multiplied masks (`Backdrop.swift:59-85`), over the mood colour of the page.
             let backdrop = desktop_backdrop(k, h, w);
+            // The 700 pt column never outgrows the page: a narrow window (the minimum is 900 pt with the sidebar) shrinks it, so
+            // a long title scales and then ends in an ellipsis inside the window instead of running out of it.
+            let col_w = 700.0_f32.min((w - 2.0 * lk.edge).max(240.0));
             let mut col = vec![
                 txt(
                     k.cx,
                     &h.title,
-                    fitted_hero_title(k.cx, &h.title, 700.0, 44.0),
-                    colour::FONT,
+                    fitted_hero_title(k.cx, &h.title, col_w, 44.0),
+                    color::TEXT_PRIMARY,
                     Some(1),
                 )
-                .frame(Some(700.0), Some(44.0), Alignment::LEADING),
+                .frame(Some(col_w), Some(44.0), Alignment::LEADING),
                 txt(
                     k.cx,
                     &h.secondary,
                     weight(lk.small, 14.0, 400),
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(1),
                 )
                 .padding(ins(12.0, 0.0, 0.0, 0.0)),
             ];
             col.extend(buttons);
             let block = Node::vstack(Align::Start, Some(0.0), col)
-                .frame(Some(700.0), None, Alignment::TOP_LEADING)
+                .frame(Some(col_w), None, Alignment::TOP_LEADING)
                 .padding(ins(desktop::DETAIL_TOP, lk.edge, 0.0, 0.0));
             block
                 .frame(Some(w), None, Alignment::TOP_LEADING)
@@ -1813,14 +1881,14 @@ pub(crate) fn hero(k: &Kit, h: &Head, buttons: Vec<Node>) -> Node {
                     k.cx,
                     &h.title,
                     tv::text::PLAYER_TITLE,
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(1),
                 ),
                 txt(
                     k.cx,
                     &h.secondary,
                     tv::text::BODY,
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(1),
                 )
                 .padding(ins(8.0, 0.0, 0.0, 0.0)),
@@ -1886,28 +1954,39 @@ pub(crate) fn hero_buttons(k: &Kit, h: &Head, open: bool) -> Vec<Node> {
         )
         .padding(ins(if tvf { 32.0 } else { 20.0 }, 0.0, 0.0, 0.0)),
     ];
-    let info = resume_info(k, h, primary_w.or(Some(420.0)));
-    v.push(
-        Node::vstack(Align::Start, Some(6.0), info.into_iter().rev().collect())
-            .padding(ins(16.0, 0.0, 0.0, 0.0)),
-    );
+    // Mac `DetailView.block`: the progress bar and the remaining time stand only when the title has been started
+    // (progress and a remaining text); a fresh film or a series without a resume point has no such block at all, and
+    // the description follows the buttons directly.
+    if tvf || (h.progress.is_some_and(|p| p > 0.0) && h.remaining.is_some()) {
+        let info = resume_info(k, h, primary_w.or(Some(420.0)));
+        v.push(
+            Node::vstack(Align::Start, Some(6.0), info.into_iter().rev().collect())
+                .padding(ins(16.0, 0.0, 0.0, 0.0)),
+        );
+    }
     if !tvf && let Some(m) = &h.message {
         // `HintStrip`: a capsule 34 high on `raised` with a 1 px `margin` border; the screen withdraws it after 3 s.
-        let strip = txt(k.cx, m, weight(k.lk.body, 15.0, 400), colour::FONT, Some(1))
-            .padding(ins(0.0, 14.0, 0.0, 14.0))
-            .frame(None, Some(34.0), Alignment::CENTER)
-            .background(
-                Node::rect(color(colour::RAISED), 17.0).paint(Paint::Stroke {
-                    color: color(colour::MARGIN),
-                    width: 1.0,
-                    radius: 17.0,
-                }),
-                Alignment::CENTER,
-            )
-            .key("message")
-            .on_tap(Action::from("dismiss"))
-            .appear_from(0.97, 0.0)
-            .exit_to(0.97, 0.0);
+        let strip = txt(
+            k.cx,
+            m,
+            weight(k.lk.body, 15.0, 400),
+            color::TEXT_PRIMARY,
+            Some(1),
+        )
+        .padding(ins(0.0, 14.0, 0.0, 14.0))
+        .frame(None, Some(34.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_RAISED), 17.0).paint(Paint::Stroke {
+                color: color(color::SURFACE_FOCUS),
+                width: 1.0,
+                radius: 17.0,
+            }),
+            Alignment::CENTER,
+        )
+        .key("message")
+        .on_tap(Action::from("dismiss"))
+        .appear_from(0.97, 0.0)
+        .exit_to(0.97, 0.0);
         v.push(strip.padding(ins(12.0, 0.0, 0.0, 0.0)));
     }
     if !tvf && let Some(d) = description(k, h, open) {
@@ -1919,7 +1998,7 @@ pub(crate) fn hero_buttons(k: &Kit, h: &Head, open: bool) -> Vec<Node> {
 // ---- rails -----------------------------------------------------------------------------------------------------------
 
 pub(crate) fn rail_title(k: &Kit, s: &str) -> Node {
-    txt(k.cx, s, k.lk.rail, colour::FONT, Some(1))
+    txt(k.cx, s, k.lk.rail, color::TEXT_PRIMARY, Some(1))
         .a11y(swiftly_ui::a11y::A11yNode::new("", swiftly_ui::a11y::Role::Heading, s).with_level(2))
 }
 
@@ -2000,9 +2079,12 @@ pub(crate) fn segment(
             let at = grow + k.lk.poster.h / 2.0 - 17.0;
             let b = k
                 .icons
-                .node(asset, 15.0, false, color(colour::FONT))
+                .node(asset, 15.0, false, color(color::TEXT_PRIMARY))
                 .frame(Some(34.0), Some(34.0), Alignment::CENTER)
-                .background(Node::rect(color(colour::AREA), 8.0), Alignment::CENTER)
+                .background(
+                    Node::rect(color(color::SURFACE_CONTROL), 8.0),
+                    Alignment::CENTER,
+                )
                 .hover_surface(
                     Color::new(1.0, 1.0, 1.0, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
                     8.0,
@@ -2091,10 +2173,10 @@ pub(crate) fn placeholder_symbol(k: &Kit, t: &Tile, size: Size) -> Option<Node> 
     }
     let glyph = tile_character_icon(t.facts.kind.as_deref(), t.facts.series_id.as_deref());
     Some(
-        Node::rect(color(colour::AREA), k.lk.corner)
+        Node::rect(color(color::SURFACE_CONTROL), k.lk.corner)
             .frame(Some(size.w), Some(size.h), Alignment::CENTER)
             .overlay(
-                k.icons.node(glyph, 22.0, true, color(colour::FONT)),
+                k.icons.node(glyph, 22.0, true, color(color::TEXT_PRIMARY)),
                 Alignment::CENTER,
             ),
     )
@@ -2127,7 +2209,7 @@ pub(crate) fn poster_tile(k: &Kit, t: &Tile, key: &str, landscape: bool) -> Node
             )
         })
         .paint(Paint::Stroke {
-            color: color(colour::TILE_BORDER),
+            color: color(color::BORDER_TILE),
             width: 1.0,
             radius: lk.corner,
         });
@@ -2146,19 +2228,19 @@ pub(crate) fn poster_tile(k: &Kit, t: &Tile, key: &str, landscape: bool) -> Node
         // the title and the line under it stay where they are.
         img = img.hover_scale(swiftly_ui::feel::HOVER_TILE_SCALE);
     }
-    let mut lines = vec![txt(k.cx, &t.title, lk.tile, colour::FONT, Some(1)).frame(
-        Some(size.w),
-        None,
-        Alignment::LEADING,
-    )];
+    let mut lines = vec![
+        txt(k.cx, &t.title, lk.tile, color::TEXT_PRIMARY, Some(1)).frame(
+            Some(size.w),
+            None,
+            Alignment::LEADING,
+        ),
+    ];
     if let Some(s) = &t.subtitle {
-        lines.push(
-            txt(k.cx, s, lk.small, colour::FONT_VERY_QUIET, Some(1)).frame(
-                Some(size.w),
-                None,
-                Alignment::LEADING,
-            ),
-        );
+        lines.push(txt(k.cx, s, lk.small, color::TEXT_TERTIARY, Some(1)).frame(
+            Some(size.w),
+            None,
+            Alignment::LEADING,
+        ));
     }
     let mut n = Node::vstack(
         Align::Start,
@@ -2215,7 +2297,7 @@ pub(crate) fn cast_rail(k: &Kit, cast: &[CastTile]) -> Node {
                     k.cx,
                     &c.name,
                     weight(k.lk.small, 13.0, 600),
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(2),
                 )];
                 if let Some(r) = c.role.as_ref().filter(|r| !r.is_empty()) {
@@ -2223,7 +2305,7 @@ pub(crate) fn cast_rail(k: &Kit, cast: &[CastTile]) -> Node {
                         k.cx,
                         r,
                         weight(k.lk.small, 12.0, 400),
-                        colour::FONT_VERY_QUIET,
+                        color::TEXT_TERTIARY,
                         Some(1),
                     ));
                 }
@@ -2261,9 +2343,9 @@ pub(crate) fn cast_rail(k: &Kit, cast: &[CastTile]) -> Node {
         .enumerate()
         .map(|(i, c)| {
             let key = format!("cast:{i}");
-            let mut lines = vec![txt_center(k.cx, &c.name, k.lk.tile, colour::FONT, 2)];
+            let mut lines = vec![txt_center(k.cx, &c.name, k.lk.tile, color::TEXT_PRIMARY, 2)];
             if let Some(r) = c.role.as_ref().filter(|r| !r.is_empty()) {
-                lines.push(txt_center(k.cx, r, k.lk.small, colour::FONT_QUIET, 1));
+                lines.push(txt_center(k.cx, r, k.lk.small, color::TEXT_SECONDARY, 1));
             }
             let mut n = Node::vstack(
                 Align::Center,
@@ -2306,17 +2388,22 @@ pub(crate) fn file_excerpt(k: &Kit, b: &BottomPart) -> Option<Node> {
         let vals: Vec<Node> = f
             .rows
             .iter()
-            .map(|r| txt(k.cx, &r.value, k.lk.small, colour::FONT_VERY_QUIET, Some(1)))
+            .map(|r| txt(k.cx, &r.value, k.lk.small, color::TEXT_TERTIARY, Some(1)))
             .collect();
         let row = Node::hstack(Align::Start, Some(22.0), vals).padding(ins(14.0, 0.0, 0.0, 0.0));
-        let line = Node::rect(color(colour::LINE), 0.0).frame(None, Some(1.0), Alignment::CENTER);
+        let line = Node::rect(color(color::BORDER_HAIRLINE), 0.0).frame(
+            None,
+            Some(1.0),
+            Alignment::CENTER,
+        );
         return Some(
             wide(row, Alignment::LEADING)
                 .overlay(wide(line, Alignment::CENTER), Alignment::TOP)
                 .padding(ins(0.0, k.lk.edge, 0.0, k.lk.edge)),
         );
     }
-    let line = || Node::rect(color(colour::LINE), 0.0).frame(None, Some(1.0), Alignment::CENTER);
+    let line =
+        || Node::rect(color(color::BORDER_HAIRLINE), 0.0).frame(None, Some(1.0), Alignment::CENTER);
     let st = weight(
         k.lk.small,
         if k.lk.form == Form::Tv { 26.0 } else { 13.0 },
@@ -2331,9 +2418,9 @@ pub(crate) fn file_excerpt(k: &Kit, b: &BottomPart) -> Option<Node> {
             Align::Center,
             Some(14.0),
             vec![
-                txt(k.cx, &r.label, st, colour::FONT_QUIET, Some(1)),
+                txt(k.cx, &r.label, st, color::TEXT_SECONDARY, Some(1)),
                 Node::spacer(),
-                txt(k.cx, &r.value, st, colour::FONT, Some(1)),
+                txt(k.cx, &r.value, st, color::TEXT_PRIMARY, Some(1)),
             ],
         )
         .frame(None, Some(k.lk.row_height), Alignment::CENTER);
@@ -2355,14 +2442,14 @@ fn disturbed(k: &Kit, title: &str, retry: &str) -> Node {
                 k.cx,
                 "Das ging schief. Der Server antwortet nicht.",
                 k.lk.body,
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(2),
             ),
             txt(
                 k.cx,
                 "Erneut versuchen",
                 weight(k.lk.body, k.lk.body.size, 600),
-                colour::MARK_ACCENT,
+                crate::look_glow::accent(),
                 Some(1),
             )
             .key("retry")
@@ -2395,12 +2482,12 @@ pub(crate) fn watchers_rail(k: &Kit, ws: &[swiftly_vm::WatcherTile]) -> Node {
                 k.cx,
                 &w.initial,
                 weight(k.lk.rail, inner * 0.42, 600),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 1,
             )
             .frame(Some(inner), Some(inner), Alignment::CENTER)
             .background(
-                Node::rect(color(colour::RAISED), inner / 2.0),
+                Node::rect(color(color::SURFACE_RAISED), inner / 2.0),
                 Alignment::CENTER,
             );
             let av = disc
@@ -2411,7 +2498,7 @@ pub(crate) fn watchers_rail(k: &Kit, ws: &[swiftly_vm::WatcherTile]) -> Node {
                     radius: size / 2.0,
                 })
                 .paint(Paint::Arc {
-                    color: color(colour::MARK_ACCENT),
+                    color: color(crate::look_glow::accent()),
                     width: line,
                     from: 0.0,
                     to: arc,
@@ -2435,14 +2522,20 @@ pub(crate) fn watchers_rail(k: &Kit, ws: &[swiftly_vm::WatcherTile]) -> Node {
                 }
                 let hidden = |c: swiftly_design::Colour| rgba(c, 0.0);
                 let name = focus_tint(
-                    txt_center(k.cx, &w.name, k.lk.tile, colour::FONT, 1),
-                    hidden(colour::FONT),
-                    color(colour::FONT),
+                    txt_center(k.cx, &w.name, k.lk.tile, color::TEXT_PRIMARY, 1),
+                    hidden(color::TEXT_PRIMARY),
+                    color(color::TEXT_PRIMARY),
                 );
                 let cap = focus_tint(
-                    txt_center(k.cx, &parts.join(" · "), k.lk.small, colour::FONT_QUIET, 1),
-                    hidden(colour::FONT_QUIET),
-                    color(colour::FONT_QUIET),
+                    txt_center(
+                        k.cx,
+                        &parts.join(" · "),
+                        k.lk.small,
+                        color::TEXT_SECONDARY,
+                        1,
+                    ),
+                    hidden(color::TEXT_SECONDARY),
+                    color(color::TEXT_SECONDARY),
                 );
                 let label = Node::vstack(Align::Center, Some(2.0), vec![name, cap])
                     .padding(ins(14.0, 0.0, 0.0, 0.0))
@@ -2495,12 +2588,12 @@ pub(crate) fn bottom_head(k: &Kit, b: &BottomPart) -> Vec<Node> {
                     k.cx,
                     &w.initial,
                     weight(k.lk.rail, 18.0, 600),
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     1,
                 )
                 .frame(Some(av), Some(av), Alignment::CENTER)
                 .background(
-                    Node::rect(color(colour::RAISED), av / 2.0),
+                    Node::rect(color(color::SURFACE_RAISED), av / 2.0),
                     Alignment::CENTER,
                 );
                 Node::vstack(
@@ -2508,7 +2601,7 @@ pub(crate) fn bottom_head(k: &Kit, b: &BottomPart) -> Vec<Node> {
                     Some(4.0),
                     vec![
                         disc,
-                        txt_center(k.cx, &w.name, k.lk.small, colour::FONT_QUIET, 1),
+                        txt_center(k.cx, &w.name, k.lk.small, color::TEXT_SECONDARY, 1),
                     ],
                 )
                 .frame(Some(64.0), None, Alignment::TOP)
@@ -2570,7 +2663,7 @@ pub(crate) fn bottom_rest(k: &Kit, b: &BottomPart) -> Vec<Node> {
 fn cast_slot(k: &Kit) -> Node {
     let kids = (0..8)
         .map(|_| {
-            Node::rect(color(colour::AREA), 42.0)
+            Node::rect(color(color::SURFACE_CONTROL), 42.0)
                 .frame(Some(84.0), Some(84.0), Alignment::CENTER)
                 .frame(Some(84.0), None, Alignment::TOP_LEADING)
         })
@@ -2589,7 +2682,11 @@ fn cast_slot(k: &Kit) -> Node {
 fn watchers_slot(k: &Kit) -> Node {
     let kids = (0..3)
         .map(|_| {
-            Node::rect(color(colour::AREA), 30.0).frame(Some(60.0), Some(60.0), Alignment::CENTER)
+            Node::rect(color(color::SURFACE_CONTROL), 30.0).frame(
+                Some(60.0),
+                Some(60.0),
+                Alignment::CENTER,
+            )
         })
         .collect();
     segment(k, "watchers", "Gesehen von", kids, 22.0, 60.0)
@@ -2614,7 +2711,7 @@ fn sheet_with(k: &Kit, title: &str, rows: &[(String, bool)], prefix: &str) -> No
             k.cx,
             title,
             weight(lk.body, lk.body.size + 2.0, 600),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
         )
         .padding(ins(0.0, 4.0, 8.0, 4.0)),
@@ -2646,9 +2743,9 @@ fn sheet_with(k: &Kit, title: &str, rows: &[(String, bool)], prefix: &str) -> No
     };
     for (i, (s, on)) in rows.iter().enumerate() {
         let c = if *on {
-            colour::MARK_ACCENT
+            crate::look_glow::accent()
         } else {
-            colour::FONT
+            color::TEXT_PRIMARY
         };
         kids.push(row_node(s, &format!("{prefix}:{i}"), c));
     }
@@ -2679,8 +2776,8 @@ fn sheet_with(k: &Kit, title: &str, rows: &[(String, bool)], prefix: &str) -> No
         ))
         .frame(Some(w), None, Alignment::TOP_LEADING)
         .background(
-            Node::rect(color(colour::AREA), 28.0).paint(Paint::Stroke {
-                color: color(colour::LINE),
+            Node::rect(color(color::SURFACE_CONTROL), 28.0).paint(Paint::Stroke {
+                color: color(color::BORDER_HAIRLINE),
                 width: 1.0,
                 radius: 28.0,
             }),
@@ -2719,10 +2816,10 @@ pub(crate) fn top_bar(k: &Kit, title: &str, strength: u8) -> Node {
         // `DetailHeader`: blur + ground; the bar rests at 70 % of the history and fills up with the scroll.
         let back = k
             .icons
-            .node("caret-left", 18.0, true, color(colour::FONT))
+            .node("caret-left", 18.0, true, color(color::TEXT_PRIMARY))
             .frame(Some(36.0), Some(36.0), Alignment::CENTER)
             .background(
-                Node::rect(color(colour::SCRIM_BUTTON), 18.0),
+                Node::rect(color(color::SCRIM_BUTTON), 18.0),
                 Alignment::CENTER,
             )
             .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück")
@@ -2733,7 +2830,7 @@ pub(crate) fn top_bar(k: &Kit, title: &str, strength: u8) -> Node {
             k.cx,
             title,
             &TextStyle::from(weight(lk.body, 17.0, 600)),
-            rgba(colour::FONT, s),
+            rgba(color::TEXT_PRIMARY, s),
             Some(1),
             swiftly_text::Align::Center,
         )
@@ -2754,7 +2851,7 @@ pub(crate) fn top_bar(k: &Kit, title: &str, strength: u8) -> Node {
             k.cx,
             title,
             &TextStyle::from(weight(lk.body, 14.0, 600)),
-            rgba(colour::FONT, s),
+            rgba(color::TEXT_PRIMARY, s),
             Some(1),
             swiftly_text::Align::Start,
         )
@@ -2768,17 +2865,22 @@ pub(crate) fn top_bar(k: &Kit, title: &str, strength: u8) -> Node {
         let name = wide(name, Alignment::LEADING);
         return crate::home::header_backdrop(s).overlay(name, Alignment::TOP);
     }
-    let ground = Node::rect(rgba(colour::REASON, s), 0.0).frame(None, Some(h), Alignment::CENTER);
+    let ground =
+        Node::rect(rgba(color::SURFACE_BASE, s), 0.0).frame(None, Some(h), Alignment::CENTER);
     let ground = wide(ground, Alignment::CENTER).overlay(
-        Node::rect(rgba(colour::LINE, 0.0), 0.0).frame(None, Some(1.0), Alignment::CENTER),
+        Node::rect(rgba(color::BORDER_HAIRLINE, 0.0), 0.0).frame(
+            None,
+            Some(1.0),
+            Alignment::CENTER,
+        ),
         Alignment::BOTTOM,
     );
     let back = k
         .icons
-        .node("caret-left", 18.0, true, color(colour::FONT))
+        .node("caret-left", 18.0, true, color(color::TEXT_PRIMARY))
         .frame(Some(36.0), Some(36.0), Alignment::CENTER)
         .background(
-            Node::rect(color(colour::SCRIM_BUTTON), 18.0),
+            Node::rect(color(color::SCRIM_BUTTON), 18.0),
             Alignment::CENTER,
         )
         .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück")
@@ -2789,7 +2891,7 @@ pub(crate) fn top_bar(k: &Kit, title: &str, strength: u8) -> Node {
         k.cx,
         title,
         &TextStyle::from(weight(lk.body, 17.0, 600)),
-        rgba(colour::FONT, s),
+        rgba(color::TEXT_PRIMARY, s),
         Some(1),
         swiftly_text::Align::Center,
     )
@@ -2802,8 +2904,10 @@ pub(crate) fn top_bar(k: &Kit, title: &str, strength: u8) -> Node {
 
 /// The page ground colour.
 pub(crate) fn ground(n: Node) -> Node {
-    fill_frame(n, Alignment::TOP_LEADING)
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+    fill_frame(n, Alignment::TOP_LEADING).background(
+        Node::rect(color(color::SURFACE_BASE), 0.0),
+        Alignment::CENTER,
+    )
 }
 
 pub(crate) fn status_card(
@@ -2818,15 +2922,15 @@ pub(crate) fn status_card(
         Align::Center,
         Some(12.0),
         vec![
-            k.icons.node(icon, 44.0, true, color(colour::FONT_QUIET)),
+            k.icons.node(icon, 44.0, true, color(color::TEXT_SECONDARY)),
             txt_center(
                 k.cx,
                 title,
                 weight(k.lk.rail, k.lk.rail.size, 600),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 2,
             ),
-            txt_center(k.cx, text, k.lk.body, colour::FONT_QUIET, 3).frame(
+            txt_center(k.cx, text, k.lk.body, color::TEXT_SECONDARY, 3).frame(
                 Some(300.0),
                 None,
                 Alignment::CENTER,
@@ -2835,12 +2939,15 @@ pub(crate) fn status_card(
                 k.cx,
                 button,
                 weight(k.lk.body, k.lk.body.size, 600),
-                colour::REASON,
+                color::SURFACE_BASE,
                 1,
             )
             .padding(ins(0.0, 24.0, 0.0, 24.0))
             .frame(None, Some(44.0), Alignment::CENTER)
-            .background(Node::rect(color(colour::FONT), 22.0), Alignment::CENTER)
+            .background(
+                Node::rect(color(color::TEXT_PRIMARY), 22.0),
+                Alignment::CENTER,
+            )
             .key("retry")
             .on_tap(Action::from(action)),
         ],
@@ -3031,15 +3138,21 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
                 ),
                 Alignment::CENTER,
             )
-            .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+            .background(
+                Node::rect(color(color::SURFACE_BASE), 0.0),
+                Alignment::CENTER,
+            )
             .reveal_as("detail.trouble"),
             Alignment::TOP_LEADING,
         );
     }
     if let Some(m) = h.message.as_ref().filter(|_| lk.form != Form::Desktop) {
-        let strip = txt(cx, m, lk.small, colour::FONT, Some(2))
+        let strip = txt(cx, m, lk.small, color::TEXT_PRIMARY, Some(2))
             .padding(ins(12.0, 16.0, 12.0, 16.0))
-            .background(Node::rect(color(colour::RAISED), 12.0), Alignment::CENTER)
+            .background(
+                Node::rect(color(color::SURFACE_RAISED), 12.0),
+                Alignment::CENTER,
+            )
             .key("message")
             .on_tap(Action::from("dismiss"));
         page = page.overlay(
@@ -3105,7 +3218,7 @@ pub struct DetailScreen {
     /// The push has settled once: later data is never held again (the pop must not pull rails out).
     settled_once: bool,
     /// When the tone became visible after the first build, and whether it still fades.
-    mood_since: Option<f64>,
+    mood: MoodFade,
     mood_busy: bool,
     bottom_since: Option<f64>,
     alphas: (f32, f32),
@@ -3191,7 +3304,7 @@ impl DetailScreen {
             host,
             first_ready: None,
             settled_once: false,
-            mood_since: None,
+            mood: MoodFade::default(),
             mood_busy: false,
             bottom_since: None,
             alphas: (1.0, 1.0),
@@ -3274,24 +3387,13 @@ impl DetailScreen {
             .is_empty();
         let first = *self.first_ready.get_or_insert((d.bottom.ready, tones));
         d.hold_bottom = travelling && !first.0;
-        d.hold_mood = travelling && !first.1;
-        d.mood_alpha = 1.0;
-        if tones && !d.hold_mood && !first.1 {
-            let now = self.host.now;
-            let t0 = *self.mood_since.get_or_insert(now);
-            let p = swiftly_motion::catalogue::Id::Mood
-                .curve()
-                .progress((now - t0) / 1000.0) as f32;
-            // Quantised: the page is rebuilt when the value changes, not every frame of the last decimals.
-            d.mood_alpha = if self.host.ui().env().reduce_motion {
-                1.0
-            } else {
-                (p.clamp(0.0, 1.0) * 64.0).round() / 64.0
-            };
-            self.mood_busy = d.mood_alpha < 1.0;
-        } else {
-            self.mood_busy = false;
-        }
+        let reduce = self.host.ui().env().reduce_motion;
+        let (hold, alpha) = self
+            .mood
+            .step(tones, first.1, travelling, self.host.now, reduce);
+        d.hold_mood = hold;
+        d.mood_alpha = alpha;
+        self.mood_busy = self.mood.is_busy();
         d.bottom_alpha = 1.0;
         if d.bottom.ready && !d.hold_bottom && !first.0 {
             let now = self.host.now;
@@ -3649,6 +3751,13 @@ impl DetailScreen {
                 // Touch: the "Laden" field opens the download sheet (`LoadSheet`) before anything is fetched.
                 self.load = crate::load_panel::LoadSpec::demo(&self.vm.hero().title);
                 self.host.sx.sheet = 5;
+            } else if is("report") {
+                self.host.sx.menu.close();
+                crate::desk::request_report(&self.vm.hero().id, None);
+            } else if is("delete") {
+                self.host.sx.menu.close();
+                // The page goes back once the title is gone (the Mac's `finished`).
+                crate::desk::request_delete(&self.vm.hero().id, true);
             } else if is("load.go") || is("load.queue") || is("load.cell") || is("load.clean") {
                 self.host.sx.sheet = 0;
                 self.vm.send(DetailIntent::DownloadPressed);
@@ -3840,8 +3949,12 @@ impl DetailScreen {
 
     /// Shows the real pictures of the server through `hub` (without it the demo art stays).
     #[must_use]
-    pub fn with_images(self, hub: Rc<crate::hub::ImageHub>) -> Self {
+    pub fn with_images(mut self, hub: Rc<crate::hub::ImageHub>) -> Self {
         self.host.hub.attach(hub);
+        // What was "there at the first build" is what the real pictures say, not the demo art the constructor saw
+        // (its tone would stand at once and the live tone would pop in instead of fading).
+        self.first_ready = None;
+        self.mood = MoodFade::default();
         self
     }
 
@@ -3950,6 +4063,23 @@ impl DetailScreen {
         if self.vm.actions().download.is_some() {
             items.push(PopEntry::Item(
                 MenuItem::new(Action::from("download"), "Laden").icon("arrow-circle-down"),
+            ));
+        }
+        // Seerr's entry (the core's title menu rule, told to the suite as `desk::report_offered`).
+        if crate::desk::report_offered() {
+            items.push(PopEntry::Item(
+                MenuItem::new(Action::from("report"), swiftly_l10n::t("Problem melden"))
+                    .icon("warning"),
+            ));
+        }
+        if crate::desk::delete_offered() {
+            items.push(PopEntry::Item(
+                MenuItem::new(
+                    Action::from("delete"),
+                    swiftly_l10n::t("Vom Server löschen"),
+                )
+                .icon("trash")
+                .destructive(),
             ));
         }
         // The Mac panel is 260 wide, right aligned under the button.
@@ -4516,6 +4646,46 @@ mod round3_tests {
         assert!(
             seen.iter().any(|h| *h > before + 2.0 && *h < end - 2.0),
             "in between it is mid-way, not a jump: {seen:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod mood_fade_tests {
+    use super::MoodFade;
+
+    #[test]
+    fn a_tone_there_at_the_first_build_stands_at_once() {
+        let mut m = MoodFade::default();
+        assert_eq!(m.step(true, true, false, 0.0, false), (false, 1.0));
+        assert!(!m.is_busy());
+    }
+
+    #[test]
+    fn a_late_tone_only_fades_and_is_held_while_the_page_slides() {
+        let mut m = MoodFade::default();
+        // No tone yet: nothing drawn, nothing animating.
+        assert_eq!(m.step(false, false, false, 0.0, false), (false, 1.0));
+        // It lands during the push: held.
+        assert_eq!(m.step(true, false, true, 100.0, false), (true, 1.0));
+        assert!(!m.is_busy());
+        // Settled: the fade starts at 0 and rises monotonically to 1 over Mood (0.55 s).
+        let mut last = -1.0_f32;
+        for i in 0..=14 {
+            let (hold, a) = m.step(true, false, false, 200.0 + f64::from(i) * 50.0, false);
+            assert!(!hold);
+            assert!(a >= last, "monotonic: {a} after {last}");
+            last = a;
+        }
+        assert_eq!(last, 1.0);
+        assert!(!m.is_busy());
+        let mut f = MoodFade::default();
+        assert!(f.step(true, false, false, 0.0, false).1 < 0.2);
+        assert!(f.is_busy());
+        assert_eq!(
+            f.step(true, false, false, 0.0, true).1,
+            1.0,
+            "reduce motion"
         );
     }
 }

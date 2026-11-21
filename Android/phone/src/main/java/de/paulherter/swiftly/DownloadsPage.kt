@@ -16,6 +16,8 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.motionReduced
+import de.paulherter.swiftly.shared.smoothRoundRectPath
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.future.await
@@ -41,7 +43,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -49,7 +50,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -101,7 +101,7 @@ fun DownloadRing(p: DownloadItem?, mass: Dp = 28.dp,
                     if (p.state == "laedt") {
                         val k = size.minDimension * 0.32f
                         // The square means pause, not cancel; accent color like the arc.
-                        drawRoundRect(Theme.accent, Offset((size.width - k) / 2, (size.height - k) / 2), Size(k, k), CornerRadius(1.5.dp.toPx()))
+                        drawPath(smoothRoundRectPath(Offset((size.width - k) / 2, (size.height - k) / 2), Size(k, k), 1.5.dp.toPx()), Theme.accent)
                     }
                 }
                 "fertig" -> drawCircle(Theme.accent, r)
@@ -212,15 +212,15 @@ private fun LoadContent(app: SwiftlyApplication, original: List<DownloadItem>, i
     /** The size with "≈" when estimated. */
     fun sizeText(b: Long) = (if (converted) "≈ " else "") + size(b)
     @Composable fun audioRow() {
-        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(translated("Ton"), style = TextStyle(fontSize = 15.sp), color = Theme.fontQuiet, modifier = Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth().heightIn(min = Theme.primaryHeight), verticalAlignment = Alignment.CenterVertically) {
+            Text(translated("Ton"), style = Theme.body, color = Theme.fontQuiet, modifier = Modifier.weight(1f))
             AudioBadge(audio, offer.options) { audioChosen = it }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Theme.line))
     }
     @Composable fun qualityRow() {
-        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(translated("Qualität"), style = TextStyle(fontSize = 15.sp), color = Theme.fontQuiet, modifier = Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth().heightIn(min = Theme.primaryHeight), verticalAlignment = Alignment.CenterVertically) {
+            Text(translated("Qualität"), style = Theme.body, color = Theme.fontQuiet, modifier = Modifier.weight(1f))
             QualityBadge(choice, offered, true,
                                size = { q -> original.sumOf { KernRules.downloadEstimated(q, it.bytes, it.runtimeTicks ?: 0L) } }) { choice = it }
         }
@@ -290,9 +290,9 @@ private fun LoadContent(app: SwiftlyApplication, original: List<DownloadItem>, i
 private fun SheetRow(title: String, value: String, cautionary: Boolean = false) {
     // `heightIn(min=)`, not `height()`: with large system fonts the rows grow instead of hitting a
     // fixed height.
-    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = TextStyle(fontSize = 15.sp), color = Theme.fontQuiet, modifier = Modifier.weight(1f))
-        Text(value, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum"),
+    Row(Modifier.fillMaxWidth().heightIn(min = Theme.primaryHeight), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = Theme.body, color = Theme.fontQuiet, modifier = Modifier.weight(1f))
+        Text(value, style = Theme.body.copy(fontFeatureSettings = "tnum"),
              color = if (cautionary) Theme.warning else Theme.font)
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(Theme.line))
@@ -305,7 +305,7 @@ private fun ButtonRail(content: @Composable ColumnScope.() -> Unit) {
 
 @Composable
 private fun SheetHint(text: String) {
-    Text(text, style = TextStyle(fontSize = 13.sp, lineHeight = 18.sp), color = Theme.fontVeryQuiet, modifier = Modifier.padding(top = 12.dp))
+    Text(text, style = Theme.small.copy(lineHeight = 18.sp), color = Theme.fontVeryQuiet, modifier = Modifier.padding(top = 12.dp))
 }
 
 private data class DownloadGroup(val id: String, val title: String, val bytes: Long, val seriesIdentifier: String?, val episodes: List<String>)
@@ -325,7 +325,7 @@ private fun subline(p: DownloadItem, loaded: Long = p.loaded): String {
     val parts = mutableListOf<String>()
     // Translated: German "F" for Folge, English "E" for episode. Was hard-coded "F", even in English.
     if (p.season != null && p.episode != null) parts += translated("S%d F%d", p.season, p.episode)
-    else p.runtimeTicks?.takeIf { it > 0 }?.let { parts += translated("%lld Min.", (it / 600_000_000L).toInt()) }
+    else p.runtimeTicks?.takeIf { it >= 600_000_000L }?.let { parts += translated("%lld Min.", (it / 600_000_000L).toInt()) }
     when (p.state) {
         // Fixed unit, fixed digits (`DownloadRules.progress`): `size` switched mid-download from
         // "845 MB" to "1 GB" and "1,01 GB", and the row changed width at every step. When
@@ -558,7 +558,7 @@ private fun DownloadRow(app: SwiftlyApplication, p: DownloadItem, image: File, l
         // single row; a series row stands for many episodes.
         val watched = group == null && p.watched
         // Watched is only darker, not transparent, as in the episode list (`WATCHED_DIM`).
-        Box(Modifier.size(if (landscape) Theme.episodeWidth else 64.dp, if (landscape) Theme.episodeHeight else 96.dp).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
+        Box(Modifier.size(if (landscape) Theme.episodeWidth else 64.dp, if (landscape) Theme.episodeHeight else 96.dp).clip(smoothRoundedShape(Theme.cornerTile)).background(Theme.area)) {
             AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop,
                        colorFilter = if (watched) WATCHED_DIM else null, modifier = Modifier.fillMaxSize())
             if (watched) WatchedCheckmark()

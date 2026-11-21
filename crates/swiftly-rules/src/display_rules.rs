@@ -22,6 +22,17 @@ pub fn runtime_show(seconds: Option<f64>) -> bool {
     seconds.is_some_and(|s| s > 0.0)
 }
 
+/// The whole minutes of a runtime that is worth a line of text, or `None`. Beyond what
+/// [`runtime_show`] excludes, a runtime under one minute counts as unknown too: a test clip or
+/// half-filled metadata delivers a few seconds, and "0 Min." tells nobody anything. Every
+/// surface that writes a runtime asks this (through `TitleText::runtime_line`) instead of
+/// checking `> 0` itself.
+pub fn runtime_minutes(seconds: Option<f64>) -> Option<i64> {
+    seconds
+        .filter(|s| s.is_finite() && *s >= 60.0)
+        .map(|s| (s / 60.0).min(1.0e9) as i64)
+}
+
 /// When a search input goes to the server: more than one character after trimming
 /// whitespace and newlines. `count` is in Characters (grapheme clusters), as in Swift.
 /// (`DisplayRules.swift:30-32`)
@@ -80,6 +91,19 @@ mod tests {
         assert!(!runtime_show(Some(0.0)));
         assert!(!runtime_show(None));
         assert!(!runtime_show(Some(-5.0)));
+    }
+
+    #[test]
+    fn under_a_minute_is_no_runtime_line() {
+        assert_eq!(runtime_minutes(None), None);
+        assert_eq!(runtime_minutes(Some(0.0)), None);
+        assert_eq!(runtime_minutes(Some(-5.0)), None);
+        assert_eq!(runtime_minutes(Some(f64::NAN)), None);
+        assert_eq!(runtime_minutes(Some(f64::INFINITY)), None);
+        assert_eq!(runtime_minutes(Some(12.0)), None);
+        assert_eq!(runtime_minutes(Some(59.99)), None);
+        assert_eq!(runtime_minutes(Some(60.0)), Some(1));
+        assert_eq!(runtime_minutes(Some(7680.0)), Some(128));
     }
 
     // Swift: realRuntime()

@@ -1,12 +1,18 @@
-# 🎬 VLCKit
+# 🎬 VLCKit (earlier versions)
 
-Swiftly Player ships a VLCKit built with its own patches. The official
+**Earlier versions of Swiftly Player contained VLCKit and libVLC. No current
+release does:** the apps now play with AetherEngine and FFmpeg (Apple), Media3
+(Android) and libmpv (Windows, Linux), see [Players.md](Players.md). This page
+stays because the written offer for the source of those earlier versions points
+here (see also [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)).
+
+Those versions shipped a VLCKit built with its own patches. The official
 build fetched by `Werkzeuge/vlckit-fetch.sh` does not have them, and two of
-the problems below are bad enough that the app is not usable without the fix.
+the problems below were bad enough that the app was not usable without the fix.
 
 Every patch lives in `Werkzeuge/vlckit-patches/` with a README of its own that
-carries the measurements. The patches are being submitted upstream so that
-official builds can be used again.
+carries the measurements. The patches were being submitted upstream so that
+official builds could be used again.
 
 **How to rebuild it:** `Werkzeuge/vlckit-build/README.md` lists the upstream
 commits, the order of the patches, the exact build and `xcodebuild
@@ -64,16 +70,16 @@ The patches modify VLC and are therefore under VLC's LGPL-2.1-or-later.
 
 <br>
 
-## VLCKit / libVLC — Source and your rights
+## VLCKit / libVLC (earlier versions) — Source and your rights
 
-Swiftly Player uses VLCKit and libVLC by VideoLAN, licensed under the
+Earlier versions of Swiftly Player used VLCKit and libVLC by VideoLAN, licensed under the
 **LGPL-2.1-or-later**. Copyright VideoLAN and VLC authors. The license text
 is in [LICENSES/LGPL-2.1-or-later.txt](../LICENSES/LGPL-2.1-or-later.txt), and
 every bundled library with its version and license is listed in
 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md). The same pages are in the
 apps under Profile → About → Open-source licenses.
 
-**What is shipped.** The apps for iPhone, iPad, Mac and Apple TV embed
+**What was shipped.** The apps for iPhone, iPad, Mac and Apple TV embedded
 `VLCKit.framework` (version 4.0.0-a23) built from VideoLAN's sources plus the
 patches in `Werkzeuge/vlckit-patches/`. All slices (iPhone/iPad,
 Apple TV, Mac) were built on 16 Sep 2026; they do not contain the patches
@@ -141,9 +147,9 @@ release so that slice and sources match again.
 
 ## License
 
-Playback uses [VLCKit](https://code.videolan.org/videolan/VLCKit), which is
-licensed under the **LGPL-2.1-or-later**. It is not stored in this repository
-(2 GB); `Werkzeuge/vlckit-fetch.sh` fetches VideoLAN's official build and
-verifies its SHA-256, and the section above says how to build the patched
-version the apps ship. The full source of this application is published so
+Earlier versions played with [VLCKit](https://code.videolan.org/videolan/VLCKit),
+which is licensed under the **LGPL-2.1-or-later**. It is not stored in this
+repository (2 GB); `Werkzeuge/vlckit-fetch.sh` fetches VideoLAN's official
+build and verifies its SHA-256, and the section above says how to build the
+patched version those apps shipped. The full source of this application is published so
 that anyone can rebuild it against their own build of that library.

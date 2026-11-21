@@ -68,9 +68,8 @@ struct ServerKindPicker: View {
         switch purpose {
         case .firstStart:
             VStack(alignment: .leading, spacing: 0) {
-                Wordmark(height: 32)
-                    // The first thing on screen, at the height where the wordmark stood
-                    // over the address field before, minus what the question needs.
+                AppIconMark(height: 32)
+                    // The first thing on screen, with the room the question needs below.
                     .padding(.top, 96)
                 Text("Was läuft bei dir?")
                     .growing(28, .bold)

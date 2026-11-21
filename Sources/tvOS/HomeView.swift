@@ -38,7 +38,7 @@ struct HomeView: View {
     /// when the switch starts, not when the new content arrives.
     @State private var change = false
     /// The rows are showing; no switch in progress.
-    private var showItem: Bool { !change && !AccountSwitchTransition.shared.waits && !seerr.holdsPage(model) }
+    private var showItem: Bool { !change && !AccountSwitchTransition.shared.waits }
     /// The rows are in the tree except between the switch and its release. Then nothing
     /// invisible can take focus; it stays on the profile image at the top.
     private var built: Bool { showItem || structure }
@@ -47,6 +47,16 @@ struct HomeView: View {
     private var released: Bool {
         (!state.allEmpty || state.loaded) && !AccountSwitchTransition.shared.waits
     }
+
+    /// **A silent server over rows that are already there** (the stored page, shown at once): the core says
+    /// `Offline` once the refresh failed. The rows stay and the notice stands at the top of the page, as on
+    /// iPhone. Only for the two failures whose words are "does not answer"; without any rows the page has its
+    /// full-page notice.
+    private var noticeOverRows: Bool {
+        state.loaded && state.disrupted && !state.allEmpty && (state.trouble == .unreachable || state.trouble == .server)
+    }
+    /// A retry from the notice is running.
+    @State private var retries = false
 
     var body: some View {
         ZStack {
@@ -64,7 +74,7 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.top, Theme.barBottom + 40)
                 .transition(.opacity)
-            } else if state.disrupted {
+            } else if state.disrupted, !noticeOverRows {
                 // Same wording as on every other device: names the server address and asks the
                 // question that helps, which "check the connection" does not.
                 let words = state.trouble.copy(server: model.serverAddress ?? String(localized: "Der Server"))
@@ -226,27 +236,21 @@ struct HomeView: View {
 
     private enum OrderedRow: Identifiable {
         case fixed(StartRail)
-        case seerrArrival
-        case seerrRequests
         case library(Home.LibraryRail)
         var id: String {
             switch self {
             case .fixed(let rail): rail.rawValue
-            case .seerrArrival: HomeRowOrder.seerrArrival
-            case .seerrRequests: HomeRowOrder.seerrRequests
             case .library(let r): HomeRowOrder.libraryId(r.id)
             }
         }
     }
 
     /// The visible rows in the combined order: hidden or non-fitting fixed rows and libraries without content drop
-    /// out; each Seerr section has its own switch (the core lists them only while Seerr is connected).
+    /// out. The core lists no Seerr section on a TV, so none is a row here.
     private var orderedRows: [OrderedRow] {
         let fixed = Set(fixedRails)
         let byId = Dictionary(libraries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         return model.rowOrder.compactMap { id in
-            if id == HomeRowOrder.seerrArrival { return arrivalOn ? OrderedRow.seerrArrival : nil }
-            if id == HomeRowOrder.seerrRequests { return requestsOn ? OrderedRow.seerrRequests : nil }
             if let lib = HomeRowOrder.library(of: id) { return byId[lib].map(OrderedRow.library) }
             return StartRail(rawValue: id).flatMap { fixed.contains($0) ? OrderedRow.fixed($0) : nil }
         }
@@ -388,12 +392,7 @@ struct HomeView: View {
         .onChange(of: startMark, initial: true) { _, mark in
             guard !startFocusSet, let mark else { return }
             startFocusSet = true
-            if stackFirst { arrivalClaim = true } else { atTitle = mark }
-        }
-        // The stack answered after the first tile took focus and nobody moved yet: move focus up to it.
-        .onChange(of: stackFirst) { _, first in
-            guard first, atTitle == nil || atTitle == startMark, lastAtTitle == nil || lastAtTitle == startMark else { return }
-            arrivalClaim = true
+            atTitle = mark
         }
         // Focus does not return from the player by itself.
         //
@@ -426,30 +425,6 @@ struct HomeView: View {
     ///
     /// Order dependent, so a successful pass proves nothing. The lazy stack also estimated
     /// row heights and accumulated a focus offset.
-    /// The Seerr block above the rows (arrival banner, "Angefragt"); the core decides if it shows.
-    @State private var seerr = SeerrHomeFlow()
-    @AppStorage(SeerrArrival.hintKey) private var arrivalOn = true
-    @AppStorage(SeerrArrival.requestsKey) private var requestsOn = false
-    /// Focus is on a control of the arrival stack.
-    @State private var arrivalFocus = false
-    /// One-shot request: focus goes to the arrival stack's front card.
-    @State private var arrivalClaim = false
-
-    /// The arrival stack is the first row of the page and is answered (not a skeleton): it is the first focusable row,
-    /// so default focus lands on it and the page stays at the top. Otherwise the first tile scrolled it out of view.
-    private var stackFirst: Bool {
-        guard case .seerrArrival? = orderedRows.first,
-              let info = seerr.block(model), !info.arrivals.isEmpty, info.state != .pending else { return false }
-        return true
-    }
-
-    /// The open stack (3 cards + "Weniger anzeigen" = 640 pt) is taller than the window under the header zone (570),
-    /// so while focus is inside it the header zone gives its room to the rails: the stack shows whole and nothing
-    /// scrolls under the title. It returns when focus goes back to a tile.
-    private var headerGivesWay: Bool {
-        arrivalFocus && (seerr.block(model)?.arrivalsExpanded ?? false)
-    }
-
     private var rails: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 0) {
@@ -459,20 +434,13 @@ struct HomeView: View {
                     genreChips.railEntrance(1, present: showItem)
                 }
 
-                // The fixed rows, Seerr's two sections, libraries and collections in ONE configured order (Settings >
-                // Darstellung > Startseite; the core heals the stored list), without hidden ones. Seerr's sections are
-                // loaded together with the rows (`load()`), so they are part of the page when the rows show. Staggered
-                // after an account switch (``Reihenauftritt``).
+                // The fixed rows, libraries and collections in ONE configured order (Settings >
+                // Darstellung > Startseite; the core heals the stored list), without hidden ones. Staggered after an
+                // account switch (``Reihenauftritt``).
                 ForEach(Array(orderedRows.enumerated()), id: \.element.id) { i, row in
                     switch row {
                     case .fixed(let rail):
                         pinned(rail).railEntrance(i + 2, present: showItem)
-                    case .seerrArrival:
-                        TVSeerrHomeBlock(part: .arrival, model: model, flow: seerr, focusWithin: $arrivalFocus, claimFocus: $arrivalClaim)
-                            .railEntrance(i + 2, present: showItem)
-                    case .seerrRequests:
-                        TVSeerrHomeBlock(part: .requests, model: model, flow: seerr)
-                            .railEntrance(i + 2, present: showItem)
                     case .library(let bib):
                         railsSection {
                             RailTitle(name: bib.name)
@@ -511,8 +479,6 @@ struct HomeView: View {
             .padding(.bottom, Theme.completionPadding)
         }
         .scrollIndicators(.hidden)
-        // Seerr signs in after the first rows: read again when the connection comes or a switch changes.
-        .seerrHomeReload(seerr, model: model)
         // Where focus stands on open is stated, not hoped for.
         //
         // While the lazy stack had created only the first row, focus landed there by default.
@@ -530,7 +496,7 @@ struct HomeView: View {
         //
         // `lastAtTitle` records where focus really was (it exists already because the readout
         // above needs the same fallback). On first open it is empty and `startMark` applies.
-        .defaultFocus($atTitle, lastAtTitle ?? (stackFirst ? nil : startMark), priority: .userInitiated)
+        .defaultFocus($atTitle, lastAtTitle ?? startMark, priority: .userInitiated)
         // Clipping here is intended. The tile's zoom is absorbed by the strip with `railsPadding`
         // inside its own bounds, so the vertical scroll view may clip, and only so can no tile
         // ever reach into the header zone.
@@ -629,11 +595,19 @@ struct HomeView: View {
             // without making the page look different from a detail page. It sits under the text;
             // above it, it tinted the title grey.
             HeaderShadow()
-            inquiry
-                .padding(.leading, Theme.edgePage)
-                .padding(.top, Theme.contentTop)
-                .opacity(headerGivesWay ? 0 : 1)
+            if noticeOverRows {
+                // The notice takes the place of the readout while the server is silent: the readout belongs to
+                // a title, the notice to the whole page.
+                DisturbNotice(model: model, trouble: state.trouble, loads: retries, retry: { newTry() })
+                    .padding(.leading, Theme.edgePage)
+                    .padding(.top, Theme.contentTop)
+            } else {
+                inquiry
+                    .padding(.leading, Theme.edgePage)
+                    .padding(.top, Theme.contentTop)
+            }
         }
+        .animation(Theme.reveal, value: noticeOverRows)
         // Full 510, measured from the screen edge.
         //
         // The outer stack leaves out the top margin, so the zone starts at zero and the
@@ -643,8 +617,7 @@ struct HomeView: View {
         // Not clipped: the landscape image is 700 high and ends with its own gradient. Cut at
         // 510 it would show the hard edge that once lay across the image as a light stripe. The
         // rows draw over it, being the next sibling.
-        .frame(height: headerGivesWay ? Theme.barBottom : Theme.heroHeight, alignment: .topLeading)
-        .animation(Theme.reveal, value: headerGivesWay)
+        .frame(height: Theme.heroHeight, alignment: .topLeading)
     }
 
     /// The image changes debounced and cross-faded.
@@ -740,18 +713,26 @@ struct HomeView: View {
                               play: { play.wrappedValue = $0 })
     }
 
+    /// The notice's retry: one load, the button waits meanwhile.
+    private func newTry() {
+        retries = true
+        Task {
+            await load()
+            retries = false
+        }
+    }
+
     private func load() async {
-        // The Seerr block is read next to the rows, so both are there at the same moment.
-        async let seerrLoad: Void = seerr.load(model)
         AccountSwitchTransition.note("startseite: laden (konto \(model.accountSwitch))")
         let a = Date()
+        // What the core raises by itself (a refused removal puts the title back) shows with the row's change motion.
+        state.rowMotion = { apply in withAnimation(Theme.reveal) { apply() } }
         if model.coreServes {
             await state.loadRust(model)
         } else {
             await state.load(model)
         }
         AccountSwitchTransition.note("startseite: geladen nach \(Int(Date().timeIntervalSince(a) * 1000)) ms")
-        await seerrLoad
         // Failed query and nothing there: do not overwrite a good preview with an empty one.
         if !(state.disrupted && state.allEmpty) { shelfWrite() }
     }

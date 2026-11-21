@@ -8,7 +8,9 @@
 use crate::browse::wide;
 use crate::home::{fill_frame, ins, rgba, text};
 use swiftly_design::TextStyle;
-use swiftly_design::tokens::{colour, desktop};
+use swiftly_design::tokens::desktop;
+use swiftly_design::tokens_generated::color;
+use swiftly_design::tokens_generated::desktop as dsk;
 use swiftly_layout::{Align, Alignment, EdgeInsets};
 use swiftly_playback::handoff_card::{
     AT_MOST_WAIT, BLACK_DURATION, CARDS_START, Direction, END, EXIT_START, FADE, FADE_OUT,
@@ -539,16 +541,16 @@ fn st(size: f32, weight: u16) -> TextStyle {
 fn look() -> FieldLook {
     FieldLook {
         style: swiftly_text::TextStyle::from(st(14.0, 400)),
-        text: color(colour::FONT),
-        placeholder: color(colour::FONT_VERY_QUIET),
-        caret: color(colour::MARK_ACCENT),
-        selection: color(colour::MARK_ACCENT).with_alpha(0.30),
+        text: color(color::TEXT_PRIMARY),
+        placeholder: color(color::TEXT_TERTIARY),
+        caret: color(crate::look_glow::accent()),
+        selection: color(crate::look_glow::accent()).with_alpha(0.30),
         caret_height: Some(18.0),
     }
 }
 
 fn line(w: f32) -> Node {
-    Node::rect(color(colour::LINE), 0.0).frame(Some(w), Some(1.0), Alignment::CENTER)
+    Node::rect(color(color::BORDER_HAIRLINE), 0.0).frame(Some(w), Some(1.0), Alignment::CENTER)
 }
 
 fn heading(cx: &Cx, s: &str) -> Node {
@@ -557,7 +559,7 @@ fn heading(cx: &Cx, s: &str) -> Node {
             cx,
             s,
             st(17.0, 600),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         ),
@@ -577,13 +579,13 @@ fn primary(cx: &Cx, icons: &Icons, key: &str, label: &str, symbol: &str, enabled
         Some(8.0),
         vec![
             icons
-                .node(symbol, 16.0, false, color(colour::REASON))
+                .node(symbol, 16.0, false, color(color::SURFACE_BASE))
                 .a11y_hidden(),
             text(
                 cx,
                 label,
                 st(17.0, 600),
-                colour::REASON,
+                color::SURFACE_BASE,
                 Some(1),
                 swiftly_text::Align::Center,
             ),
@@ -591,7 +593,10 @@ fn primary(cx: &Cx, icons: &Icons, key: &str, label: &str, symbol: &str, enabled
     );
     let n = wide(inner, Alignment::CENTER)
         .frame(None, Some(48.0), Alignment::CENTER)
-        .background(Node::rect(color(colour::FONT), 10.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::TEXT_PRIMARY), 10.0),
+            Alignment::CENTER,
+        )
         .hover_surface(Color::new(0.0, 0.0, 0.0, 0.12), 10.0)
         .a11y(swiftly_ui::a11y::A11yNode::new(
             "",
@@ -632,7 +637,7 @@ fn pick_row(cx: &Cx, icons: &Icons, i: usize, r: &PickRow) -> Node {
         Some(14.0),
         vec![
             icons
-                .node(&r.symbol, 17.0, true, color(colour::MARK_ACCENT))
+                .node(&r.symbol, 17.0, true, color(crate::look_glow::accent()))
                 .frame(Some(26.0), None, Alignment::CENTER),
             Node::vstack(
                 Align::Start,
@@ -642,7 +647,7 @@ fn pick_row(cx: &Cx, icons: &Icons, i: usize, r: &PickRow) -> Node {
                         cx,
                         &r.title,
                         st(14.0, 600),
-                        colour::FONT,
+                        color::TEXT_PRIMARY,
                         Some(1),
                         swiftly_text::Align::Start,
                     ),
@@ -650,7 +655,7 @@ fn pick_row(cx: &Cx, icons: &Icons, i: usize, r: &PickRow) -> Node {
                         cx,
                         &r.under,
                         st(12.0, 400),
-                        colour::FONT_QUIET,
+                        color::TEXT_SECONDARY,
                         Some(1),
                         swiftly_text::Align::Start,
                     ),
@@ -662,7 +667,7 @@ fn pick_row(cx: &Cx, icons: &Icons, i: usize, r: &PickRow) -> Node {
                 cx,
                 action,
                 st(14.0, 600),
-                colour::MARK_ACCENT,
+                crate::look_glow::accent(),
                 Some(1),
                 swiftly_text::Align::End,
             )
@@ -721,14 +726,15 @@ fn exit_view(
     let (ww, wh) = (env.size.w, env.size.h);
     let (x, y) = (l.x as f32, l.y as f32);
     let (w, h) = (l.width as f32, l.height as f32);
-    let ground = Node::rect(color(colour::REASON), 0.0).opacity(l.ground as f32, Motion::Instant);
+    let ground =
+        Node::rect(color(color::SURFACE_BASE), 0.0).opacity(l.ground as f32, Motion::Instant);
     let black =
         Node::rect(Color::new(0.0, 0.0, 0.0, 1.0), 0.0).opacity(l.black as f32, Motion::Instant);
     let picture = match frame.image {
         Some(id) => Node::image(id, w, h, l.corner as f32),
-        None => Node::rect(color(colour::AREA), l.corner as f32)
+        None => Node::rect(color(color::SURFACE_CONTROL), l.corner as f32)
             .paint(Paint::Stroke {
-                color: color(colour::LINE),
+                color: color(color::BORDER_HAIRLINE),
                 width: 1.0,
                 radius: l.corner as f32,
             })
@@ -748,7 +754,7 @@ fn exit_view(
             cx,
             title,
             st(metrics.title as f32, 600),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         )];
@@ -757,7 +763,7 @@ fn exit_view(
                 cx,
                 episode,
                 st(metrics.small as f32, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(1),
                 swiftly_text::Align::Start,
             ));
@@ -791,13 +797,13 @@ fn receive_view(cx: &Cx, env: &Env, title: &str, episode: &str, frame: &ReceiveF
     let l = &frame.look;
     let (ww, wh) = (env.size.w, env.size.h);
     let (w, h) = (l.width as f32, l.height as f32);
-    let ground = Node::rect(color(colour::REASON), 0.0)
+    let ground = Node::rect(color(color::SURFACE_BASE), 0.0)
         .opacity((l.ground * l.stage) as f32, Motion::Instant);
     let black = Node::rect(Color::new(0.0, 0.0, 0.0, 1.0), 0.0)
         .opacity((l.black * l.stage) as f32, Motion::Instant);
-    let card = Node::rect(color(colour::AREA), l.corner as f32)
+    let card = Node::rect(color(color::SURFACE_CONTROL), l.corner as f32)
         .paint(Paint::Stroke {
-            color: color(colour::LINE),
+            color: color(color::BORDER_HAIRLINE),
             width: 1.0,
             radius: l.corner as f32,
         })
@@ -820,7 +826,7 @@ fn receive_view(cx: &Cx, env: &Env, title: &str, episode: &str, frame: &ReceiveF
             cx,
             title,
             st(metrics.title as f32, 600),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         )];
@@ -829,7 +835,7 @@ fn receive_view(cx: &Cx, env: &Env, title: &str, episode: &str, frame: &ReceiveF
                 cx,
                 episode,
                 st(metrics.small as f32, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(1),
                 swiftly_text::Align::Start,
             ));
@@ -852,12 +858,12 @@ fn receive_view(cx: &Cx, env: &Env, title: &str, episode: &str, frame: &ReceiveF
             let stripe = track * 0.3;
             let at = (frame.travel as f32) * (track + stripe) - stripe;
             let (from, to) = (at.max(0.0), (at + stripe).min(track));
-            let line = Node::rect(color(colour::LINE), 1.0).frame(
+            let line = Node::rect(color(color::BORDER_HAIRLINE), 1.0).frame(
                 Some(track),
                 Some(2.0),
                 Alignment::TOP_LEADING,
             );
-            let run = Node::rect(color(colour::MARK_ACCENT), 1.0)
+            let run = Node::rect(color(crate::look_glow::accent()), 1.0)
                 .frame(
                     Some((to - from).max(0.0)),
                     Some(2.0),
@@ -907,15 +913,15 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
             None => Node::fixed(0.0, 0.0),
         };
     }
-    let w = desktop::FORM_WIDTH;
+    let w = dsk::SIZE_FORM_WIDTH;
     let mut col: Vec<Node> = Vec::new();
     match &p.mode {
         Mode::Closed | Mode::Exit { .. } | Mode::Receive { .. } => {}
         Mode::Create { line: what, .. } => {
             col.push(heading(cx, "Gemeinsam schauen"));
             let mut c = vec![
-                body(cx, what, 14.0, colour::FONT_QUIET, 2).padding(ins(0.0, 0.0, 16.0, 0.0)),
-                body(cx, "Name der Gruppe", 12.0, colour::FONT_VERY_QUIET, 1)
+                body(cx, what, 14.0, color::TEXT_SECONDARY, 2).padding(ins(0.0, 0.0, 16.0, 0.0)),
+                body(cx, "Name der Gruppe", 12.0, color::TEXT_TERTIARY, 1)
                     .padding(ins(0.0, 0.0, 6.0, 0.0)),
             ];
             let field = Node::hstack(
@@ -931,7 +937,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
             c.push(
                 wide(field, Alignment::LEADING)
                     .background(
-                        Node::rect(color(colour::RAISED), desktop::CORNER_FIELD),
+                        Node::rect(color(color::SURFACE_RAISED), dsk::RADIUS_FIELD),
                         Alignment::CENTER,
                     )
                     .a11y(swiftly_ui::a11y::A11yNode::new(
@@ -945,7 +951,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
                     cx,
                     "Alle auf deinem Server sehen die Gruppe und können mit einsteigen. Pause und Springen gelten dann für alle.",
                     14.0,
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     4,
                 )
                 .padding(ins(14.0, 0.0, 18.0, 0.0)),
@@ -962,10 +968,11 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
         }
         Mode::Join(g) => {
             col.push(heading(cx, &g.name));
-            let mut c = vec![body(cx, &g.who, 14.0, colour::FONT_QUIET, 2)];
+            let mut c = vec![body(cx, &g.who, 14.0, color::TEXT_SECONDARY, 2)];
             if let Some(state) = &g.state_text {
                 c.push(
-                    body(cx, state, 12.0, colour::MARK_ACCENT, 1).padding(ins(6.0, 0.0, 0.0, 0.0)),
+                    body(cx, state, 12.0, crate::look_glow::accent(), 1)
+                        .padding(ins(6.0, 0.0, 0.0, 0.0)),
                 );
             }
             c.push(
@@ -973,7 +980,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
                     cx,
                     "Pause und Springen gelten für alle.",
                     12.0,
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     2,
                 )
                 .padding(ins(10.0, 0.0, 18.0, 0.0)),
@@ -998,7 +1005,8 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
         Mode::Failed(message) => {
             col.push(heading(cx, "Weiterschauen"));
             col.push(
-                body(cx, message, 14.0, colour::FONT_QUIET, 4).padding(ins(0.0, 20.0, 20.0, 20.0)),
+                body(cx, message, 14.0, color::TEXT_SECONDARY, 4)
+                    .padding(ins(0.0, 20.0, 20.0, 20.0)),
             );
         }
     }
@@ -1009,7 +1017,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
                 cx,
                 "Abbrechen",
                 st(14.0, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(1),
                 swiftly_text::Align::Center,
             ),
@@ -1032,10 +1040,10 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
     let card = Node::vstack(Align::Start, Some(0.0), col)
         .frame(Some(w), None, Alignment::TOP_LEADING)
         .background(
-            Node::rect(color(colour::AREA), desktop::CORNER_AREA).paint(Paint::Stroke {
-                color: color(colour::LINE),
+            Node::rect(color(color::SURFACE_CONTROL), dsk::RADIUS_AREA).paint(Paint::Stroke {
+                color: color(color::BORDER_HAIRLINE),
                 width: 1.0,
-                radius: desktop::CORNER_AREA,
+                radius: dsk::RADIUS_AREA,
             }),
             Alignment::CENTER,
         )
@@ -1068,7 +1076,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
         .opacity(1.0, motion)
         .scale_about(pivot.0, pivot.1)
         .key("tg:card");
-    let scrim = Node::rect(rgba(colour::REASON, 0.62), 0.0)
+    let scrim = Node::rect(rgba(color::SURFACE_BASE, 0.62), 0.0)
         .opacity(1.0, swiftly_ui::feel::leap())
         .key("tg:scrim")
         .on_tap(Action::from("tg:cancel"));

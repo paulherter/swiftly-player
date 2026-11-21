@@ -233,9 +233,14 @@ impl Item {
         Some(l.text("S%lld · F%lld", &[season, episode]))
     }
 
-    /// Fraction already watched, 0 to 1, for progress bars (Models.swift:261).
+    /// Fraction already watched, 0 to 1, for progress bars (Models.swift:261). The server's own percentage when it sends
+    /// one; a server that sends only the resume position (and the item its runtime) still gets the bar from the two.
     pub fn watched_share(&self) -> Option<f64> {
-        let percent = self.user_data.as_ref()?.played_percentage?;
+        let data = self.user_data.as_ref()?;
+        let percent = data.played_percentage.or_else(|| {
+            let (position, total) = (data.playback_position_ticks?, self.run_time_ticks?);
+            (total > 0).then(|| (position as f64 / total as f64 * 100.0).min(100.0))
+        })?;
         (percent > 0.0).then(|| percent / 100.0)
     }
 

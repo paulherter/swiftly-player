@@ -488,6 +488,7 @@ pub struct SeerrDeleteVersion {
     pub is4k: bool,
     pub label: String,
     pub size: Option<String>,
+    pub chosen: bool,
 }
 
 #[uniffi::remote(Record)]

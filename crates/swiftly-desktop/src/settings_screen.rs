@@ -9,11 +9,11 @@ use crate::home::{Form, ins, text};
 use crate::home_choices::{HomeChoices, Offer, ScriptedChoices};
 use crate::seerr_link::{ScriptedSeerr, SeerrConn, SeerrLink};
 use crate::server_check::{CheckState, ScriptedCheck, ServerCheck};
-use crate::settings_pages::{self, HeaderView, SeerrView, SubView};
+use crate::settings_pages::{self, HeaderView, KeyStage, SeerrView, SubView, SupportView};
 use crate::update_check::{UpdateCheck, UpdateState};
 use std::rc::Rc;
 use std::sync::Arc;
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::color;
 use swiftly_jellyfin::{OwnHeader, OwnHeaders};
 use swiftly_l10n::Locale;
 use swiftly_layout::{Align, Alignment};
@@ -44,6 +44,8 @@ pub enum Dest {
     QuickShare,
     /// The Support Swiftly sheet (`SupportModel.open`).
     Support,
+    /// The looks panel over Start (`GiftFlow.openLooksOnHome`).
+    Looks,
     /// Sign the active account out (live app only).
     SignOut,
 }
@@ -86,6 +88,8 @@ enum Page {
     SubtitleLook,
     /// "Seerr" (`SeerrSettingsView`), below Allgemein.
     Seerr,
+    /// "Swiftly unterstützen": the website and the supporter-key entry, below the hub.
+    Support,
     /// "Serververwaltung": the core's `ServerAdminVm`, below the Profile.
     ServerAdmin,
     /// The server's log files, below the server page.
@@ -150,9 +154,12 @@ struct Parts {
     quick_connect: bool,
     sub: SubView,
     seerr: SeerrView,
+    support: SupportView,
     /// The server management pages and the Profile row.
     admin: crate::server_admin_pages::AdminView,
     own: HeaderView,
+    /// The look being worn (`LookStore.saved`): its row in Darstellung and the card on the profile.
+    look: LookRow,
     update: UpdateState,
     /// The Home rows and the chosen genres.
     home: swiftly_vm::home_rows::HomeView,
@@ -164,6 +171,94 @@ struct Parts {
     genres_pick: settings_pages::PickView,
     /// Desktop toolbar strength of the page's scroll offset (`forms::bar_for`).
     header: u8,
+}
+
+/// What the look rows show: the saved look, and
+/// the season switch while the look is in its window.
+#[derive(Clone, PartialEq)]
+struct LookRow {
+    look: swiftly_support::look::Look,
+    season_end: Option<String>,
+    effects: bool,
+}
+
+impl LookRow {
+    /// Reads the core's `LookStore` over the settings file; the supporter state comes from the key keeper's `SupportStore`.
+    fn read(store: &Mem) -> LookRow {
+        let supporter = swiftly_support::support::SupportStore::new(store.clone())
+            .status()
+            .is_supporter();
+        let mut look = swiftly_support::look_store::LookStore::load(store.clone());
+        let _ = look.set_supporter(supporter);
+        let saved = look.state().saved().look();
+        let (now, calendar) = (
+            crate::looks_panel::now_seconds(),
+            swiftly_support::time::Calendar::UTC,
+        );
+        LookRow {
+            look: saved,
+            season_end: saved
+                .availability
+                .filter(|s| s.is_active(now, calendar))
+                .map(|s| crate::looks_panel::season_end(&s, now, calendar)),
+            effects: look.effects_on(),
+        }
+    }
+}
+
+/// The group "Looks" (`AppearanceView.looks`): the look being worn with "Ändern", and the season switch while it is in
+/// its window. The choice itself happens in the looks panel over Start.
+fn looks_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
+    let row = Node::hstack(
+        Align::Center,
+        Some(14.0),
+        vec![
+            crate::looks_panel::tile(&p.look.look, 32.0),
+            text(
+                cx,
+                p.look.look.name_key,
+                small(17.0, 400),
+                color::TEXT_PRIMARY,
+                Some(1),
+                swiftly_text::Align::Start,
+            )
+            .layout_priority(1.0),
+            Node::spacer(),
+            text(
+                cx,
+                "Ändern",
+                small(17.0, 400),
+                crate::look_glow::accent(),
+                Some(1),
+                swiftly_text::Align::End,
+            ),
+        ],
+    )
+    .padding(ins(0.0, 12.0, 0.0, 12.0))
+    .frame(None, Some(52.0), Alignment::LEADING);
+    let mut rows = vec![
+        forms::tappable_kb(browse::wide(row, Alignment::LEADING), f, "look:change", 0.0)
+            .hover_surface(hover_white(), 0.0)
+            .a11y(swiftly_ui::a11y::A11yNode::new(
+                "",
+                swiftly_ui::a11y::Role::Button,
+                "Ändern",
+            )),
+    ];
+    if let Some(end) = &p.look.season_end {
+        rows.push(forms::row_kb(
+            cx,
+            &ctx.icons,
+            f,
+            "look:effects",
+            "sparkle",
+            "Fledermäuse und Spinnennetz",
+            Some(&format!("Bis {end} dabei. Farbe und Icon bleiben.")),
+            Trail::Switch(p.look.effects),
+            true,
+        ));
+    }
+    forms::setting_group_at(cx, f, "Looks", 28.0, rows, 52.0)
 }
 
 struct Ctx {
@@ -285,7 +380,7 @@ fn settings_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                 cx,
                 &format!("Swiftly {}", env!("CARGO_PKG_VERSION")),
                 small(12.0, 400),
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 Some(1),
                 swiftly_text::Align::Start,
             )
@@ -374,11 +469,14 @@ fn pick_active<'a>(
 fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
     let symbol = || {
         ctx.icons
-            .node("user.fill", 30.0, false, color(colour::FONT_QUIET))
+            .node("user.fill", 30.0, false, color(color::TEXT_SECONDARY))
     };
     let avatar = crate::hub::avatar_node(&ctx.hub, active_picture(p), 64.0, symbol)
         .frame(Some(64.0), Some(64.0), Alignment::CENTER)
-        .background(Node::rect(color(colour::AREA), 32.0), Alignment::CENTER);
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 32.0),
+            Alignment::CENTER,
+        );
     let who = Node::hstack(
         Align::Center,
         Some(16.0),
@@ -395,7 +493,7 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                             tracking: -0.2,
                             ..small(22.0, 700)
                         },
-                        colour::FONT,
+                        color::TEXT_PRIMARY,
                         Some(1),
                         swiftly_text::Align::Start,
                     ),
@@ -403,7 +501,7 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                         cx,
                         &p.server,
                         small(13.0, 400),
-                        colour::FONT_VERY_QUIET,
+                        color::TEXT_TERTIARY,
                         Some(1),
                         swiftly_text::Align::Start,
                     ),
@@ -479,7 +577,7 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             cx,
             &format!("Swiftly {}", env!("CARGO_PKG_VERSION")),
             small(12.0, 400),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(1),
             swiftly_text::Align::Start,
         )
@@ -540,6 +638,7 @@ fn pages_view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx, f: &Fm) -> Option<Node> 
     Some(match p.page {
         Page::SubtitleLook => settings_pages::subtitle_page(cx, icons, env, f, &p.sub),
         Page::Seerr => settings_pages::seerr_page(cx, icons, env, f, &p.seerr),
+        Page::Support => settings_pages::support_page(cx, icons, env, f, &p.support),
         Page::ServerAdmin => {
             crate::server_admin_pages::admin_page(cx, icons, env, f, &ctx.hub, &p.admin)
         }
@@ -659,12 +758,11 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
     forms::page(cx, &ctx.icons, env, &f, title, None, body, overlay)
 }
 
-const VERSION_ROW: &str = concat!("Swiftly Player ", env!("CARGO_PKG_VERSION"), " (Build 1)");
-/// The player the desktop app ships (the Mac line names VLCKit): libmpv on Linux and Windows.
+/// The player the desktop app ships: libmpv on Linux and Windows.
 const PLAYER_LINE: &str = "libmpv";
 
 fn hover_white() -> swiftly_render::Color {
-    crate::home::rgba(colour::FONT, swiftly_ui::feel::HOVER_SURFACE_ALPHA)
+    crate::home::rgba(color::TEXT_PRIMARY, swiftly_ui::feel::HOVER_SURFACE_ALPHA)
 }
 
 /// `ValueList` (`SettingRows.swift:291-348`): the entries of an open choice row under it, on the area colour, padding
@@ -686,7 +784,11 @@ fn value_list(cx: &Cx, f: &Fm, icons: &Icons, control: &RowControl) -> Node {
                     cx,
                     &o.label,
                     small(15.0, 400),
-                    if on { colour::FONT } else { colour::FONT_QUIET },
+                    if on {
+                        color::TEXT_PRIMARY
+                    } else {
+                        color::TEXT_SECONDARY
+                    },
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
@@ -694,11 +796,11 @@ fn value_list(cx: &Cx, f: &Fm, icons: &Icons, control: &RowControl) -> Node {
             ];
             if on {
                 // `ValueSelectionRow` (SettingRows.swift): selected means white, not accent; 14 wide mark.
-                parts.push(icons.node("check", 15.0, true, color(colour::FONT)).frame(
-                    Some(14.0),
-                    None,
-                    Alignment::CENTER,
-                ));
+                parts.push(
+                    icons
+                        .node("check", 15.0, true, color(color::TEXT_PRIMARY))
+                        .frame(Some(14.0), None, Alignment::CENTER),
+                );
             }
             // List inset 48 plus the row's own 12 on both sides; the row is `Theme.rowHeight` high, square.
             let row = Node::hstack(Align::Center, Some(8.0), parts)
@@ -713,7 +815,10 @@ fn value_list(cx: &Cx, f: &Fm, icons: &Icons, control: &RowControl) -> Node {
         Node::vstack(Align::Start, Some(0.0), entries).padding(ins(4.0, 0.0, 4.0, 0.0)),
         Alignment::LEADING,
     )
-    .background(Node::rect(color(colour::AREA), 0.0), Alignment::CENTER)
+    .background(
+        Node::rect(color(color::SURFACE_CONTROL), 0.0),
+        Alignment::CENTER,
+    )
     .appear_from(1.0, 0.0)
     .exit_to(1.0, 0.0)
     .opacity(1.0, swiftly_ui::feel::leap())
@@ -953,7 +1058,7 @@ fn home_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                         Alignment::TOP_LEADING,
                         vec![
                             // A surface and a soft shadow behind the lifted row, fading in with the lift.
-                            Node::rect(swiftly_ui::components::color(colour::GROUPS_AREA), 10.0)
+                            Node::rect(swiftly_ui::components::color(color::SURFACE_GROUP), 10.0)
                                 .paint(swiftly_ui::Paint::Shadow {
                                     style: swiftly_render::ShadowStyle {
                                         color: swiftly_render::Color::new(0.0, 0.0, 0.0, 0.45),
@@ -1014,7 +1119,6 @@ fn home_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
     );
     let rows = vec![
         list.key("home.list"),
-        forms::separator_line_at(52.0),
         forms::row_kb(
             cx,
             &ctx.icons,
@@ -1044,9 +1148,6 @@ fn genres_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
     }) = form.map(|r| &r.control)
     {
         for (i, o) in options.iter().enumerate() {
-            if i > 0 {
-                rows.push(forms::separator_line_at(52.0));
-            }
             rows.push(forms::row_kb(
                 cx,
                 &ctx.icons,
@@ -1070,7 +1171,6 @@ fn genres_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
     }
     let n = p.home.genres.len();
     for (i, g) in p.home.genres.iter().enumerate() {
-        rows.push(forms::separator_line_at(52.0));
         rows.push(forms::home_row(
             cx,
             &ctx.icons,
@@ -1086,7 +1186,6 @@ fn genres_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
             },
         ));
     }
-    rows.push(forms::separator_line_at(52.0));
     rows.push(forms::row_kb(
         cx,
         &ctx.icons,
@@ -1106,7 +1205,7 @@ fn version_line(cx: &Cx, s: &str, top: f32) -> Node {
         cx,
         s,
         small(12.0, 400),
-        colour::FONT_VERY_QUIET,
+        color::TEXT_TERTIARY,
         Some(1),
         swiftly_text::Align::Start,
     )
@@ -1126,64 +1225,88 @@ fn profile_left(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
     } else {
         p.accounts.clone()
     };
-    let who: Vec<Node> = rows
-        .iter()
-        .enumerate()
-        .map(|(i, (name, server, active))| {
-            let initial = name
-                .chars()
-                .next()
-                .map(|c| c.to_uppercase().to_string())
-                .unwrap_or_default();
-            let letter = || {
-                text(
-                    cx,
-                    &initial,
-                    small(15.0, 600),
-                    colour::FONT,
-                    Some(1),
-                    swiftly_text::Align::Center,
-                )
-            };
-            let picture = p.pics.get(i).and_then(|a| a.as_deref());
-            let avatar = crate::hub::avatar_node(&ctx.hub, picture, 40.0, letter)
-                .frame(Some(40.0), Some(40.0), Alignment::CENTER)
-                .background(Node::rect(color(colour::AREA), 20.0), Alignment::CENTER);
-            let mut kids = vec![
-                avatar,
+    // The Mac's `AccountCard` (`ProfileView.swift:587-775`): the signed-in account first as a header line (picture 56,
+    // name 17 bold, the server under it), the other accounts as rows below it (picture 40, name, "Klicken zum Wechseln")
+    // that switch on a click, then "Konto hinzufügen"; one card, padding 16, no hairlines. `i` stays the account's own
+    // index, so `go:acct:{i}` and the picture list keep their order.
+    let avatar = |i: usize, name: &str, size: f32| -> Node {
+        let initial = name
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().to_string())
+            .unwrap_or_default();
+        let letter = || {
+            text(
+                cx,
+                &initial,
+                small(size * 0.375, 600),
+                color::TEXT_PRIMARY,
+                Some(1),
+                swiftly_text::Align::Center,
+            )
+        };
+        let picture = p.pics.get(i).and_then(|a| a.as_deref());
+        crate::hub::avatar_node(&ctx.hub, picture, size, letter)
+            .frame(Some(size), Some(size), Alignment::CENTER)
+            .background(
+                Node::rect(color(color::SURFACE_CONTROL), size / 2.0),
+                Alignment::CENTER,
+            )
+    };
+    let line = |t: &str, style, quiet: bool| {
+        text(
+            cx,
+            t,
+            style,
+            if quiet {
+                color::TEXT_TERTIARY
+            } else {
+                color::TEXT_PRIMARY
+            },
+            Some(1),
+            swiftly_text::Align::Start,
+        )
+    };
+    let front = rows.iter().position(|a| a.2).unwrap_or(0);
+    let mut card: Vec<Node> = vec![browse::wide(
+        Node::hstack(
+            Align::Center,
+            Some(14.0),
+            vec![
+                avatar(front, &rows[front].0, 56.0),
                 Node::vstack(
                     Align::Start,
                     Some(2.0),
                     vec![
-                        text(
-                            cx,
-                            name,
-                            small(15.0, 600),
-                            colour::FONT,
-                            Some(1),
-                            swiftly_text::Align::Start,
-                        ),
-                        text(
-                            cx,
-                            server,
-                            small(12.0, 400),
-                            colour::FONT_VERY_QUIET,
-                            Some(1),
-                            swiftly_text::Align::Start,
-                        ),
+                        line(&rows[front].0, small(17.0, 700), false),
+                        line(&rows[front].1, small(13.0, 400), true),
                     ],
                 )
                 .layout_priority(1.0),
                 Node::spacer(),
-            ];
-            if *active {
-                kids.push(
-                    ctx.icons
-                        .node("check", 16.0, false, color(colour::MARK_ACCENT)),
-                );
-            }
-            let row =
-                Node::hstack(Align::Center, Some(12.0), kids).padding(ins(10.0, 16.0, 10.0, 16.0));
+            ],
+        ),
+        Alignment::LEADING,
+    )];
+    for (i, (name, _, _)) in rows.iter().enumerate().filter(|(i, _)| *i != front) {
+        let row = Node::hstack(
+            Align::Center,
+            Some(14.0),
+            vec![
+                avatar(i, name, 40.0),
+                Node::vstack(
+                    Align::Start,
+                    Some(1.0),
+                    vec![
+                        line(name, small(15.0, 600), false),
+                        line("Klicken zum Wechseln", small(13.0, 400), true),
+                    ],
+                )
+                .layout_priority(1.0),
+                Node::spacer(),
+            ],
+        );
+        card.push(
             forms::tappable_kb(
                 browse::wide(row, Alignment::LEADING),
                 f,
@@ -1191,28 +1314,57 @@ fn profile_left(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                 12.0,
             )
             .hover_surface(hover_white(), 12.0)
-        })
-        .collect();
-    let add = forms::row_kb(
-        cx,
-        &ctx.icons,
-        f,
-        "go:server",
-        "plus",
-        "Konto hinzufügen",
-        None,
-        Trail::None,
-        true,
+            .padding(ins(12.0, 0.0, 0.0, 0.0)),
+        );
+    }
+    let add_row = Node::hstack(
+        Align::Center,
+        Some(16.0),
+        vec![
+            ctx.icons
+                .node("plus", 20.0, false, color(color::TEXT_PRIMARY))
+                .frame(Some(26.0), None, Alignment::CENTER),
+            line("Konto hinzufügen", small(17.0, 600), false),
+            Node::spacer(),
+        ],
+    )
+    .frame(None, Some(36.0), Alignment::LEADING);
+    card.push(
+        forms::tappable_kb(
+            browse::wide(add_row, Alignment::LEADING),
+            f,
+            "go:server",
+            12.0,
+        )
+        .hover_surface(hover_white(), 12.0)
+        .padding(ins(20.0, 0.0, 0.0, 0.0)),
+    );
+    let account_card = browse::wide(
+        Node::vstack(Align::Start, Some(0.0), card).padding(ins(16.0, 16.0, 16.0, 16.0)),
+        Alignment::TOP_LEADING,
+    )
+    .background(
+        Node::rect(color(color::SURFACE_GROUP), 16.0),
+        Alignment::CENTER,
     );
     let r = |key: &str, sym: &str, title: &str, under: &str, trail: Trail| {
         forms::row_kb(cx, &ctx.icons, f, key, sym, title, Some(under), trail, true)
     };
     vec![
+        account_card,
+        // The look card (`LookLineCard`): the look's name and "Dein aktueller Look"; a supporter's click changes it in the
+        // looks panel, anyone else's opens the support page (`lookEntry`).
         gapped(
             cx,
             f,
-            0.0,
-            who.into_iter().chain(std::iter::once(add)).collect(),
+            forms::GROUP_GAP,
+            vec![r(
+                "look:open",
+                "palette",
+                p.look.look.name_key,
+                "Dein aktueller Look",
+                Trail::Chevron,
+            )],
         ),
         gapped(
             cx,
@@ -1348,7 +1500,10 @@ fn confirm_dialog(cx: &Cx, p: &Parts, window_h: f32) -> Node {
             t.frame(None, Some(34.0), Alignment::CENTER),
             Alignment::CENTER,
         )
-        .background(Node::rect(color(colour::AREA), 8.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 8.0),
+            Alignment::CENTER,
+        )
         .key(key.as_str())
         .on_tap(Action::from(key.as_str()))
         .hover_surface(hover_white(), 8.0)
@@ -1361,7 +1516,7 @@ fn confirm_dialog(cx: &Cx, p: &Parts, window_h: f32) -> Node {
                 cx,
                 "Downloads ausschalten?",
                 small(15.0, 700),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(2),
                 swiftly_text::Align::Center,
             ),
@@ -1377,25 +1532,28 @@ fn confirm_dialog(cx: &Cx, p: &Parts, window_h: f32) -> Node {
                     p.stored.1
                 ),
                 small(13.0, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(3),
                 swiftly_text::Align::Center,
             )
             .padding(ins(0.0, 0.0, 6.0, 0.0)),
-            button(0, "Behalten", colour::FONT),
-            button(1, "Alles entfernen", colour::ERROR),
-            button(2, "Abbrechen", colour::FONT),
+            button(0, "Behalten", color::TEXT_PRIMARY),
+            button(1, "Alles entfernen", color::STATE_ERROR),
+            button(2, "Abbrechen", color::TEXT_PRIMARY),
         ],
     )
     .padding(ins(20.0, 20.0, 20.0, 20.0))
     .frame(Some(320.0), None, Alignment::CENTER)
-    .background(Node::rect(color(colour::RAISED), 14.0), Alignment::CENTER)
+    .background(
+        Node::rect(color(color::SURFACE_RAISED), 14.0),
+        Alignment::CENTER,
+    )
     // An AppKit sheet slides down from the top edge of the window and back up (`SheetNative`, 0.2 s easeInOut); it stays opaque.
     .appear_offset(0.0, -slide)
     .exit_to(1.0, 1.0)
     .exit_offset(0.0, -slide)
     .offset(0.0, 0.0, swiftly_ui::feel::of(Id::SheetNative));
-    let dim = Node::rect(crate::home::rgba(colour::REASON, 0.5), 0.0)
+    let dim = Node::rect(crate::home::rgba(color::SURFACE_BASE, 0.5), 0.0)
         .appear_from(1.0, 0.0)
         .exit_to(1.0, 0.0)
         .opacity(1.0, swiftly_ui::feel::of(Id::SheetNative))
@@ -1413,7 +1571,7 @@ fn desktop_view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>, f: &Fm) -> Node {
             18.0,
             forms::Cols::Fixed,
             vec![profile_left(cx, f, p, ctx), profile_right(cx, f, p, ctx)],
-            vec![version_line(cx, VERSION_ROW, 26.0)],
+            vec![version_line(cx, &crate::build_info::version_row(), 26.0)],
         ),
         Page::Playback => (
             "Wiedergabe",
@@ -1431,11 +1589,12 @@ fn desktop_view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>, f: &Fm) -> Node {
             forms::Cols::Equal,
             {
                 let mut left = desk_groups(cx, f, p, ctx, &["Filme und Serien", "Allgemein"]);
+                left.push(looks_group(cx, f, p, ctx));
                 left.push(home_group(cx, f, p, ctx));
                 left.push(forms::note(
                     cx,
                     f,
-                    "Zum Umsortieren die Pfeile an der Zeile benutzen, oder mit Alt und Pfeil auf eine Zeile.",
+                    "Zum Umsortieren eine Zeile ziehen oder mit Alt und Pfeil verschieben.",
                     false,
                     false,
                 ));
@@ -1455,7 +1614,10 @@ fn desktop_view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>, f: &Fm) -> Node {
                 vec![left, right],
                 vec![version_line(
                     cx,
-                    &format!("{VERSION_ROW} \u{00B7} {PLAYER_LINE}"),
+                    &format!(
+                        "{} \u{00B7} {PLAYER_LINE}",
+                        crate::build_info::version_row()
+                    ),
                     26.0,
                 )],
             )
@@ -1573,6 +1735,8 @@ enum Focus {
     Seerr(usize),
     Own(usize, bool),
     SeerrHeader(usize, bool),
+    /// The supporter key on the support page.
+    Key,
 }
 
 /// The profile hub and the Settings page: a UI over a `SettingsVm`.
@@ -1610,6 +1774,12 @@ pub struct SettingsScreen {
     seerr_route: Option<crate::seerr_desk::SeerrRoute>,
     conn: SeerrConn,
     fields: [String; 3],
+    /// The support page: where it stands, the key as typed, and a fixed clock for tests.
+    key_stage: KeyStage,
+    key_text: String,
+    wall_ms: Option<i64>,
+    /// The support page was opened from the Start card: Back leaves the screen.
+    from_start: bool,
     seerr_headers: Editor,
     check: Box<dyn ServerCheck>,
     seen_check: CheckState,
@@ -1873,6 +2043,8 @@ impl SettingsScreen {
     ) -> SettingsScreen {
         // The server line, the check and Discord are the desktop shell's rows (see `SettingsContext::server_rows`).
         context.server_rows = Form::of(env.idiom) == Form::Desktop;
+        // The Discord row is offered where the presence client can run (Windows, Linux).
+        context.discord_presence = crate::discord_link::AVAILABLE;
         let seen_check = check.state();
         context.server_name = seen_check.name.clone();
         context.server_version = seen_check.version.clone();
@@ -1935,7 +2107,14 @@ impl SettingsScreen {
                 edit: None,
                 headers: HeaderView::default(),
             },
+            support: SupportView {
+                stage: KeyStage::Intro,
+                text: String::new(),
+                focus: false,
+                edit: None,
+            },
             own: HeaderView::default(),
+            look: LookRow::read(&store),
             update: UpdateState::Idle,
             home: vm.home(),
             reorder: swiftly_ui::reorder::Reorder::Idle,
@@ -1997,6 +2176,10 @@ impl SettingsScreen {
             seerr_route: None,
             conn: SeerrConn::default(),
             fields: Default::default(),
+            key_stage: KeyStage::Intro,
+            key_text: String::new(),
+            wall_ms: None,
+            from_start: false,
             seerr_headers: Editor::default(),
             check,
             seen_check,
@@ -2114,6 +2297,7 @@ impl SettingsScreen {
             Focus::Seerr(i) => self.fields.get_mut(i),
             Focus::Own(r, v) => pick(&mut self.own.rows, r, v),
             Focus::SeerrHeader(r, v) => pick(&mut self.seerr_headers.rows, r, v),
+            Focus::Key => Some(&mut self.key_text),
         }
     }
     /// Makes the editor of the focused field exist, gives it the keyboard and loads the field's text.
@@ -2146,6 +2330,10 @@ impl SettingsScreen {
             let text = self.book.text(f).to_owned();
             if let Some(field) = self.field_mut() {
                 *field = text;
+            }
+            // Typing after a refused key clears the line, like the Android sheet.
+            if f == Focus::Key && self.key_stage == (KeyStage::Entering { refused: true }) {
+                self.key_stage = KeyStage::Entering { refused: false };
             }
         }
         if out.submitted {
@@ -2180,6 +2368,9 @@ impl SettingsScreen {
     pub fn submit(&mut self) {
         if self.focus == Some(Focus::Seerr(2)) {
             self.connect();
+        }
+        if self.focus == Some(Focus::Key) {
+            self.activate_key();
         }
     }
     /// Type size of the text in a field of this idiom.
@@ -2226,6 +2417,60 @@ impl SettingsScreen {
             password,
             area,
         }
+    }
+
+    /// The clock of the key check (milliseconds since 1970).
+    fn wall(&self) -> i64 {
+        self.wall_ms.unwrap_or_else(crate::support_key::wall_ms)
+    }
+
+    /// Opens the support page straight away (the Start card): Back leaves the screen, not into the Profile.
+    pub fn open_support_from_start(&mut self) {
+        self.open_support();
+        self.from_start = true;
+    }
+
+    /// Fixes the clock of the key check (tests, goldens).
+    #[doc(hidden)]
+    pub fn set_wall_ms(&mut self, ms: i64) {
+        self.wall_ms = Some(ms);
+    }
+
+    /// What the profile's look card does (`ProfileView.lookEntry`).
+    fn look_entry(&self) -> swiftly_support::LookProfileEntry {
+        let supporter = swiftly_support::support::SupportStore::new(self.store.clone())
+            .status()
+            .is_supporter();
+        let look = swiftly_support::look_store::LookStore::load(self.store.clone());
+        swiftly_support::LookProfileEntry::at(true, supporter, look.state().owns_look())
+    }
+
+    /// Opens the support page: the thanks when a key already counts, else the ask.
+    fn open_support(&mut self) {
+        self.from_start = false;
+        self.key_text.clear();
+        self.key_stage = crate::support_key::opening(&self.store, self.wall());
+        self.page = Page::Support;
+        crate::look_glow::apply_saved(self.store.clone());
+    }
+
+    /// Checks the typed key: it counts (thanks, the perks light up) or the page says it does not fit.
+    fn activate_key(&mut self) {
+        if self.key_text.trim().is_empty() {
+            return;
+        }
+        match crate::support_key::activate(&self.store, &self.key_text, self.wall()) {
+            Ok(stage) => {
+                self.key_stage = stage;
+                self.key_text.clear();
+                self.focus = None;
+                crate::look_glow::apply_saved(self.store.clone());
+            }
+            Err(crate::support_key::KeyRefused) => {
+                self.key_stage = KeyStage::Entering { refused: true }
+            }
+        }
+        self.sync();
     }
 
     fn connect(&mut self) {
@@ -2310,6 +2555,12 @@ impl SettingsScreen {
                     .seerr_headers
                     .view(hf(self.focus, false), edit.as_ref()),
             },
+            support: SupportView {
+                stage: self.key_stage.clone(),
+                text: self.key_text.clone(),
+                focus: self.focus == Some(Focus::Key),
+                edit: edit.clone().filter(|_| self.focus == Some(Focus::Key)),
+            },
             admin: crate::server_admin_pages::AdminView {
                 part: self.admin.link.part(),
                 logs: self.admin.link.logs_part(),
@@ -2321,6 +2572,7 @@ impl SettingsScreen {
                     .unwrap_or_default(),
             },
             own: self.own.view(hf(self.focus, true), edit.as_ref()),
+            look: LookRow::read(&self.store),
             update: self.seen_update.clone(),
             home: self.vm.home(),
             reorder: self.reorder,
@@ -2356,6 +2608,8 @@ impl SettingsScreen {
                 .link
                 .send_logs(swiftly_vm::ServerLogsIntent::Back);
             true
+        } else if self.page == Page::Support && self.from_start {
+            false
         } else if self.page != Page::Profile {
             self.page = self.page.parent();
             true
@@ -2603,6 +2857,28 @@ impl SettingsScreen {
             }
             self.set_look(look);
         }
+        if self.page == Page::Support {
+            if is("key.web") {
+                self.effects
+                    .push(Effect::OpenUrl(effects::SUPPORT_URL.to_owned()));
+            }
+            if is("key.have") {
+                self.key_stage = KeyStage::Entering { refused: false };
+                self.focus = Some(Focus::Key);
+            }
+            if is("key.field") {
+                self.focus = Some(Focus::Key);
+            }
+            if is("key.go") {
+                self.activate_key();
+            }
+            if is("key.mail") {
+                self.effects.push(Effect::OpenUrl(format!(
+                    "mailto:{}",
+                    crate::support_key::CONTACT
+                )));
+            }
+        }
         if self.page == Page::Seerr {
             for i in 0..3 {
                 if is(&format!("seerr.f{i}")) {
@@ -2678,6 +2954,35 @@ impl SettingsScreen {
         self.sync();
     }
 
+    /// Alt + Up / Down on the focused row of the Start list or the genre list: the same move as the Mac's "Nach oben" /
+    /// "Nach unten" (keyboard moves do not animate). Returns whether a row moved.
+    pub fn move_focused_row(&mut self, delta: i32) -> bool {
+        if self.page != Page::Presentation {
+            return false;
+        }
+        let Some(focus) = self.ui.focused() else {
+            return false;
+        };
+        let home = self.vm.home();
+        let (rows, genres) = (home.rows.len(), home.genres.len());
+        let dir = if delta < 0 { "up" } else { "dn" };
+        let id = |k: &str| swiftly_ui::FocusId::from(k);
+        let key = (0..rows)
+            .find(|i| focus == id(&format!("home.sw.{i}")) || focus == id(&format!("home.x.{i}")))
+            .map(|i| format!("home.{dir}.{i}"))
+            .or_else(|| {
+                (0..genres)
+                    .find(|i| focus == id(&format!("genre.x.{i}")))
+                    .map(|i| format!("genre.{dir}.{i}"))
+            });
+        let Some(key) = key else {
+            return false;
+        };
+        self.tapped(&Action::from(key.as_str()));
+        self.sync();
+        true
+    }
+
     /// A frame is wanted while a dropped row settles (the new order is shown when it has).
     fn extra_frame(&self) -> bool {
         matches!(self.reorder, swiftly_ui::reorder::Reorder::Settling { .. })
@@ -2727,10 +3032,25 @@ impl SettingsScreen {
             self.picked = Some(i);
         } else if is("go:server") {
             self.dest = Some(Dest::AddServer);
+        } else if is("look:change") {
+            // "Ändern" under Darstellung: the panel, whoever looks (`AppearanceView`: `openLooksOnHome`).
+            self.dest = Some(Dest::Looks);
+        } else if is("look:open") {
+            // The Mac's `lookEntry`: a supporter (or a person with a picked-up gift look) opens the panel, anyone else the
+            // support sheet, which here is the support page.
+            if self.look_entry() == swiftly_support::LookProfileEntry::Current {
+                self.dest = Some(Dest::Looks);
+            } else if self.desktop {
+                self.open_support();
+            } else {
+                self.dest = Some(Dest::Support);
+            }
+        } else if is("look:effects") {
+            let mut store = swiftly_support::look_store::LookStore::load(self.store.clone());
+            let _ = store.set_effects_on(!store.effects_on());
         } else if is("go:support") && self.desktop {
-            // No store on desktop: the old Linux and Windows apps sent the tap to the supporter page of the website.
-            self.effects
-                .push(Effect::OpenUrl(effects::SUPPORT_URL.to_owned()));
+            // No store on desktop: the page has the website button and, in the direct build, the key entry.
+            self.open_support();
         } else if is("go:support") {
             self.dest = Some(Dest::Support);
         } else if is("go:quick") {
@@ -2904,6 +3224,7 @@ impl SettingsScreen {
 mod tests {
     use super::*;
     use swiftly_layout::Size as Sz;
+    use swiftly_support::support::SupportStore;
     use swiftly_ui::Idiom;
 
     fn desktop() -> Env {
@@ -3189,8 +3510,17 @@ mod tests {
                 value: "10.10.3".into()
             }
         );
-        // The desktop has no presence client, so the Discord switch is not offered.
-        assert!(r.iter().all(|x| x.key != "discordAnzeigen"));
+        // The Discord switch is offered where the presence client runs, and it starts off.
+        let discord = r.iter().find(|x| x.key == "discordAnzeigen");
+        assert_eq!(discord.is_some(), crate::discord_link::AVAILABLE);
+        if let Some(row) = discord {
+            assert_eq!(row.title, "Discord");
+            assert!(
+                matches!(row.control, RowControl::Switch { on: false }),
+                "{:?}",
+                row.control
+            );
+        }
         s.now = 1000.0;
         tap(&mut s, "row:verbindungPruefen");
         let r = rows(&s);
@@ -3248,21 +3578,159 @@ mod tests {
         assert!(s.take_effects().is_empty());
     }
 
+    fn screen_over(store: Mem) -> SettingsScreen {
+        let stored = (3_usize, "4,2 GB".to_owned());
+        let context = SettingsContext {
+            platform: platform_of(desktop()),
+            capabilities: Capabilities::ALL,
+            server: "demo".into(),
+            watchers_plugin: true,
+            stored_downloads: stored.0,
+            stored_bytes: 4_200_000_000,
+            subtitle_look_summary: "Standard".into(),
+            ..SettingsContext::default()
+        };
+        let check = Box::new(ScriptedCheck::new("demo.swiftly.test", "10.10.3"));
+        let mut s = SettingsScreen::build(
+            desktop(),
+            Cx::deterministic(),
+            false,
+            store,
+            context,
+            ("Paul".into(), browse::SERVER.into()),
+            stored,
+            false,
+            true,
+            None,
+            check,
+        );
+        s.set_wall_ms(1_792_281_600_000);
+        s
+    }
+
     #[test]
-    fn the_support_row_opens_the_supporter_page_in_the_browser_on_desktop() {
+    fn a_long_key_keeps_the_layout_and_the_start_card_opens_the_page() {
+        let mut s = screen_over(Mem(Arc::new(MemoryStore::new())));
+        tap(&mut s, "go:support");
+        tap(&mut s, "key.have");
+        s.type_text("SS2-A");
+        let short = (s.frame_of("key.field"), s.frame_of("key.go"));
+        s.type_text(&"ABCDEFGH".repeat(30));
+        assert_eq!(
+            (s.frame_of("key.field"), s.frame_of("key.go")),
+            short,
+            "the field and the button stay where they are"
+        );
+        let mut c = screen_over(Mem(Arc::new(MemoryStore::new())));
+        c.open_support_from_start();
+        assert_eq!(c.page, Page::Support);
+        assert!(!c.go_back(), "Back from the card's page leaves the screen");
+    }
+
+    #[test]
+    fn the_support_row_opens_the_support_page_with_the_website_and_the_key_entry() {
         let mut s = SettingsScreen::new(desktop(), Cx::deterministic(), false);
         tap(&mut s, "go:support");
+        assert_eq!(s.page, Page::Support);
+        assert_eq!(s.key_stage, KeyStage::Intro, "empty: the ask");
         assert!(
             !s.sheet_open(),
             "no thank-you sheet: there is nothing to thank for yet"
         );
         assert!(s.take_dest().is_none());
+        assert!(
+            s.take_effects().is_empty(),
+            "the row no longer jumps to the browser"
+        );
+        assert!(s.frame_of("key.web").is_some());
+        assert_eq!(
+            s.frame_of("key.have").is_some(),
+            crate::support_key::AVAILABLE
+        );
+        tap(&mut s, "key.web");
         assert_eq!(
             s.take_effects(),
             vec![Effect::OpenUrl(
                 "https://swiftlyplayer.com/supporter".into()
             )]
         );
+    }
+
+    #[cfg(feature = "supporter-key")]
+    #[test]
+    fn a_wrong_key_shows_the_error_and_typing_clears_it() {
+        let store = Mem(Arc::new(MemoryStore::new()));
+        let mut s = screen_over(store.clone());
+        tap(&mut s, "go:support");
+        tap(&mut s, "key.have");
+        assert_eq!(s.key_stage, KeyStage::Entering { refused: false });
+        assert!(
+            s.frame_of("key.go").is_none(),
+            "nothing typed, nothing to press"
+        );
+        s.type_text("SS2-WRONG");
+        assert!(s.frame_of("key.go").is_some());
+        tap(&mut s, "key.go");
+        assert_eq!(s.key_stage, KeyStage::Entering { refused: true });
+        assert!(
+            !SupportStore::new(store).status().is_supporter(),
+            "a refused key makes no supporter"
+        );
+        tap(&mut s, "key.field");
+        s.type_text("x");
+        assert_eq!(s.key_stage, KeyStage::Entering { refused: false });
+    }
+
+    #[test]
+    fn a_stored_supporter_opens_on_the_thanks_after_a_restart() {
+        let store = Mem(Arc::new(MemoryStore::new()));
+        let support = SupportStore::new(store.clone());
+        support
+            .set_status(swiftly_support::support::SupportStatus::Supporter {
+                source: swiftly_support::support::Source::Key,
+                since: Some(1.0),
+            })
+            .unwrap();
+        support
+            .set_plan(Some(swiftly_support::support::SupportPlan::Lifetime))
+            .unwrap();
+        // Without the key text in the store the status stays (the keeper only withdraws what it can read as run out).
+        let mut s = screen_over(store);
+        tap(&mut s, "go:support");
+        assert_eq!(
+            s.key_stage,
+            KeyStage::Thanks {
+                plan: "Für immer",
+                name: None
+            }
+        );
+        assert!(s.frame_of("key.have").is_none());
+    }
+
+    /// The test pair's SS2 lifetime key (`supporter_key.rs` vectors); counts only in a build with `test-support-key`.
+    #[cfg(feature = "test-support-key")]
+    const TEST_LIFETIME_KEY: &str = "SS2-AIAACASRBAAAB77O3XGLXKUZRB3WMVKEGMRBCAAHDD6WZNFCPGHPSRYLTY46EOCMCQPD7HWRLPQ2ALYGOGHETIIDG2WKJXHZOG6ZXT6CNFHISLXS5C7QNROB6W3CRGYQYTKLEVSSJ4UAS";
+
+    #[cfg(feature = "test-support-key")]
+    #[test]
+    fn a_good_key_is_accepted_stored_and_still_counts_after_a_restart() {
+        let store = Mem(Arc::new(MemoryStore::new()));
+        let mut s = screen_over(store.clone());
+        tap(&mut s, "go:support");
+        type_key(&mut s, TEST_LIFETIME_KEY);
+        tap(&mut s, "key.go");
+        assert_eq!(
+            s.key_stage,
+            KeyStage::Thanks {
+                plan: "Für immer",
+                name: None
+            }
+        );
+        assert!(SupportStore::new(store.clone()).status().is_supporter());
+        // The next start: a new screen over the same store.
+        let mut again = screen_over(store);
+        tap(&mut again, "go:support");
+        assert!(matches!(again.key_stage, KeyStage::Thanks { .. }));
     }
 
     #[test]
@@ -3340,6 +3808,29 @@ mod tests {
         tap(&mut s, "sub.reset");
         let _ = s.frame(100.0 + 4001.0);
         assert!(s.undo.is_none(), "the strip goes after four seconds");
+    }
+
+    #[test]
+    fn alt_arrow_moves_the_focused_start_row() {
+        let mut s = SettingsScreen::new(desktop(), Cx::deterministic(), false);
+        s.page = Page::Presentation;
+        s.sync();
+        let second = s.vm.home().rows[1].id.clone();
+        let want = swiftly_ui::FocusId::from("home.sw.1");
+        let mut found = false;
+        for n in 0..60 {
+            if s.focused() == Some(want) {
+                found = true;
+                break;
+            }
+            s.nav_key(swiftly_ui::NavKey::Tab, true, f64::from(n) * 20.0);
+        }
+        assert!(found, "Tab never reached the second Start row");
+        assert!(s.move_focused_row(-1));
+        assert_eq!(s.vm.home().rows[0].id, second, "the row moved up one place");
+        // Nothing else is focused on a page without such a row: no move.
+        s.page = Page::Playback;
+        assert!(!s.move_focused_row(1));
     }
 
     #[test]

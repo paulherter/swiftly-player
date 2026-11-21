@@ -184,11 +184,8 @@ mod tests {
     const HEADERS: &str =
         r#"{"https://jf.example.com":[{"name":"CF-Access-Client-Id","value":"x"}]}"#;
 
-    fn tmp(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("swiftly-legacy-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn tmp(name: &str) -> crate::testdir::TestDir {
+        crate::testdir::TestDir::new(&format!("swiftly-legacy-{name}"))
     }
 
     fn snapshot(dir: &Path) -> Vec<(String, Vec<u8>)> {

@@ -46,7 +46,7 @@ struct DeleteFlowSheet: View {
             .padding(.top, 4)
             .padding(.bottom, 10)
         ForEach(info.versions) { version in
-            let on = flow.chosen.contains(version.is4k)
+            let on = version.chosen
             Button { flow.toggle(version.is4k) } label: {
                 HStack(spacing: 10) {
                     Image(icon: on ? "checkmark.square.fill" : "square", size: 17)
@@ -72,13 +72,13 @@ struct DeleteFlowSheet: View {
         Button {
             Task { await flow.run() }
         } label: {
-            Text("Löschen")
+            Text("Löschen (Titel vom Server)")
                 .font(.app(size: 15, weight: .semibold))
-                .foregroundStyle(flow.chosen.isEmpty ? Theme.fontVeryQuiet : Theme.warning)
+                .foregroundStyle(flow.anyChosen ? Theme.warning : Theme.fontVeryQuiet)
                 .frame(maxWidth: .infinity, minHeight: Theme.rowHeight)
         }
         .buttonStyle(Theme.PressRow())
-        .disabled(flow.chosen.isEmpty)
+        .disabled(!flow.anyChosen)
         .accessibilityIdentifier("delete-confirm")
         SheetLine()
         SheetCancel { opened = false }

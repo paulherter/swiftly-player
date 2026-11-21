@@ -156,6 +156,7 @@
             android:name=".PlayerActivity"
             android:exported="false"
             android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTask"
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"

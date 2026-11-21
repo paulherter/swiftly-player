@@ -232,6 +232,12 @@ final class SupportModel {
 
     var isSupporter: Bool { status.isSupporter }
 
+    /// Supporter through the App Store: only then there is a purchase record to turn into a
+    /// key for the direct apps.
+    var supportedThroughStore: Bool {
+        if case .supporter(.store, _) = status { true } else { false }
+    }
+
     /// When the support began, for the line on the profile.
     var supporterSince: Date? {
         if case let .supporter(_, since) = status { since } else { nil }
@@ -285,7 +291,30 @@ final class SupportModel {
             SupporterIcon.restoreOnLaunch(isSupporter: isSupporter)
         }
         observeLifecycle()
+        #if DEBUG
+        debugKeyProof()
+        #endif
     }
+
+    #if DEBUG
+    /// Proof run for the key row: `-SupportKeyDebugSupporter` makes this device a store
+    /// supporter, `-SupportKeyOpen` opens the sheet, `-SupportKeyAuto` taps the row.
+    private func debugKeyProof() {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-SupportKeyDebugSupporter") else { return }
+        plans.plan = .lifetime
+        plan = .lifetime
+        setStatus(.supporter(source: .store, since: .now))
+        guard args.contains("-SupportKeyOpen") else { return }
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            open()
+            guard args.contains("-SupportKeyAuto") else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            SupportKeyModel.shared.fetch()
+        }
+    }
+    #endif
 
     /// Reads the purchase history. A device that has nothing in it keeps its
     /// stored status: the record is the cache, the history the proof.

@@ -1538,6 +1538,22 @@ public actor JellyfinClient {
         return comps?.url
     }
 
+    /// The primary picture of an item known only by its id (the server answers without a tag; only the cache hint is
+    /// missing). `nil` without a session.
+    public func imageURL(itemID: String, maxHeight: Int = 360) -> URL? {
+        guard let token = session?.accessToken else { return nil }
+        var comps = URLComponents(
+            url: baseURL.appendingPathComponent("Items/\(itemID)/Images/Primary"),
+            resolvingAgainstBaseURL: false
+        )
+        comps?.queryItems = [
+            .init(name: "maxHeight", value: String(maxHeight)),
+            .init(name: "quality", value: "90"),
+            .init(name: tokenName, value: token),
+        ]
+        return comps?.url
+    }
+
     /// Absolute URL for a poster. `nil` if the title has no image.
     public func imageURL(for item: Item, maxHeight: Int = 480) -> URL? {
         guard let tag = item.imageTags?["Primary"], let token = session?.accessToken else { return nil }

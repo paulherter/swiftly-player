@@ -4,7 +4,7 @@
 
 use crate::home::{self, Form};
 use crate::tile_menu::{self, Cx as TCx, Entry};
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::color;
 use swiftly_layout::{Align, Alignment, EdgeInsets, Point};
 use swiftly_motion::Os;
 use swiftly_render::{Color, DrawList};
@@ -145,6 +145,18 @@ impl TileMenu {
     /// The entry behind row `index` of the open menu.
     pub fn entry(&self, index: usize) -> Option<&Entry> {
         self.entries.get(index)
+    }
+
+    /// The shortcut of an entry was pressed while the menu is open: chooses its row like a click would. `None` when the
+    /// menu is closed, shows a device list, or has no such row (the key then does nothing).
+    pub fn pick_entry(&mut self, entry: &Entry) -> Option<Pick> {
+        if !self.ctl.is_open() || !self.devices.is_empty() {
+            return None;
+        }
+        let i = self.entries.iter().position(|e| e == entry)?;
+        let id = self.id.clone().unwrap_or_default();
+        self.close();
+        Some(Pick::Row(id, i))
     }
 
     /// The panel and its catcher for the top of the page, or `None` when closed.
@@ -293,8 +305,16 @@ impl NavArrows {
 
     /// A click at `(x, y)`: `Some(true)` for back, `Some(false)` for forward.
     pub fn click(&mut self, x: f32, _y: f32, _now: f64) -> Option<bool> {
-        // Two 30 pt buttons 2 apart: the geometry decides, the `Ui` only draws and tracks hover.
+        // Two 30 pt buttons 2 apart: the geometry decides, the `Ui` only draws and tracks hover. It never sees the press,
+        // so the tooltip is hidden here, as AppKit hides a help tag on mouse down.
+        self.ui.dismiss_tooltip();
         Some(x < ARROWS_RECT[0] + 31.0)
+    }
+
+    /// The tooltip to draw at `now`, with the rectangle of the arrow it belongs to (tests).
+    #[doc(hidden)]
+    pub fn tooltip(&self, now: f64) -> Option<(String, swiftly_layout::Rect)> {
+        self.ui.visible_tooltip(now)
     }
 
     /// The arrows over the page at `now`, with what the history allows.
@@ -349,15 +369,15 @@ impl HintBar {
                             cx,
                             m,
                             crate::detail_screen::weight(lk.body, 15.0, 400),
-                            colour::FONT,
+                            color::TEXT_PRIMARY,
                             Some(1),
                         )
                         .padding(home::ins(0.0, 14.0, 0.0, 14.0))
                         .frame(None, Some(34.0), Alignment::CENTER)
                         .background(
-                            Node::rect(color(colour::RAISED), 17.0).paint(
+                            Node::rect(color(color::SURFACE_RAISED), 17.0).paint(
                                 swiftly_ui::Paint::Stroke {
-                                    color: color(colour::MARGIN),
+                                    color: color(color::SURFACE_FOCUS),
                                     width: 1.0,
                                     radius: 17.0,
                                 },
@@ -501,11 +521,11 @@ impl DiscordCard {
                         cx,
                         "Swiftly hat einen Discord",
                         weight(lk.body, 17.0, 600),
-                        colour::FONT,
+                        color::TEXT_PRIMARY,
                         Some(1),
                     );
                     let close = icons
-                        .node("x", 12.0, true, color(colour::FONT_QUIET))
+                        .node("x", 12.0, true, color(color::TEXT_SECONDARY))
                         .frame(Some(24.0), Some(24.0), Alignment::CENTER)
                         .hover_surface(Color::new(1.0, 1.0, 1.0, feel::HOVER_SURFACE_ALPHA), 6.0)
                         .a11y(swiftly_ui::a11y::A11yNode::new(
@@ -524,25 +544,28 @@ impl DiscordCard {
                         cx,
                         "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.",
                         weight(lk.body, 14.0, 400),
-                        colour::FONT_QUIET,
+                        color::TEXT_SECONDARY,
                         Some(3),
                     );
                     let join = Node::hstack(
                         Align::Center,
                         Some(9.0),
                         vec![
-                            icons.node("chats", 17.0, true, color(colour::REASON)),
+                            icons.node("chats", 17.0, true, color(color::SURFACE_BASE)),
                             txt(
                                 cx,
                                 "Discord beitreten",
                                 weight(lk.body, 17.0, 600),
-                                colour::REASON,
+                                color::SURFACE_BASE,
                                 Some(1),
                             ),
                         ],
                     )
                     .frame(Some(288.0), Some(48.0), Alignment::CENTER)
-                    .background(Node::rect(color(colour::FONT), 10.0), Alignment::CENTER)
+                    .background(
+                        Node::rect(color(color::TEXT_PRIMARY), 10.0),
+                        Alignment::CENTER,
+                    )
                     .hover_surface(Color::new(0.0, 0.0, 0.0, 0.12), 10.0)
                     .key("discord-join")
                     .on_tap(Action::from("discord-join"));
@@ -555,9 +578,9 @@ impl DiscordCard {
                         .padding(home::ins(16.0, 16.0, 16.0, 16.0))
                         .frame(Some(320.0), None, Alignment::TOP_LEADING)
                         .background(
-                            Node::rect(color(colour::RAISED), 16.0).paint(
+                            Node::rect(color(color::SURFACE_RAISED), 16.0).paint(
                                 swiftly_ui::Paint::Stroke {
-                                    color: color(colour::MARGIN),
+                                    color: color(color::SURFACE_FOCUS),
                                     width: 1.0,
                                     radius: 16.0,
                                 },
@@ -635,7 +658,7 @@ impl DiscordCard {
 
 /// `colour/reason`, for the callers that dim.
 pub fn ground() -> Color {
-    color(colour::REASON)
+    color(color::SURFACE_BASE)
 }
 
 /// Padding helper kept next to the arrows: insets of `top` and `leading` only.
@@ -769,6 +792,10 @@ thread_local! {
     static LIST_CHANGES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static HINTS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
     static LOADS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    static REPORTS: std::cell::RefCell<Vec<(String, Option<f64>)>> = const { std::cell::RefCell::new(Vec::new()) };
+    static REPORT_OFFERED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static DELETES: std::cell::RefCell<Vec<(String, bool)>> = const { std::cell::RefCell::new(Vec::new()) };
+    static DELETE_OFFERED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// A tile menu's "Laden" was picked for title `id` (a screen cannot read the title itself): the suite reads the live
@@ -780,6 +807,51 @@ pub fn request_download(id: &str) {
 /// The titles whose "Laden" was picked since the last call, oldest first.
 pub fn take_download_requests() -> Vec<String> {
     LOADS.with(|l| std::mem::take(&mut *l.borrow_mut()))
+}
+
+/// "Problem melden" was picked for library item `item_id` (the player's menu with its position in seconds, a title page's
+/// More menu without): the suite reads the title's place and opens the report sheet over whatever is in front.
+pub fn request_report(item_id: &str, seconds: Option<f64>) {
+    REPORTS.with(|r| r.borrow_mut().push((item_id.to_owned(), seconds)));
+}
+
+/// The report requests since the last call, oldest first.
+pub fn take_report_requests() -> Vec<(String, Option<f64>)> {
+    REPORTS.with(|r| std::mem::take(&mut *r.borrow_mut()))
+}
+
+/// "Vom Server löschen" was picked for library item `item_id` (a title page's More menu with `back` = the page goes back
+/// once the title is gone, a tile menu without): the suite reads the title and opens the confirm sheet over whatever is
+/// in front.
+pub fn request_delete(item_id: &str, back: bool) {
+    DELETES.with(|r| r.borrow_mut().push((item_id.to_owned(), back)));
+}
+
+/// The delete requests since the last call, oldest first.
+pub fn take_delete_requests() -> Vec<(String, bool)> {
+    DELETES.with(|r| std::mem::take(&mut *r.borrow_mut()))
+}
+
+/// The suite tells the screens whether "Vom Server löschen" is offered (the core's `title_menu`: an account that manages
+/// requests and no delete lock on this device).
+pub fn set_delete_offered(on: bool) {
+    DELETE_OFFERED.with(|o| o.set(on));
+}
+
+/// Whether "Vom Server löschen" is offered (see [`set_delete_offered`]).
+pub fn delete_offered() -> bool {
+    DELETE_OFFERED.with(std::cell::Cell::get)
+}
+
+/// The suite tells the screens whether the Seerr account may report a problem (the core's `title_menu`): only then do
+/// the player's menu and the title pages' More menu list "Problem melden".
+pub fn set_report_offered(on: bool) {
+    REPORT_OFFERED.with(|o| o.set(on));
+}
+
+/// Whether "Problem melden" is offered (see [`set_report_offered`]).
+pub fn report_offered() -> bool {
+    REPORT_OFFERED.with(std::cell::Cell::get)
 }
 
 /// A screen has something to say that no screen of its own can: the suite shows it in the strip at the bottom of the
@@ -899,7 +971,7 @@ pub fn tile_rows(entries: &[Entry], tile: &Tile, host: &TCx, prefix: &str) -> Ve
                 Entry::Remember => item = item.shortcut(hint("D")),
                 Entry::Watched => item = item.shortcut(hint_shift("G")),
                 Entry::Info => item = item.shortcut(hint("I")),
-                Entry::Remove => item = item.destructive(),
+                Entry::Remove | Entry::Delete => item = item.destructive(),
                 _ => {}
             }
             MenuEntry::Item(item)
@@ -1075,7 +1147,7 @@ fn button(icons: &swiftly_ui::icons::Icons, which: WinButton, maximized: bool) -
         WinButton::Max => glyph_box(white, 0.0),
     };
     let hover = if which == WinButton::Close {
-        color(colour::ERROR)
+        color(color::STATE_ERROR)
     } else {
         Color::new(1.0, 1.0, 1.0, feel::HOVER_SURFACE_ALPHA)
     };
@@ -1148,6 +1220,11 @@ impl WindowControls {
             })
     }
 
+    /// A press on a caption button hides its tooltip (the host decides the click by geometry, see [`Self::hit`]).
+    pub fn press(&mut self) {
+        self.ui.dismiss_tooltip();
+    }
+
     /// The pointer moved (hover, tooltip).
     pub fn pointer(&mut self, x: f32, y: f32, now: f64) {
         self.ui.pointer_move(x, y, now);
@@ -1168,124 +1245,6 @@ impl WindowControls {
         self.ui.set_parts(self.maximized);
         let list = self.ui.frame(now);
         (list, self.ui.needs_frame())
-    }
-}
-
-/// The launch curtain (`StartCurtain`, `RootView.swift:43`, `StartAnimation.swift`): the window ground with the Mac's
-/// `startanimation.json` (80 frames at 60 fps = 1.333 s, once) in a 520 pt box, held 0.5 s after its end, then faded out
-/// with easeOut 0.35 s; a hard stop at 3.5 s. The animation is played by [`crate::lottie::Lottie`] (shape layers with
-/// keyframed position and scale). Reduce Motion: the last frame at once, held 0.5 s.
-pub struct Curtain {
-    ui: Ui<(u8, u32)>,
-    start: Option<f64>,
-    reduce: bool,
-}
-
-/// The animation, in ms (80 frames at 60 fps).
-pub const CURTAIN_PLAY_MS: f64 = 80.0 * 1000.0 / 60.0;
-/// Hold after the animation.
-pub const CURTAIN_AFTER_MS: f64 = 500.0;
-/// How long the curtain stays fully opaque, in ms (animation plus the 0.5 s hold).
-pub const CURTAIN_HOLD_MS: f64 = CURTAIN_PLAY_MS + CURTAIN_AFTER_MS;
-/// The fade out, in ms.
-pub const CURTAIN_FADE_MS: f64 = 350.0;
-/// The curtain's fade is the catalogued `Curtain` curve: `easeOut(0.35)` (`RootView.swift:44`).
-fn curtain_alpha(since_hold_ms: f64) -> f64 {
-    swiftly_motion::catalogue::Id::Curtain
-        .curve()
-        .displacement(since_hold_ms / 1000.0)
-}
-/// The curtain never stays longer than this (`StartAnimation` hard stop).
-pub const CURTAIN_HARD_STOP_MS: f64 = 3500.0;
-
-impl Curtain {
-    /// A curtain for `env`.
-    pub fn new(env: Env, cx: Cx) -> Curtain {
-        let reduce = env.reduce_motion;
-        // Rasterised for the pixels it is drawn at: 520 pt for 1024 composition units (again, from the pictures of the
-        // `Lottie`, when the window's scale changes).
-        let lottie = std::rc::Rc::new(crate::lottie::Lottie::load(
-            &cx,
-            crate::lottie::START_ANIMATION,
-            env.scale * 520.0 / 1024.0,
-        ));
-        let ui = Ui::new(
-            move |p: &(u8, u32), env: &Env, cx: &Cx| {
-                let a = f32::from(p.0) / 255.0;
-                let frame = f64::from(p.1) / 100.0;
-                let art = match (*lottie).as_ref() {
-                    Some(l) => l.node(cx, frame, 520.0, env.scale),
-                    None => Node::fixed(520.0, 520.0),
-                }
-                .a11y(swiftly_ui::a11y::A11yNode::new(
-                    "",
-                    swiftly_ui::a11y::Role::Image,
-                    "Swiftly",
-                ));
-                let ground = Node::rect(color(colour::REASON), 0.0).frame(
-                    Some(env.size.w),
-                    Some(env.size.h),
-                    Alignment::CENTER,
-                );
-                ground
-                    .overlay(art, Alignment::CENTER)
-                    .opacity(a, swiftly_ui::Motion::Instant)
-            },
-            (255, 0),
-            env,
-            cx,
-        );
-        Curtain {
-            ui,
-            start: None,
-            reduce,
-        }
-    }
-
-    /// A new window size.
-    pub fn set_env(&mut self, env: Env) {
-        self.reduce = env.reduce_motion;
-        self.ui.set_env(env);
-    }
-
-    /// The curtain's alpha at `now` (0 once it is gone).
-    pub fn alpha(&mut self, now: f64) -> f32 {
-        let t0 = *self.start.get_or_insert(now);
-        let e = now - t0;
-        // Reduce Motion: the still last frame is held 0.5 s, then the usual fade.
-        let hold = if self.reduce {
-            CURTAIN_AFTER_MS
-        } else {
-            CURTAIN_HOLD_MS
-        };
-        if e <= hold {
-            1.0
-        } else if e >= (hold + CURTAIN_FADE_MS).min(CURTAIN_HARD_STOP_MS) {
-            0.0
-        } else {
-            curtain_alpha(e - hold) as f32
-        }
-    }
-
-    /// The animation frame at `now` (the last one under Reduce Motion).
-    pub fn frame_at(&self, now: f64) -> f64 {
-        if self.reduce {
-            return 79.99;
-        }
-        let e = now - self.start.unwrap_or(now);
-        (e / 1000.0 * 60.0).clamp(0.0, 79.99)
-    }
-
-    /// The curtain's quads at `now`; `None` once it is gone.
-    pub fn frame(&mut self, now: f64) -> Option<DrawList> {
-        let a = self.alpha(now);
-        if a <= 0.0 {
-            return None;
-        }
-        let f = self.frame_at(now);
-        self.ui
-            .set_parts(((a * 255.0).round() as u8, (f * 100.0).round() as u32));
-        Some(self.ui.frame(now))
     }
 }
 

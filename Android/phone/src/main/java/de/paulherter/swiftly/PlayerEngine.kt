@@ -34,6 +34,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
+import de.paulherter.swiftly.rustcore.LegacyVideoDecoder
 import androidx.media3.common.AudioAttributes
 import androidx.media3.exoplayer.audio.AudioCapabilities
 import java.util.concurrent.atomic.AtomicLong
@@ -607,6 +608,43 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
          * **Does any Dolby Vision decoder on this device take profile 7 (dual layer)?** Many do not (Pixel: no frames at
          * all, only sound); without one the HEVC base layer (HDR10) is the way, as with the setting "off".
          */
+        /**
+         * **The video decoders of this device**, asked of `MediaCodecList` once (the same list Media3 picks from): per codec
+         * (`h264`, `hevc`, `av1`, `vp9`) and bit depth the largest picture a decoder takes. The core plans a server transcode
+         * for a title none of them decodes, instead of handing out the original and closing at the first frame. `null` when
+         * the list could not be read: the core then restricts nothing.
+         */
+        val videoDecoders: List<LegacyVideoDecoder>? by lazy {
+            runCatching { videoDecodersProbe() }
+                .onFailure { AppLog.writeOut("[Dekoder] Abfrage gescheitert: ${it.javaClass.simpleName}") }
+                .getOrNull()
+                ?.also { list -> AppLog.writeOut("[Dekoder] " + list.joinToString(" ") { "${it.codec}${if (it.tenBit) "/10" else ""}:${it.width}x${it.height}" }.ifEmpty { "keine" }) }
+        }
+
+        private fun videoDecodersProbe(): List<LegacyVideoDecoder> {
+            // Per codec: the MIME type, the core's name and the profile numbers (`CodecProfileLevel`) that take 10 bits per channel.
+            class Kind(val mime: String, val codec: String, val tenBit: Set<Int>)
+            val kinds = listOf(
+                Kind(MimeTypes.VIDEO_H264, "h264", setOf(0x10, 0x20, 0x40)),                       // High 10, High 4:2:2, High 4:4:4
+                Kind(MimeTypes.VIDEO_H265, "hevc", setOf(0x2, 0x1000, 0x2000)),                    // Main 10, +HDR10, +HDR10+
+                Kind(MimeTypes.VIDEO_AV1, "av1", setOf(0x2, 0x1000, 0x2000)),                      // Main 10, +HDR10, +HDR10+
+                Kind(MimeTypes.VIDEO_VP9, "vp9", setOf(0x4, 0x8, 0x1000, 0x2000, 0x4000, 0x8000))) // Profile 2 and 3, HDR variants
+            val rows = mutableListOf<LegacyVideoDecoder>()
+            for (kind in kinds) {
+                for (info in MediaCodecUtil.getDecoderInfos(kind.mime, false, false)) {
+                    val caps = info.capabilities ?: continue
+                    val video = caps.videoCapabilities
+                    val width = (video?.supportedWidths?.upper ?: 4096).toUInt()
+                    val height = (video?.supportedHeights?.upper ?: 2304).toUInt()
+                    val profiles = caps.profileLevels.map { it.profile }
+                    // A decoder that lists no profiles is taken for 8 bits (what the plan assumed before).
+                    if (profiles.isEmpty() || profiles.any { it !in kind.tenBit }) rows += LegacyVideoDecoder(kind.codec, false, width, height)
+                    if (profiles.any { it in kind.tenBit }) rows += LegacyVideoDecoder(kind.codec, true, width, height)
+                }
+            }
+            return rows
+        }
+
         /** Is there any Dolby Vision decoder at all (the emulator and many TVs have none)? */
         fun dolbyVisionAnyDecoder(): Boolean =
             runCatching { MediaCodecUtil.getDecoderInfos(MimeTypes.VIDEO_DOLBY_VISION, false, false).isNotEmpty() }.getOrDefault(false)

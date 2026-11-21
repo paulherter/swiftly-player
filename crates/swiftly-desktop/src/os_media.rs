@@ -40,8 +40,10 @@ mod real {
             MediaControlEvent::Next => MediaEvent::Next,
             MediaControlEvent::Previous => MediaEvent::Previous,
             MediaControlEvent::Stop => MediaEvent::Stop,
-            MediaControlEvent::Seek(d) | MediaControlEvent::SeekBy(d, _) => {
-                MediaEvent::Skip(*d == SeekDirection::Forward)
+            // A button without an amount (fast-forward) jumps by the player's own distance; MPRIS `Seek(offset)` says how far.
+            MediaControlEvent::Seek(d) => MediaEvent::Skip(*d == SeekDirection::Forward),
+            MediaControlEvent::SeekBy(d, by) => {
+                MediaEvent::SeekBy(*d == SeekDirection::Forward, by.as_secs_f64())
             }
             MediaControlEvent::SetPosition(MediaPosition(p)) => MediaEvent::SeekTo(p.as_secs_f64()),
             MediaControlEvent::SetRate(r) => MediaEvent::SetRate(*r),
@@ -112,6 +114,10 @@ mod real {
         fn set_rate(&mut self, rate: f64) {
             let _ = self.controls.set_rate(rate);
         }
+        fn position_goes_stale(&self) -> bool {
+            // The Linux MPRIS back end answers `Position` with the last value sent; SMTC extrapolates.
+            cfg!(not(windows))
+        }
         fn set_navigation(&mut self, next: bool, previous: bool) {
             let _ = self.controls.set_navigation(next, previous);
         }
@@ -146,7 +152,7 @@ mod real {
             );
             assert_eq!(
                 event_of(&MediaControlEvent::SeekBy(SeekDirection::Forward, ms(10))),
-                Some(MediaEvent::Skip(true))
+                Some(MediaEvent::SeekBy(true, 10.0))
             );
             assert_eq!(
                 event_of(&MediaControlEvent::SetPosition(MediaPosition(ms(90)))),

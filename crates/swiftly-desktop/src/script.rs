@@ -13,7 +13,7 @@
 //! key enter|tab|escape|right|left|up|down   one shell key: into the focused field when one has the keyboard, else to the focus engine (escape is Back)
 //! down | up | click        primary button at the pointer (`click` = down, 60 ms, up)
 //! rclick                  secondary button at the pointer (opens a context menu)
-//! key NAME                 a player shortcut: Space, Left, Right, Up, Down, Enter, Escape
+//! key NAME                 a player shortcut: Space, Left, Right, Up, Down, Enter, Escape, m (mute), t (tracks), f (fullscreen)
 //! until-label TEXT MS      wait until a control whose accessible name contains TEXT exists (at most MS, then the script stops)
 //! wheel DY                 mouse wheel, lines
 //! shift down|up            hold or release Shift (a vertical wheel then scrolls sideways)
@@ -100,6 +100,9 @@ fn is_key_name(name: &str) -> bool {
             | "Enter"
             | "Escape"
             | "space"
+            | "m"
+            | "t"
+            | "f"
     )
 }
 
@@ -380,6 +383,7 @@ mod tests {
         );
         assert!(parse("type").is_err());
         assert!(parse("key f5").is_err());
+        assert_eq!(parse("key m")?, vec![Step::Key("m".into())]);
         Ok(())
     }
 

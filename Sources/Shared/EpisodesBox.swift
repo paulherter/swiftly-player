@@ -34,8 +34,8 @@ struct EpisodesBox: View {
     @State private var tab: PlayerMenuPanelTab
     @Namespace private var tabLine
     private var seasons: [Item] { get { picker.seasons } nonmutating set { picker.seasons = newValue } }
-    private var selectedSeason: Item? { get { picker.selected } nonmutating set { picker.selected = newValue } }
-    @State private var episodes: [Item] = []
+    @State private var loader: EpisodesLoader
+    private var episodes: [Item] { loader.episodes }
 
     /// **The list is already there on opening.** What the store has (the player preloads it at start) is in the states
     /// before the first frame; otherwise the episodes would pop in after the box.
@@ -47,23 +47,7 @@ struct EpisodesBox: View {
         self.openSeasons = openSeasons; self.tabs = tabs; self.chapters = chapters; self.chapterPreview = chapterPreview
         self.jumpToChapter = jumpToChapter; self.close = close; self.start = start
         _tab = State(initialValue: tabs.contains(startTab) ? startTab : (tabs.first ?? .episodes))
-        guard let series = item.seriesId,
-              let remembered = SeriesCache.shared.state(series, with: model),
-              !remembered.seasons.isEmpty else { return }
-        // The init runs on every re-evaluation of the parent: a season the viewer already chose must stay.
-        picker.adopt(seasons: remembered.seasons, rule: SeasonSelectionRule.choose(from: remembered.seasons, state: item))
-        _episodes = State(initialValue: picker.selected.flatMap { remembered.episodes[$0.id] } ?? [])
-    }
-
-    /// Seasons and the running season's episodes into the store, called as soon as the player shows an episode.
-    static func preload(model: AppModel, item: Item) async {
-        guard let seriesKeyID = item.seriesId, let series = Item.preCommonSeries(toward: item) else { return }
-        // A failed fetch (`nil`) does not go into the store: the next view would take the empty list for the truth.
-        guard let seasons = await model.seasons(series), !seasons.isEmpty else { return }
-        SeriesCache.shared.remember(seriesKeyID) { $0.seasons = seasons }
-        guard let season = SeasonSelectionRule.choose(from: seasons, state: item) else { return }
-        guard let episodes = await model.episodes(series: seriesKeyID, season: season.id) else { return }
-        SeriesCache.shared.remember(seriesKeyID) { $0.episodes[season.id] = episodes }
+        _loader = State(initialValue: EpisodesLoader(model: model, item: item, picker: picker))
     }
 
     // MARK: Rows by key
@@ -153,13 +137,12 @@ struct EpisodesBox: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .frame(height: min(MenuMetric.folgenHeight, menuMaxHeight))
         .accessibilityAction(.escape, close)
-        .task { await load() }
+        .task { await loader.load() }
         .onChange(of: tab, initial: true) { register() }
         .onChange(of: episodes.map(\.id)) { register() }
         // A choice from the season box.
         .onChange(of: picker.chosen) { _, id in
-            guard picker.takeChoice(id) != nil else { return }
-            Task { await episodesLoad(seasonSwitched: true) }
+            Task { await loader.switchSeason(to: id, animation: Theme.reveal) }
         }
     }
 
@@ -229,38 +212,5 @@ struct EpisodesBox: View {
         }
         .lineLimit(1)
         .frame(height: 26, alignment: .leading)
-    }
-
-    // MARK: Loading
-
-    /// First what the series page's store already has, then fresh from the server.
-    private func load() async {
-        guard let series = Item.preCommonSeries(toward: item) else { return }
-        if let remembered = SeriesCache.shared.state(series.id, with: model), !remembered.seasons.isEmpty {
-            seasons = remembered.seasons
-            // A season the viewer already chose stays; the rule only picks the first time.
-            selectedSeason = remembered.seasons.first(where: { $0.id == selectedSeason?.id })
-                ?? SeasonSelectionRule.choose(from: remembered.seasons, state: item)
-            if let id = selectedSeason?.id, let list = remembered.episodes[id] { episodes = list }
-        }
-        // `nil` means disturbed: what the store had stays.
-        guard let freshValue = await model.seasons(series), !freshValue.isEmpty else { return }
-        seasons = freshValue
-        if selectedSeason == nil || !freshValue.contains(where: { $0.id == selectedSeason?.id }) {
-            selectedSeason = SeasonSelectionRule.choose(from: freshValue, state: item)
-        }
-        await episodesLoad()
-    }
-
-    /// Cross-fade only on a season change; on opening the list is there at once.
-    private func episodesLoad(seasonSwitched: Bool = false) async {
-        guard let series = item.seriesId else { return }
-        let season = selectedSeason?.id
-        // Failed means the list stays as it was: emptying it would claim the season has no episodes.
-        guard let loaded = await model.episodes(series: series, season: season) else { return }
-        // Whoever has chosen another season in the meantime gets its episodes.
-        guard season == selectedSeason?.id else { return }
-        if seasonSwitched { withAnimation(Theme.reveal) { episodes = loaded } } else { episodes = loaded }
-        if let season { SeriesCache.shared.remember(series) { $0.episodes[season] = loaded } }
     }
 }

@@ -11,7 +11,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
-use swiftly_design::tokens::{colour, desktop, touch};
+use swiftly_design::tokens::touch;
+use swiftly_design::tokens_generated::color;
+use swiftly_design::tokens_generated::desktop as dsk;
 use swiftly_layout::{Align, Alignment, Axis};
 use swiftly_library::library_filter::Sorting;
 use swiftly_library::{
@@ -201,7 +203,7 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                     .fixed_size(true, false)
                     .padding(ins(0.0, 0.0, 0.0, -m.edge)),
                 ctx.icons
-                    .node("caret-down", 14.0, true, color(colour::FONT_QUIET)),
+                    .node("caret-down", 14.0, true, color(color::TEXT_SECONDARY)),
             ],
         )
         .padding(ins(
@@ -370,7 +372,7 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
             col.push(Node::vstack(Align::Start, Some(m.row_gap), rows).padding(grid_pad));
             if p.status.load_more_failed {
                 col.push(
-                    crate::home::text(cx, "Erneut versuchen", swiftly_design::TextStyle { size: 15.0, weight: 500, tracking: 0.0, uppercase: false }, colour::MARK_ACCENT, Some(1), swiftly_text::Align::Center)
+                    crate::home::text(cx, "Erneut versuchen", swiftly_design::TextStyle { size: 15.0, weight: 500, tracking: 0.0, uppercase: false }, crate::look_glow::accent(), Some(1), swiftly_text::Align::Center)
                         .frame(None, Some(44.0), Alignment::CENTER)
                         .key("more")
                         .on_tap(Action::from("more")),
@@ -427,7 +429,7 @@ fn rail_node(cx: &Cx, r: &RailPart, inset: f32) -> Node {
     for e in &r.shown {
         if e.gap {
             col.push(
-                Node::rect(color(colour::FONT_VERY_QUIET), 1.5)
+                Node::rect(color(color::TEXT_TERTIARY), 1.5)
                     .frame(Some(3.0), Some(3.0), Alignment::CENTER)
                     .frame(
                         Some(RAIL_WIDTH),
@@ -437,9 +439,9 @@ fn rail_node(cx: &Cx, r: &RailPart, inset: f32) -> Node {
             );
         }
         let c = if r.lit.as_deref() == Some(e.letter.as_str()) {
-            colour::MARK_ACCENT
+            crate::look_glow::accent()
         } else {
-            colour::FONT_QUIET
+            color::TEXT_SECONDARY
         };
         col.push(
             crate::home::text(
@@ -1461,6 +1463,8 @@ impl LibraryScreen {
                             .send(LibraryIntent::SetWatchlist { id: id.clone(), on });
                         crate::desk::note_list_change();
                     }
+                    Entry::Report => crate::desk::request_report(&id, None),
+                    Entry::Delete => crate::desk::request_delete(&id, false),
                     Entry::Load if crate::live::current().is_some() => {
                         crate::desk::request_download(&id);
                     }
@@ -1586,6 +1590,24 @@ impl LibraryScreen {
         let hit = self.ui.secondary_click(x, y, now);
         self.drain();
         hit
+    }
+
+    /// The shortcut of `entry` (Ctrl+D, Ctrl+Shift+G, Ctrl+I) while the right-click menu is open. False when it did nothing.
+    pub fn menu_shortcut(&mut self, entry: &Entry) -> bool {
+        let Open::Menu(id) = self.open.clone() else {
+            return false;
+        };
+        if !self.pop.is_open() {
+            return false;
+        }
+        let tile = self.vm.grid().tiles.iter().find(|t| t.id == id).cloned();
+        let mcx = tile_menu::rail_cx(false, self.favourites.contains(&id));
+        let entries = tile_menu::entries(Form::of(self.ui.env().idiom), &mcx, tile.as_ref());
+        let Some(i) = entries.iter().position(|e| e == entry) else {
+            return false;
+        };
+        self.tapped(&Action::from(format!("pick.m.{i}").as_str()));
+        true
     }
 
     /// Arrow, Tab, Enter or Esc on the focus engine; Esc closes a sheet.
@@ -1751,12 +1773,12 @@ impl LibraryScreen {
     }
     /// Sidebar width on desktop, for hit tests.
     pub fn sidebar() -> f32 {
-        desktop::SIDEBAR_WIDTH
+        dsk::SIZE_SIDEBAR_WIDTH
     }
     /// Unused colour helper kept for symmetry with the other screens.
     #[doc(hidden)]
     pub fn ground() -> Color {
-        color(colour::REASON)
+        color(color::SURFACE_BASE)
     }
 }
 
@@ -1922,6 +1944,42 @@ mod tests {
             .iter()
             .position(|l| l.label == label)
             .unwrap_or_else(|| panic!("no line {label}: {:?}", s.filter.lines))
+    }
+
+    /// A changed sorting starts the grid at the top again (Mac: `position.scrollTo(edge: .top)` on a new `shelf.identifier`);
+    /// the first load does not touch the offset.
+    #[test]
+    fn a_new_sorting_scrolls_the_grid_to_the_top() {
+        let mut s = screen(Idiom::Desktop, Size::new(1280.0, 500.0));
+        let mut now = 0.0;
+        let frames = |s: &mut LibraryScreen, now: &mut f64, n: u32| {
+            for _ in 0..n {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                *now += 16.0;
+                let _ = s.frame(*now);
+            }
+        };
+        frames(&mut s, &mut now, 40);
+        let jumped = s.ui.jump_first_scroll(Axis::Vertical, 400.0);
+        frames(&mut s, &mut now, 5);
+        let scrolled = s.offset();
+        assert!(
+            scrolled > 100.0,
+            "the grid scrolled away from the top: {scrolled} (jump {jumped})"
+        );
+        let was = s.vm.status().sorting;
+        let other = SORTINGS
+            .iter()
+            .map(|(x, _)| *x)
+            .find(|x| *x != was)
+            .unwrap();
+        s.vm.send(LibraryIntent::SetSorting { sorting: other });
+        frames(&mut s, &mut now, 60);
+        assert_eq!(
+            s.offset(),
+            0.0,
+            "a new sorting starts at the top (was {scrolled})"
+        );
     }
 
     #[test]

@@ -3,7 +3,8 @@
 
 use crate::art;
 use std::rc::Rc;
-use swiftly_design::tokens::{colour, touch};
+use swiftly_design::tokens::touch;
+use swiftly_design::tokens_generated::color;
 use swiftly_layout::{Align, Alignment, Axis, EdgeInsets, FlexFrame};
 use swiftly_render::{Color, DrawList, RgbaImage};
 use swiftly_text::TextStyle;
@@ -89,7 +90,10 @@ fn ground(content: Node) -> Node {
             align: Some(Alignment::TOP_LEADING),
             ..FlexFrame::default()
         })
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_BASE), 0.0),
+            Alignment::CENTER,
+        )
 }
 
 fn home(cx: &Cx, env: &Env, art: &Rc<Art>) -> Node {
@@ -97,7 +101,7 @@ fn home(cx: &Cx, env: &Env, art: &Rc<Art>) -> Node {
         cx,
         "Zurück zur Startseite",
         touch::text::TITLE_LARGE,
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(1),
     ))];
     for (r, title) in art::RAIL_TITLES.iter().enumerate() {
@@ -152,20 +156,20 @@ fn detail(cx: &Cx, env: &Env, art: &Rc<Art>, r: usize, i: usize) -> Node {
             cx,
             &art::title_for(r, i),
             touch::text::TITLE_LARGE,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(2),
         )),
         inset(text(
             cx,
             &meta,
             touch::text::BODY,
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             Some(1),
         )),
     ];
     for p in paras {
         children.push(
-            inset(text(cx, p, touch::text::BODY, colour::FONT, None)).frame(
+            inset(text(cx, p, touch::text::BODY, color::TEXT_PRIMARY, None)).frame(
                 Some(hero_w + 2.0 * touch::EDGE_SPACING),
                 None,
                 Alignment::TOP_LEADING,

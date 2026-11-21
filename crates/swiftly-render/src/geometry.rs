@@ -120,6 +120,12 @@ impl Rect {
     }
 }
 
+/// How far a smoothed corner reaches along each edge, in corner radii: the corner is a superellipse of exponent 3 inside a
+/// zone of `CORNER_REACH * radius` (Figma "iOS" smoothing of 60 %, Apple's continuous corner). A rounded shape that must
+/// reproduce another's corner (a strip cut from the lower edge of a tile) has to be at least `2 * CORNER_REACH * radius`
+/// tall, or it counts as a capsule and stays circular. Mirrored by `SMOOTH_REACH` in `quad.wgsl`.
+pub const CORNER_REACH: f32 = 1.4;
+
 /// Corner radii in points, clockwise from the top left.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Corners {

@@ -26,7 +26,12 @@ struct MoodLoader<ContentBody: View>: View {
     }
 
     var body: some View {
+        // **The box is the same size before and after the colour arrives.** An empty `ZStack` has no size of its
+        // own: the colour's arrival changed it from nothing to the full height inside the fade's animation, so the
+        // mood grew in from the middle line instead of fading in place. The clear layer holds the size; only the
+        // opacity changes.
         ZStack {
+            Color.clear
             if !tones.isEmpty {
                 content(tones).transition(.opacity)
             }
@@ -40,13 +45,10 @@ struct MoodLoader<ContentBody: View>: View {
                 return
             }
             let new = await ImageTone.shared.tones(for: url)
-            #if os(macOS)
-            // A screen-high gradient that fades in costs the page sliding in some frames;
-            // it comes when the page has settled.
-            await InTravel.waitFor()
-            #endif
             guard !Task.isCancelled else { return }
-            withAnimation(arrivalFades ? Self.reveal : nil) { tones = new }
+            // A screen-high gradient that fades in costs the page sliding in some frames (Mac: `InTravel`);
+            // it comes when the page has settled.
+            InTravel.land { withAnimation(arrivalFades ? Self.reveal : nil) { tones = new } }
         }
     }
 }

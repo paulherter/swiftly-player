@@ -337,7 +337,7 @@ impl Inner {
     }
 
     fn persist(&self, items: Vec<DownloadItem>) {
-        let existing = load_list(std::fs::read(self.list_path()).ok().as_deref()).items;
+        let existing = read_list(&self.dir);
         let all = merge_for_write(existing, &self.account, items);
         if let Ok(bytes) = encode_list(&all) {
             let _ = swiftly_atomic::write(&self.list_path(), &bytes);
@@ -475,7 +475,7 @@ pub fn build_with(
         true,
     );
     let _ = files.0.vm.set(vm.clone());
-    let stored = load_list(std::fs::read(dir.join("liste.json")).ok().as_deref()).items;
+    let stored = read_list(&dir);
     for intent in [
         Intent::SignIn {
             account: Some(account.to_owned()),
@@ -686,18 +686,32 @@ fn transfer_reason(e: reqwest::Error) -> String {
     crate::live::say(&swiftly_net::map_reqwest_error(e))
 }
 
+/// The stored download list. A damaged `liste.json` is moved aside to `liste.json.broken-<time>` (and logged once)
+/// before the list counts as empty, so the next write cannot replace the only copy of the user's downloads.
+fn read_list(dir: &Path) -> Vec<DownloadItem> {
+    let path = dir.join("liste.json");
+    let loaded = load_list(std::fs::read(&path).ok().as_deref());
+    if let Some((len, why)) = &loaded.broken {
+        let kept = swiftly_atomic::set_aside(&path);
+        crate::crash::note_error(
+            "download list damaged",
+            &format!("{len} bytes: {why}; kept as {kept:?}, started empty"),
+        );
+    }
+    loaded.items
+}
+
 /// Whether `account` has a copy of title `id` on this device or one queued or running (the Mac's
 /// `downloads.entries(for:) != nil`): such a title offers no "Laden".
 pub fn on_device(dir: &Path, account: &str, id: &str) -> bool {
-    load_list(std::fs::read(dir.join("liste.json")).ok().as_deref())
-        .items
+    read_list(dir)
         .iter()
         .any(|i| i.account == account && i.id == id)
 }
 
 /// The finished download `id` of `account`: the item and the path of its file.
 pub fn finished(dir: &Path, account: &str, id: &str) -> Option<(DownloadItem, PathBuf)> {
-    let items = load_list(std::fs::read(dir.join("liste.json")).ok().as_deref()).items;
+    let items = read_list(dir);
     let item = items.into_iter().find(|i| {
         i.account == account && i.id == id && i.state == swiftly_downloads::DownloadState::Done
     })?;
@@ -1055,9 +1069,7 @@ mod tests {
 
     #[test]
     fn a_title_without_a_saved_cover_gets_the_online_poster_once() {
-        let dir = std::env::temp_dir().join(format!("swiftly-catchup-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::testdir::TestDir::new("swiftly-catchup");
         let mut a = DownloadItem::new("e1", "acc", Art::Episode, "Folge 1", 1, 1.0);
         a.series_identifier = Some("s1".into());
         let mut b = DownloadItem::new("e2", "acc", Art::Episode, "Folge 2", 1, 1.0);
@@ -1121,9 +1133,7 @@ mod tests {
             (Some("Serie"), Some("s9"), Some(2), Some(3))
         );
         // The list on disk: any state counts as "on the device", for that account only.
-        let dir = std::env::temp_dir().join(format!("swiftly-ondevice-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::testdir::TestDir::new("swiftly-ondevice");
         assert!(!on_device(&dir, "acc", "e9"));
         let queued = DownloadItem::new("e9", "acc", Art::Episode, "Folge", 1, 1.0);
         std::fs::write(dir.join("liste.json"), encode_list(&[queued]).unwrap()).unwrap();
@@ -1220,14 +1230,20 @@ mod tests {
         }
     }
 
-    fn setup(url: String, name: &str) -> (tokio::runtime::Runtime, PathBuf, DownloadsVm<Dyn>) {
+    fn setup(
+        url: String,
+        name: &str,
+    ) -> (
+        tokio::runtime::Runtime,
+        crate::testdir::TestDir,
+        DownloadsVm<Dyn>,
+    ) {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
             .build()
             .unwrap();
-        let dir = std::env::temp_dir().join(format!("swiftly-dl-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = crate::testdir::TestDir::path_only(&format!("swiftly-dl-{name}"));
         let resolver: Resolver = Arc::new(move |_, _, _, _| Ok(url.clone()));
         let vm = build(dir.clone(), "acc", rt.handle().clone(), resolver);
         (rt, dir, vm)
@@ -1260,9 +1276,7 @@ mod tests {
         assert_eq!(std::fs::read(&file).unwrap(), body);
         assert_eq!(vm.storage().count, 1);
         // The list file is written after the row shows Done: wait for it instead of reading it at once.
-        let persisted = |dir: &std::path::Path| {
-            load_list(std::fs::read(dir.join("liste.json")).ok().as_deref()).items
-        };
+        let persisted = |dir: &std::path::Path| read_list(dir);
         wait(&vm, "list file says done", |_| {
             persisted(&dir)
                 .first()
@@ -1294,7 +1308,7 @@ mod tests {
                 .first()
                 .is_some_and(|d| d.state == DownloadState::Done)
         });
-        let mut stored = load_list(std::fs::read(dir.join("liste.json")).ok().as_deref()).items;
+        let mut stored = read_list(&dir);
         stored[0].subtitles_pending = true;
         std::fs::write(
             dir.join("liste.json"),
@@ -1329,8 +1343,7 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
-        let dir = std::env::temp_dir().join(format!("swiftly-dl-subs-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = crate::testdir::TestDir::path_only("swiftly-dl-subs");
         let resolver: Resolver = Arc::new(move |_, _, _, _| Ok(media.clone()));
         let lister: SubtitleLister = Arc::new(move |_, _, _| {
             let url = cue_url.clone();
@@ -1385,7 +1398,9 @@ mod tests {
 
     #[test]
     fn pause_then_resume_continues_with_range() {
-        let body: Vec<u8> = (0..400_000u32).map(|i| (i % 253) as u8).collect();
+        // The slow server needs seconds for this body (60 chunks of 60 ms): a short body let a loaded machine finish the
+        // download between the first bytes and the Pause intent, which then was rightly rejected as WrongState.
+        let body: Vec<u8> = (0..1_200_000u32).map(|i| (i % 253) as u8).collect();
         let (_rt, dir, vm) = setup(serve(body.clone(), true), "pause");
         add(&vm, "m2", body.len() as i64);
         wait(&vm, "some bytes", |v| {
@@ -1411,9 +1426,8 @@ mod tests {
     /// The free space is the real figure of the volume, never the "plenty" stand-in (it read "2,31 EB" on Windows).
     #[test]
     fn free_space_is_the_volume_figure_not_the_stand_in() {
-        let dir = std::env::temp_dir().join("swiftly-free-space-probe");
+        let dir = crate::testdir::TestDir::path_only("swiftly-free-space-probe");
         let free = free_bytes(&dir);
-        let _ = std::fs::remove_dir_all(&dir);
         assert!(free > 0, "{free}");
         assert!(free < i64::MAX / 4, "stand-in value: {free}");
     }

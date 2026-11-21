@@ -14,6 +14,10 @@ path = "src/lib.rs"
 name = "gen_tokens"
 path = "src/bin/gen_tokens.rs"
 
+[[bin]]
+name = "token_lint"
+path = "src/bin/token_lint.rs"
+
 # Only the generator binary uses these; a crate that depends on the library does not compile them.
 [dependencies]
 serde = { version = "1", features = ["derive"] }

@@ -37,6 +37,14 @@ struct HomeView: View {
     private var next: [Item] { state.nextEpisode }
     private var new: [Item] { state.recent }
     private var loaded: Bool { state.loaded }
+    /// **A silent server over rows that are already there** (the stored page, shown at once): the core says
+    /// `Offline` once the refresh failed. The rows stay, and the notice stands above them, as on iPhone. Only for
+    /// the two failures whose words are "does not answer"; the page without any rows has its full-page notice.
+    private var noticeOverRows: Bool {
+        loaded && state.disrupted && !state.allEmpty && (state.trouble == .unreachable || state.trouble == .server)
+    }
+    /// A retry from the notice is running.
+    @State private var retries = false
 
     /// Where the page is scrolled to, as its own object so a scroll tick does not
     /// re-evaluate the whole body. See `HeaderState`.
@@ -97,7 +105,14 @@ struct HomeView: View {
     private var orderedRows: [OrderedRow] {
         let fixed = Set(fixedRails)
         let byId = Dictionary(libraries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        return model.rowOrder.compactMap { id in
+        var ids = model.rowOrder
+        #if DEBUG
+        // Proof hook: `-SwiftlyLiveForceArrivalRow` puts the arrival stack first although the desktop form keeps it off the Start
+        // page, so the shared stack (and the cover it loads) can be shot on the Mac. Never compiled into a release.
+        if ProcessInfo.processInfo.arguments.contains("-SwiftlyLiveForceArrivalRow"),
+           !ids.contains(HomeRowOrder.seerrArrival) { ids.insert(HomeRowOrder.seerrArrival, at: 0) }
+        #endif
+        return ids.compactMap { id in
             if id == HomeRowOrder.seerrArrival { return arrivalOn ? OrderedRow.seerrArrival : nil }
             if id == HomeRowOrder.seerrRequests { return requestsOn ? OrderedRow.seerrRequests : nil }
             if let lib = HomeRowOrder.library(of: id) { return byId[lib].map(OrderedRow.library) }
@@ -155,6 +170,14 @@ struct HomeView: View {
                     // 22 to the first rail, not the 40 between rails.
                     .padding(.bottom, 22 - Theme.railsSpacing)
 
+                // **The server notice above the stored rows**, directly under the title. The rows below
+                // are what was stored; the notice says why they may be old.
+                if noticeOverRows {
+                    DisturbHint(model: model, retry: { newTry() }, spacingTop: 0, loads: retries)
+                        .padding(.horizontal, Theme.edgeSpacing)
+                        .transition(.opacity)
+                }
+
                 // **Genres as chips at the very top**, when enabled. An entry point, not
                 // content: a click opens the genre.
                 if built {
@@ -206,7 +229,7 @@ struct HomeView: View {
                 // ist noch nichts" (nothing here yet) would be a false statement and would send
                 // the user to the server instead of the network. Wording and icon are the server
                 // message used identically everywhere.
-                if loaded, state.disrupted {
+                if loaded, state.disrupted, !noticeOverRows {
                     let words = state.trouble.copy(server: model.serverAddress ?? String(localized: "Der Server"))
                     EmptyState(
                         symbol: "externaldrive.badge.xmark",
@@ -269,6 +292,7 @@ struct HomeView: View {
             }
         }
         .animation(Theme.reveal, value: loaded)
+        .animation(Theme.reveal, value: noticeOverRows)
         // Seerr signs in after the first rows: read again when the connection comes or a switch changes.
         .seerrHomeReload(seerr, model: model)
         .task { await load() }
@@ -534,6 +558,15 @@ struct HomeView: View {
             AccountSwitchTransition.note("wechsel 7: reihen kommen gestaffelt")
             change = false
             structure = false
+        }
+    }
+
+    /// The notice's retry: one refresh, the button waits meanwhile.
+    private func newTry() {
+        retries = true
+        Task {
+            await allRefresh()
+            retries = false
         }
     }
 

@@ -25,11 +25,11 @@ struct CardView<ContentBody: View>: View {
     @ViewBuilder let content: ContentBody
 
     var body: some View {
-        // Design: group surface #1E1E1E, radius 16, padding 4 (rows inside have their own 16).
+        // Design: group surface, radius.card, padding 4 (rows inside have their own row padding).
         VStack(spacing: 0) { content }
             .padding(4)
             .background(Theme.groupsArea,
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous))
     }
 }
 
@@ -53,11 +53,11 @@ struct GroupsTitle: View {
     }
 }
 
-/// The hairline between rows of a group: inset by row padding 16 + icon column 26 + gap 12.
+/// The hairline between rows of a group: inset by row padding + icon column + gap 12.
 struct GroupLine: View {
     var body: some View {
         Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1)
-            .padding(.leading, 16 + 26 + 12)
+            .padding(.leading, Theme.rowPadH + Theme.rowIconWidth + 12)
     }
 }
 
@@ -122,7 +122,7 @@ private struct RowsBody<Right: View>: View {
             Spacer(minLength: 12)
             right
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Theme.rowPadH)
         // **"14 + content + 14" as padding, not as a fixed height.**
         //
         // This used to be `minHeight: 46` with exactly that reasoning, but a minimum
@@ -134,11 +134,11 @@ private struct RowsBody<Right: View>: View {
         // As padding the rule holds for both: 48 single-line, 65 two-line. The
         // minimum height remains as a lower bound for the hit area, but now applies
         // only if a row happens to contain less.
-        // Design: rows 52 tall, 60 with a subtitle, padding 8 x 16.
-        .padding(.vertical, 8)
-        .frame(minHeight: under == nil ? 52 : 60)
+        // Design: tokens space.row-pad-v / space.row-pad-h (14 / 18); a two-line row comes to 65.
+        .padding(.vertical, Theme.rowPadV)
+        .frame(minHeight: Theme.rowPadV * 2 + Theme.rowSymbolSize)
         .background(hovers ? Theme.hoverArea : .clear,
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
         .contentShape(Rectangle())
     }
 }

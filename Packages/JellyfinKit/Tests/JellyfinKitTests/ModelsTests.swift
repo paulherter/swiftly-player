@@ -98,3 +98,38 @@ struct EpisodesAbbreviationTests {
         #expect(try value("en") == "S%lld • E%lld")
     }
 }
+
+@Suite("Gesehener Anteil, gleiche Regel wie im Kern")
+struct WatchedShareTests {
+
+    private func item(runtime: Int64?, position: Int64? = nil, percent: Double? = nil) -> Item {
+        Item(id: "f1", name: "Folge 1", type: "Episode", runTimeTicks: runtime,
+             userData: UserItemData(playbackPositionTicks: position, playedPercentage: percent))
+    }
+
+    @Test("Der Prozentwert des Servers gilt, wenn er kommt")
+    func serverPercentWins() throws {
+        let share = try #require(item(runtime: 1000, position: 900, percent: 25).watchedShare)
+        #expect(share == 0.25)
+    }
+
+    @Test("Ohne Prozentwert kommt der Anteil aus Position und Laufzeit")
+    func fallsBackToPositionOverRuntime() throws {
+        let share = try #require(item(runtime: 1000, position: 250).watchedShare)
+        #expect(share == 0.25)
+    }
+
+    @Test("Position hinter der Laufzeit hält bei 1")
+    func positionPastRuntimeStopsAtOne() throws {
+        let share = try #require(item(runtime: 1000, position: 5000).watchedShare)
+        #expect(share == 1)
+    }
+
+    @Test("Ohne Laufzeit, mit Laufzeit 0 oder Position 0 gibt es keinen Anteil")
+    func nothingToShow() {
+        #expect(item(runtime: nil, position: 250).watchedShare == nil)
+        #expect(item(runtime: 0, position: 250).watchedShare == nil)
+        #expect(item(runtime: 1000, position: 0).watchedShare == nil)
+        #expect(item(runtime: 1000).watchedShare == nil)
+    }
+}

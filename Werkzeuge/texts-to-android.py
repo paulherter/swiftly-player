@@ -83,6 +83,10 @@ for s, t in tabellen.items():
 # with the catalog's translation where it has one (Russian).
 shared_keys = {kotlinformat(de) for de, _ in shared_pairs} | {"Weiter"}  # "Weiter" is also the player's resume label
 direct_only = {kotlinformat(de) for de, _ in direct_pairs} - shared_keys
+# A catalog text that talks about the supporter key (Apple's key hand-out) is direct-only too, whatever the pairs list says.
+KEY_WORDS = ("Unterstützer-Schlüssel", "supporter key")
+for t in tabellen.values():
+    direct_only |= {k.split("#")[0] for k, v in t.items() if any(w.lower() in (k + str(v)).lower() for w in KEY_WORDS)} - shared_keys
 direct_catalog = {s: {k: t.pop(k) for k in list(t) if k.split("#")[0] in direct_only} for s, t in tabellen.items()}
 
 TARGET.mkdir(parents=True, exist_ok=True)
@@ -98,5 +102,8 @@ if len(sys.argv) <= 1:
         add(t, s, direct_pairs)
         if s not in ("de", "en"):  # the package owns de/en wording; other languages come from the catalog
             t.update(direct_catalog[s])
+        else:  # catalog texts the package does not know (Apple's key hand-out) keep their catalog wording
+            for k, v in direct_catalog[s].items():
+                t.setdefault(k, v)
         (direct / f"{s}.direct.json").write_text(json.dumps(t, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
         print(f"{s}: {len(t)} Direkt-Texte → {direct / (s + '.direct.json')}")

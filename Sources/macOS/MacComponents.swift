@@ -55,7 +55,7 @@ struct SidebarRow: View {
                 }
             }
             .padding(.horizontal, 10)
-            .frame(height: Theme.rowHeight)
+            .frame(height: Theme.sidebarRowHeight)
             .foregroundStyle(foreground)
             .background(background,
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -202,11 +202,12 @@ struct PrimaryButton: View {
             }
             .padding(.horizontal, 30)
             .frame(maxWidth: .infinity)
-            .frame(height: Theme.primaryButtonHeight)
+            .frame(minWidth: Theme.heroPlayWidth)
+            .frame(height: Theme.heroPlayHeight)
             // Text on a filled surface has its own tone.
             .foregroundStyle(Theme.onAccent)
             .background(hovers ? Theme.primaryButtonHovers : Theme.font,
-                        in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: Theme.cornerButton, style: .continuous))
             .contentShape(Rectangle())
         }
         // **The primary button also responds to press.** It only knew hover and was thus
@@ -766,6 +767,8 @@ struct DisturbHint: View {
     /// it is Seerr, and the wrong address in the sentence would send the user
     /// debugging the wrong thing.
     var address: String?
+    /// A retry is on its way: the button waits instead of vanishing, so the block keeps its height.
+    var loads = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -796,6 +799,7 @@ struct DisturbHint: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(Theme.PressButton())
+                .disabled(loads)
                 .padding(.top, 6)
             }
         }

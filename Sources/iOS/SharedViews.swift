@@ -57,15 +57,6 @@ struct GroupsEvent: View {
 /// If something plays elsewhere **and** there is a group, a counter sits on
 /// it and a tap opens a sheet with both - not two icons side by side that
 /// would shift watchlist and profile.
-private struct BadgeSlot: ViewModifier {
-    let compact: Bool
-    let width: CGFloat
-    func body(content: Content) -> some View {
-        if compact { content.headerSlot(width: width) }
-        else { content.frame(width: 44, height: 44).contentShape(Rectangle()) }
-    }
-}
-
 struct OfferingBadge: View {
     let takeover: TakeoverModel?
     /// Spacing below - only if the badge exists.
@@ -73,6 +64,7 @@ struct OfferingBadge: View {
     @State private var gemeinsam = SharedModel.shared
     /// Where the icon sits on screen - the picker grows from there.
     @State private var frameRect: CGRect = .zero
+    /// Only for where the counter sits: the slot itself comes from `headerSlot`.
     @Environment(\.compactHeaderRow) private var compact
 
     private var groups: [SharedGroup] {
@@ -91,7 +83,7 @@ struct OfferingBadge: View {
                 headerSymbol
                     .font(.app(size: Theme.actionSymbol))
                     .foregroundStyle(Theme.accent)
-                    .modifier(BadgeSlot(compact: compact, width: glyphWidth))
+                    .headerSlot(width: glyphWidth)
                     .overlay(alignment: .topTrailing) {
                         if count > 1 {
                             Text(verbatim: "\(count)")

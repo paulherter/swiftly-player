@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -33,7 +32,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.sp
-import de.paulherter.swiftly.shared.Wordmark
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -72,6 +70,7 @@ import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import de.paulherter.swiftly.support.LookTileView
 import de.paulherter.swiftly.support.Looks
@@ -261,7 +260,7 @@ private fun TvLooksPage(app: SwiftlyApplication) {
 
             // The settings card: always the same rows, so the page does not jump between looks.
             Column(Modifier.padding(top = 14.dp).widthIn(max = 650.dp).fillMaxWidth()
-                       .clip(RoundedCornerShape(TvTheme.cornerTile)).background(Theme.area).padding(5.dp).focusGroup()) {
+                       .clip(smoothRoundedShape(TvTheme.cornerTile)).background(Theme.area).padding(5.dp).focusGroup()) {
                 val glow = looks.palette.value.glow
                 TvLooksRow(translated("Startseiten-Schein"), translated(glowName(glow)),
                            Modifier.alpha(if (wearable) 1f else 0.5f)) {
@@ -314,7 +313,7 @@ private fun glowName(glow: String) = when (glow) {
 @Composable
 private fun TvLooksRow(title: String, value: String, modifier: Modifier = Modifier, perform: () -> Unit) {
     FocusArea(modifier.fillMaxWidth(), magnifier = 1f, perform = perform) { focus ->
-        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
+        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(smoothRoundedShape(TvTheme.corner))
                 .background(if (focus) TvTheme.focusArea else Color.Transparent).padding(horizontal = 13.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text(title, style = TvTheme.body, color = Theme.font, maxLines = 1, modifier = Modifier.weight(1f))
@@ -330,10 +329,10 @@ private fun TvLooksRow(title: String, value: String, modifier: Modifier = Modifi
  */
 @Composable
 private fun TvLooksMock(modifier: Modifier = Modifier) {
-    Row(modifier.clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.groupsArea.copy(alpha = 0.7f)).padding(12.dp),
+    Row(modifier.clip(smoothRoundedShape(TvTheme.cornerArea)).background(TvTheme.groupsArea.copy(alpha = 0.7f)).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         repeat(4) { index ->
-            Box(Modifier.size(100.dp, 56.dp).clip(RoundedCornerShape(TvTheme.cornerTile)).background(Theme.area)) {
+            Box(Modifier.size(100.dp, 56.dp).clip(smoothRoundedShape(TvTheme.cornerTile)).background(Theme.area)) {
                 if (index < 2) Box(Modifier.align(Alignment.BottomStart).padding(8.dp)
                                        .size(if (index == 0) 55.dp else 30.dp, 3.dp).clip(CircleShape).background(Theme.accent))
             }
@@ -359,7 +358,7 @@ private fun TvLookChoice(app: SwiftlyApplication, look: Looks.LookInfo, chosen: 
     }, magnifier = TvTheme.focusMagnifier, perform = pick) { _ ->
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Box(Modifier.size(76.dp), contentAlignment = Alignment.Center) {
-                if (chosen) Box(Modifier.matchParentSize().border(2.dp, Theme.font, RoundedCornerShape((68 * 0.225f + 4).dp)))
+                if (chosen) Box(Modifier.matchParentSize().border(2.dp, Theme.font, smoothRoundedShape((68 * 0.225f + 4).dp)))
                 LookTileView(looks.tileIcon(look), 68.dp, Modifier.alpha(if (locked) 0.45f else 1f))
                 if (locked) {
                     Box(Modifier.align(Alignment.BottomEnd).size(20.dp).clip(CircleShape).background(Theme.raised),
@@ -413,8 +412,8 @@ fun TvGrowBody(app: SwiftlyApplication, close: () -> Unit, first: FocusRequester
         }
 
         if (support.channel.pricesUnavailable.value) {
-            Column(Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(TvTheme.cornerTile))
-                       .background(Theme.groupsArea).padding(15.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.padding(top = 14.dp).fillMaxWidth().clip(smoothRoundedShape(TvTheme.cornerTile))
+                       .background(TvTheme.groupsArea).padding(15.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(translated("Preise sind gerade nicht verfügbar"), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.font)
                 Text(translated("Google Play hat nicht geantwortet. Das passiert ohne Internet oder wenn Käufe auf deinem Konto eingeschränkt sind. Nichts geht verloren, und Swiftly läuft wie immer."),
                      fontSize = 13.sp, color = Theme.fontQuiet)
@@ -511,7 +510,7 @@ internal fun TvLooksHero(app: SwiftlyApplication, modifier: Modifier, tryLooks: 
 @Composable
 private fun TvMiniScreen(palette: Looks.Palette) {
     val accent = palette.accent.main
-    val shape = RoundedCornerShape(5.dp)
+    val shape = smoothRoundedShape(5.dp)
     Box(Modifier.size(128.dp, 72.dp).clip(shape).background(Theme.reason).border(0.5.dp, Theme.font.copy(alpha = 0.12f), shape)
             .drawBehind {
                 ellipseGradient(Offset(size.width * 0.62f, size.height * 0.3f), size.width * 0.6f, size.height * 0.6f,
@@ -519,10 +518,6 @@ private fun TvMiniScreen(palette: Looks.Palette) {
             }) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 5.5.dp).offset(y = 5.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(3.5.dp)) {
-            Box(Modifier.padding(end = 1.5.dp)) {
-                Wordmark(height = 3.5.dp, accent = palette.logoGradient.firstOrNull() ?: accent,
-                         gradient = palette.logoGradient.takeIf { it.size > 1 })
-            }
             repeat(4) { i ->
                 Box(Modifier.size(if (i == 0) 7.dp else 8.dp, 1.25.dp).clip(CircleShape)
                         .background(Theme.font.copy(alpha = if (i == 0) 1f else 0.35f)))
@@ -539,7 +534,7 @@ private fun TvMiniScreen(palette: Looks.Palette) {
             Box(Modifier.size(15.dp, 1.5.dp).clip(CircleShape).background(Theme.font.copy(alpha = 0.8f)))
             Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
                 repeat(4) { i ->
-                    val tile = RoundedCornerShape(1.5.dp)
+                    val tile = smoothRoundedShape(1.5.dp)
                     Box(Modifier.size(27.dp, 15.5.dp).clip(tile).background(Brush.verticalGradient(listOf(Theme.raised, Theme.area)))
                             .then(if (i == 0) Modifier.border(0.5.dp, Theme.font.copy(alpha = 0.7f), tile) else Modifier)) {
                         if (i == 0) Box(Modifier.align(Alignment.BottomStart).size(11.dp, 1.dp).background(accent))
@@ -554,7 +549,7 @@ private fun TvMiniScreen(palette: Looks.Palette) {
 @Composable
 private fun TvPlanTile(badge: String, loud: Boolean, title: String, price: String, detail: String, chosen: Boolean,
                        modifier: Modifier, choose: () -> Unit) {
-    val shape = RoundedCornerShape(TvTheme.cornerTile)
+    val shape = smoothRoundedShape(TvTheme.cornerTile)
     FocusArea(modifier.semantics(mergeDescendants = true) { role = Role.Button; selected = chosen },
               magnifier = TvTheme.focusMagnifier, perform = choose) { _ ->
         Box(Modifier.fillMaxSize()) {
@@ -601,7 +596,7 @@ private fun TvTipCapsule(text: String, chosen: Boolean, released: Boolean, modif
 private fun TvBuyButton(text: String, released: Boolean, perform: () -> Unit) {
     FocusArea(Modifier.fillMaxWidth().semantics { role = Role.Button }, magnifier = TvTheme.focusMagnifier, lift = true,
               liftCorner = TvTheme.corner, perform = { if (released) perform() }) { _ ->
-        Box(Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(TvTheme.corner))
+        Box(Modifier.fillMaxWidth().height(44.dp).clip(smoothRoundedShape(TvTheme.corner))
                 .background(if (released) Color.White else Theme.area), contentAlignment = Alignment.Center) {
             Text(text, style = TvTheme.button, maxLines = 1, color = if (released) Color(0xFF0A0A0A) else Theme.fontVeryQuiet)
         }

@@ -43,5 +43,5 @@ pub use focus::{
     BackOutcome, Dir, Focus, FocusId, FocusMap, NavKey, Outcome, ScopeKind, ScopeSpec,
 };
 pub use interact::{Cursor, Interact, PressStyle, Ring, Surface};
-pub use ui::{NodeValues, Phase, Ui, UiEvent, set_precise_wheel};
+pub use ui::{NodeValues, Phase, Ui, UiEvent, bump_theme, set_precise_wheel, theme_epoch};
 pub use view::{Action, Edge, FocusLook, Gestures, Key, Node, Paint, ScrollSpec};

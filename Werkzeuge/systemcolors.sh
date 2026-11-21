@@ -14,4 +14,4 @@ xcrun -sdk iphonesimulator swiftc -target arm64-apple-ios18.0-simulator \
 device=$(xcrun simctl list devices available | grep -m1 "iPhone" | sed 's/.*(\([0-9A-F-]*\)).*/\1/')
 xcrun simctl boot "$device" 2>/dev/null || true
 xcrun simctl spawn "$device" "$build/systemfarben"
-rm -rf "$build"
+rm -rf "${build:?}"

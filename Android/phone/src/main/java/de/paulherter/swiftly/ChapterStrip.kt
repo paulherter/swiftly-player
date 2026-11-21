@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -32,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import org.json.JSONObject
 
@@ -65,7 +65,7 @@ internal enum class FolgenTab { Episodes, Chapters }
 /** A word of the Folgen panel's tab row ("Folgen", "Kapitel"): white when open, quiet otherwise. */
 @Composable
 internal fun FolgenTabWord(label: String, on: Boolean, perform: () -> Unit) {
-    Box(Modifier.height(32.dp).clip(RoundedCornerShape(16.dp)).pressRow(perform).padding(horizontal = 10.dp).semantics { selected = on },
+    Box(Modifier.height(32.dp).clip(smoothRoundedShape(16.dp)).pressRow(perform).padding(horizontal = 10.dp).semantics { selected = on },
         contentAlignment = Alignment.Center) {
         Text16(label, if (on) Theme.font else Theme.fontVeryQuiet, semibold = true, size = 15)
     }
@@ -93,7 +93,7 @@ internal fun ChapterStripTile(row: ChapterEntry, numberTitle: String, preview: B
     Box(Modifier.size(width * grow, tileHeight * grow).pressRow(perform).semantics { selected = row.current }) {
         Column(Modifier.requiredSize(width, tileHeight).graphicsLayer { scaleX = grow; scaleY = grow; transformOrigin = TransformOrigin(0f, 0f) },
                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.size(width, height).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
+            Box(Modifier.size(width, height).clip(smoothRoundedShape(Theme.cornerTile)).background(Theme.area)) {
                 if (preview != null) Image(preview.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             }
             Column(Modifier.width(width), verticalArrangement = Arrangement.spacedBy(2.dp)) {

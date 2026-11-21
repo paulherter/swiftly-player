@@ -27,6 +27,11 @@ pub fn downloads_on(store: &dyn KeyValueStore) -> bool {
     store.get_bool("downloadsAn").unwrap_or(false)
 }
 
+/// The Discord presence as stored (`discordAnzeigen`, off until enabled).
+pub fn discord_on(store: &dyn KeyValueStore) -> bool {
+    store.get_bool("discordAnzeigen").unwrap_or(false)
+}
+
 /// "Wi-Fi only" as stored (`nurUeberWLAN`, on at first activation).
 pub fn only_over_wlan(store: &dyn KeyValueStore) -> bool {
     store.get_bool("nurUeberWLAN").unwrap_or(true)

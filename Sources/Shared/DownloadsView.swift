@@ -387,8 +387,8 @@ struct DownloadRow: View {
         // as "F" here, also in English.
         if let s = entries.season, let f = entries.episode {
             parts.append(String(localized: "S\(s) · F\(f)"))
-        } else if let ticks = entries.runtimeTicks, ticks > 0 {
-            parts.append(runtime(Double(ticks) / 10_000_000))
+        } else if let line = runtimeLine(entries.runtimeTicks.map { Double($0) / 10_000_000 }) {
+            parts.append(line)
         }
         switch entries.state {
         case .loads:
@@ -768,8 +768,10 @@ struct EditButton: View {
             Image(icon: edit ? "xmark" : "pencil.fill", size: Theme.actionSymbol)
                 .font(.app(size: Theme.actionSymbol))
                 .foregroundStyle(edit ? Theme.accent : Theme.font)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+                // The visible glyph width at 22 pt (pencil 22, cross 14) through the header
+                // rule, never an own 44 frame: that left empty frame around the glyph and an
+                // uneven gap to the heart.
+                .headerSlot(width: edit ? 14 : 22)
         }
         .buttonStyle(Theme.PressButton())
         // In edit mode the button shows a cross and ends it - then it should be called

@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,7 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -49,8 +47,9 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
-import de.paulherter.swiftly.shared.Wordmark
 import de.paulherter.swiftly.shared.motionReduced
+import de.paulherter.swiftly.shared.smoothRoundRectPath
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlin.math.cos
 import kotlin.math.sin
@@ -120,8 +119,7 @@ fun ServerKindMark(kind: ServerKind, size: Dp = 28.dp, color: Color? = null, mod
             ServerKind.Emby -> {
                 // Two frames, one behind the other: the front one whole, the one behind only as the edge that shows.
                 val path = Path()
-                path.addRoundRect(androidx.compose.ui.geometry.RoundRect(
-                    p(3.5f, 8.5f).x, p(3.5f, 8.5f).y, p(15.5f, 20.5f).x, p(15.5f, 20.5f).y, CornerRadius(3f * u)))
+                path.addPath(smoothRoundRectPath(p(3.5f, 8.5f), androidx.compose.ui.geometry.Size(12f * u, 12f * u), 3f * u))
                 path.moveTo(p(8.5f, 3.5f).x, p(8.5f, 3.5f).y)
                 path.lineTo(p(17.5f, 3.5f).x, p(17.5f, 3.5f).y)
                 path.quadraticTo(p(20.5f, 3.5f).x, p(20.5f, 3.5f).y, p(20.5f, 6.5f).x, p(20.5f, 6.5f).y)
@@ -144,7 +142,7 @@ fun Modifier.breathing(on: Boolean): Modifier {
 // MARK: - The picker (`ServerKindPicker.swift`)
 
 enum class PickerPurpose {
-    /** First start: the wordmark and the question, no way back. */
+    /** First start: the app icon and the question, no way back. */
     FirstStart,
     /** From the profile: the subpage header with its arrow. */
     AddServer
@@ -166,7 +164,7 @@ fun ServerKindPicker(purpose: PickerPurpose, pick: (ServerKind) -> Unit, back: (
                        .padding(horizontal = Theme.edgeSpacing).padding(bottom = 40.dp).navigationBarsPadding()) {
                 when (purpose) {
                     PickerPurpose.FirstStart -> {
-                        Box(Modifier.padding(top = 96.dp)) { Wordmark(height = 32.dp) }
+                        Box(Modifier.padding(top = 96.dp)) { AppIconMark(32.dp) }
                         Text(translated("Was läuft bei dir?"), style = Theme.titleLarge, color = Theme.font,
                              modifier = Modifier.padding(top = 40.dp))
                         Text(translated("Weitere Server kannst du später dazunehmen, auch gemischt."),
@@ -187,7 +185,7 @@ fun ServerKindPicker(purpose: PickerPurpose, pick: (ServerKind) -> Unit, back: (
 
 @Composable
 private fun KindCard(kind: ServerKind, perform: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(Theme.cornerCard)).background(Theme.groupsArea).pressRow(perform)
+    Row(Modifier.fillMaxWidth().clip(smoothRoundedShape(Theme.cornerCard)).background(Theme.groupsArea).pressRow(perform)
             .padding(start = 12.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { ServerKindMark(kind, 34.dp) }

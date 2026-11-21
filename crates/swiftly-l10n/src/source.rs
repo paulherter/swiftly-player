@@ -3,7 +3,7 @@
 
 use crate::catalog::Origin;
 use crate::plural::PluralCategory;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 /// Path of the app catalogue below the repository root.
@@ -12,6 +12,8 @@ pub const APP_XCSTRINGS: &str = "Sources/Shared/Localizable.xcstrings";
 pub const INFO_XCSTRINGS: &str = "Sources/Shared/InfoPlist.xcstrings";
 /// Directory holding the package `.lproj` folders.
 pub const PACKAGE_RESOURCES: &str = "Packages/JellyfinKit/Sources/JellyfinKit/Resources";
+/// The list of the direct-distribution-only texts (see the file).
+pub const DIRECT_ONLY: &str = "crates/swiftly-l10n/direct-only.txt";
 /// The package languages.
 pub const PACKAGE_LANGS: [&str; 3] = ["de", "en", "ru"];
 
@@ -64,6 +66,8 @@ pub struct Parsed {
     pub merged: BTreeMap<String, RawEntry>,
     /// Same key and language in two sources with different text.
     pub conflicts: Vec<String>,
+    /// The keys of `direct-only.txt`: emitted behind the `supporter-key` feature.
+    pub direct_only: BTreeSet<String>,
 }
 
 /// Number of keys that have a value in `lang` in a source table.
@@ -429,5 +433,52 @@ pub fn load(root: &Path) -> Result<Parsed, String> {
         }
     }
     merge(&mut parsed);
+    parsed.direct_only = direct_only(&parsed, &read(root, DIRECT_ONLY)?)?;
     Ok(parsed)
+}
+
+/// Reads `direct-only.txt` and checks it against the merged catalogue: every listed key exists, and no text that
+/// contains one of the `[words]` is missing from the list.
+pub fn direct_only(parsed: &Parsed, file: &str) -> Result<BTreeSet<String>, String> {
+    let (mut words, mut keys, mut section) = (Vec::new(), BTreeSet::new(), "");
+    for line in file
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+    {
+        match line.trim() {
+            "[words]" => section = "words",
+            "[keys]" => section = "keys",
+            _ if section == "words" => words.push(line.trim().to_lowercase()),
+            _ if section == "keys" => {
+                keys.insert(line.to_owned());
+            }
+            _ => {
+                return Err(format!(
+                    "{DIRECT_ONLY}: text before the first section: {line:?}"
+                ));
+            }
+        }
+    }
+    let mut problems = Vec::new();
+    for key in &keys {
+        if !parsed.merged.contains_key(key) {
+            problems.push(format!("listed but not in the catalogue: {key:?}"));
+        }
+    }
+    for (key, entry) in &parsed.merged {
+        let texts = entry.langs.values().map(|t| t.other().to_lowercase());
+        let hit = std::iter::once(key.to_lowercase())
+            .chain(texts)
+            .any(|t| words.iter().any(|w| t.contains(w.as_str())));
+        if hit && !keys.contains(key) {
+            problems.push(format!(
+                "talks about the supporter key or the website but is not listed: {key:?}"
+            ));
+        }
+    }
+    if problems.is_empty() {
+        Ok(keys)
+    } else {
+        Err(format!("{DIRECT_ONLY}:\n  {}", problems.join("\n  ")))
+    }
 }

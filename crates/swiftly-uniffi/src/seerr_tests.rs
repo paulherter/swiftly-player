@@ -2,7 +2,7 @@
 //! (`xtask/src/fixture_seerr.rs`): Küstenwache (tv 7777, tmdb) with Staffel 2 in the library, 3
 //! downloading, 4 waiting, 5 free; films with every state; a stateful request / quota / delete.
 
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use swiftly_vm::{
@@ -448,7 +448,10 @@ async fn search_discover_and_my_requests() {
     world.offline.store(true, Ordering::SeqCst);
     let off = lists.search("__off".into()).await.unwrap();
     assert_eq!(off.load, ListLoad::Offline);
-    assert_eq!(off.error.as_deref(), Some("Seerr antwortet gerade nicht."));
+    assert_eq!(
+        off.error.as_deref(),
+        Some("Seerr antwortet gerade nicht. Deine Bibliothek l\u{e4}uft normal.")
+    );
     world.offline.store(false, Ordering::SeqCst);
     assert_eq!(
         lists.search("nord".into()).await.unwrap().load,
@@ -504,6 +507,11 @@ impl SeerrLibrary for Library {
             .find(|(a, t)| *a == art && *t == tmdb)
             .map(|(_, t)| format!("lib{t}")))
     }
+    async fn cover(&self, id: String) -> Result<Option<String>, LibraryFailure> {
+        Ok(Some(format!(
+            "https://library.test/Items/{id}/Images/Primary"
+        )))
+    }
     async fn refresh(&self) -> Result<(), LibraryFailure> {
         if self.refresh_fails.load(Ordering::SeqCst) {
             return Err(LibraryFailure::Other {
@@ -532,6 +540,11 @@ async fn the_home_block_finds_an_arrival_and_remembers_the_x() {
         (53, "lib2008")
     );
     assert_eq!(arrival.line, "Film 2008 ist da");
+    // The banner shows the library item's own cover, not only the TMDB poster.
+    assert_eq!(
+        arrival.poster.as_deref(),
+        Some("https://library.test/Items/lib2008/Images/Primary")
+    );
     // The "Angefragt" rail: downloading first, then waiting.
     let words: Vec<&str> = home
         .rail
@@ -594,7 +607,18 @@ async fn admin_queue_actions_and_delete_flow_resumes_at_the_failed_step() {
         .unwrap()
         .expect("prepared");
     assert_eq!(prep.phase, DeletePhase::Confirm);
+    // The core's rule: Done (and only Done, once) tells the host side to mark the lists stale so Home reloads.
+    let told = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&told);
+    admin.set_on_deleted(Arc::new(move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+    }));
     let failed = admin.delete_run(vec![false]).await.unwrap();
+    assert_eq!(
+        told.load(Ordering::SeqCst),
+        0,
+        "a failed step does not tell"
+    );
     assert_eq!(failed.phase, DeletePhase::Failed);
     assert_eq!(failed.headline.as_deref(), Some("Ein Schritt hängt"));
     assert_eq!(failed.error.as_deref(), Some("Jellyfin antwortet nicht."));
@@ -611,6 +635,7 @@ async fn admin_queue_actions_and_delete_flow_resumes_at_the_failed_step() {
     library.refresh_fails.store(false, Ordering::SeqCst);
     let done = admin.delete_retry().await.unwrap();
     assert_eq!(done.phase, DeletePhase::Done);
+    assert_eq!(told.load(Ordering::SeqCst), 1, "Done tells once");
     assert_eq!(
         world.calls("DELETE media/9/file"),
         1,

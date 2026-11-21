@@ -25,6 +25,11 @@ pub const MIN_SIZE_SMALL: (f64, f64) = (360.0, 360.0);
 /// is set to (a light title bar over a dark window looks broken).
 pub const THEME: Theme = Theme::Dark;
 
+/// The colour a window shows where the app has drawn nothing (0xRRGGBB): the page ground, `surface.base`. It is taken
+/// from the generated token, never typed in, so it cannot stay behind when the ground changes (the Windows window
+/// showed the old `#101010` for half a second before the first frame while the ground was already `#0A0A0B`).
+pub const GROUND_RGB: u32 = swiftly_design::tokens_generated::color::SURFACE_BASE.rgba8 >> 8;
+
 /// What the app knows that decides a key.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Ctx {
@@ -43,7 +48,7 @@ pub enum Action {
     Tab(usize),
     /// Open the settings page.
     Settings,
-    /// A menu-bar command (Ctrl+4 "cmd.watchlist", Ctrl+5, Ctrl+[ and ], Ctrl+Shift+P, Ctrl+0).
+    /// A menu-bar command (Ctrl+4 "cmd.watchlist", Ctrl+5, Ctrl+[ and ], Ctrl+Shift+P).
     Command(&'static str),
     /// Enter or leave borderless fullscreen.
     ToggleFullscreen,
@@ -128,8 +133,11 @@ pub fn resolve(key: &Key, mods: ModifiersState, repeat: bool, ctx: Ctx) -> Optio
                 "5" => Some(Action::Command("cmd.downloads")),
                 "[" => Some(Action::Command("cmd.back")),
                 "]" => Some(Action::Command("cmd.forward")),
-                "0" => Some(Action::Command("cmd.window")),
                 "p" if mods.shift_key() => Some(Action::Command("cmd.profile")),
+                // The shortcuts of the tile menu rows; they act only while such a menu is open.
+                "d" if !mods.shift_key() => Some(Action::Command("tile.remember")),
+                "g" if mods.shift_key() => Some(Action::Command("tile.watched")),
+                "i" if !mods.shift_key() => Some(Action::Command("tile.info")),
                 _ => None,
             };
         }
@@ -339,6 +347,64 @@ pub fn apply(action: Action, window: &Window, shell: &mut Shell, now: f64) -> bo
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// The window's empty colour is the page ground of `design/tokens.json`, read from the source file itself (not from
+    /// the generated copy), and the window code never types a colour in: the old `#101010` stayed in `app.rs` as a literal
+    /// when the ground changed to `#0A0A0B`.
+    #[test]
+    fn the_window_ground_is_the_surface_base_token_everywhere() {
+        let json = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../design/tokens.json"
+        ))
+        .expect("design/tokens.json");
+        let at = json.find("\"surface.base\"").expect("surface.base token");
+        let rest = &json[at..];
+        let dark = rest.find("\"dark\": \"#").expect("dark value") + "\"dark\": \"#".len();
+        let hex = u32::from_str_radix(&rest[dark..dark + 6], 16).expect("hex value");
+        assert_eq!(
+            GROUND_RGB, hex,
+            "GROUND_RGB must be surface.base of tokens.json"
+        );
+        let app = include_str!("app.rs");
+        let calls: Vec<&str> = app
+            .lines()
+            .filter(|l| l.contains("win_backdrop::set("))
+            .collect();
+        assert!(!calls.is_empty(), "the Windows window sets its ground");
+        for l in calls {
+            assert!(l.contains("GROUND_RGB"), "a hard-coded window colour: {l}");
+        }
+    }
+
+    #[test]
+    fn the_tile_menu_shortcuts_are_the_macs_with_ctrl() {
+        let ctx = Ctx {
+            fullscreen: false,
+            player_open: false,
+            text_focus: false,
+        };
+        let d = Key::Character("d".into());
+        let g = Key::Character("g".into());
+        let i = Key::Character("i".into());
+        let ctrl = ModifiersState::CONTROL;
+        let both = ModifiersState::CONTROL | ModifiersState::SHIFT;
+        let command = |a: Option<Action>| match a {
+            Some(Action::Command(c)) => Some(c),
+            _ => None,
+        };
+        assert_eq!(
+            command(resolve(&d, ctrl, false, ctx)),
+            Some("tile.remember")
+        );
+        assert_eq!(command(resolve(&g, both, false, ctx)), Some("tile.watched"));
+        assert_eq!(command(resolve(&i, ctrl, false, ctx)), Some("tile.info"));
+        // Without the modifier the letters stay plain keys.
+        assert_eq!(resolve(&d, ModifiersState::empty(), false, ctx), None);
+        assert_eq!(resolve(&g, ctrl, false, ctx), None);
+    }
+
     #[test]
     fn a_scripted_press_never_starts_a_system_drag() {
         assert!(!super::system_drag_allowed(true));
@@ -390,8 +456,6 @@ mod tests {
         assert_eq!(window_corner_px(1.5, true, false), 0.0);
         assert_eq!(window_corner_px(1.5, false, true), 0.0);
     }
-
-    use super::*;
 
     /// The Breeze fit is 9 px at scale 1, 12 at 1.5, 15 at 2 (a Breeze window leaves 8.6, 11.5, 14.0 px uncovered). Windows 11 rounds the window itself
     /// (DWM, 8 px at 100 %), so the renderer cuts nothing there; macOS never reaches this code.
@@ -552,6 +616,129 @@ mod tests {
             resolve(&ch("f"), ctrl(), false, PLAYER),
             None,
             "no tab changes behind the player"
+        );
+    }
+
+    /// The Mac's menu bar has no counterpart on Windows and Linux, so every item of it must be a key here. The table is
+    /// the Mac's "Gehe zu" menu (`SwiftlyApp.swift`, Cmd for Ctrl), item by item.
+    #[test]
+    fn every_go_to_item_of_the_mac_menu_has_its_ctrl_key() {
+        let shift = ctrl() | ModifiersState::SHIFT;
+        let table: [(&str, Key, ModifiersState, Action); 10] = [
+            ("Start", ch("1"), ctrl(), Action::Tab(0)),
+            ("Filme", ch("2"), ctrl(), Action::Tab(1)),
+            ("Serien", ch("3"), ctrl(), Action::Tab(2)),
+            ("Suche", ch("f"), ctrl(), Action::Tab(3)),
+            (
+                "Merkliste",
+                ch("4"),
+                ctrl(),
+                Action::Command("cmd.watchlist"),
+            ),
+            (
+                "Downloads",
+                ch("5"),
+                ctrl(),
+                Action::Command("cmd.downloads"),
+            ),
+            ("Zurück", ch("["), ctrl(), Action::Command("cmd.back")),
+            ("Vorwärts", ch("]"), ctrl(), Action::Command("cmd.forward")),
+            (
+                "Profil wechseln",
+                ch("P"),
+                shift,
+                Action::Command("cmd.profile"),
+            ),
+            ("Einstellungen", ch(","), ctrl(), Action::Settings),
+        ];
+        for (item, key, mods, want) in table {
+            assert_eq!(resolve(&key, mods, false, APP), Some(want), "{item}");
+        }
+        // Behind the open player the sections stay where they are, as on the Mac.
+        assert_eq!(resolve(&ch("4"), ctrl(), false, PLAYER), None);
+        // Cmd-0 only brings back a closed window on the Mac; here closing the window quits, so there is nothing to bring back.
+        assert_eq!(resolve(&ch("0"), ctrl(), false, APP), None);
+    }
+
+    /// The Mac's "Wiedergabe" menu, item by item: the Mac binds Space, the arrows, T, Up/Down and M as plain keys while
+    /// the player is open (the menu only lists them), and Ctrl-Cmd-F for fullscreen; here F, F11 and Alt+Enter.
+    #[test]
+    fn every_playback_item_of_the_mac_menu_has_its_key() {
+        let none = ModifiersState::empty();
+        let named = |n| Key::Named(n);
+        let table = [
+            ("Abspielen/Pause", named(NamedKey::Space), PlayerKey::Space),
+            (
+                "zurück (own skip length)",
+                named(NamedKey::ArrowLeft),
+                PlayerKey::Left,
+            ),
+            (
+                "vor (own skip length)",
+                named(NamedKey::ArrowRight),
+                PlayerKey::Right,
+            ),
+            ("Ton und Untertitel", ch("t"), PlayerKey::Char('t')),
+            ("Vollbild", ch("f"), PlayerKey::Char('f')),
+            ("Lauter", named(NamedKey::ArrowUp), PlayerKey::Up),
+            ("Leiser", named(NamedKey::ArrowDown), PlayerKey::Down),
+            ("Ton aus", ch("m"), PlayerKey::Char('m')),
+        ];
+        for (item, key, want) in table {
+            assert_eq!(
+                resolve(&key, none, false, PLAYER),
+                Some(Action::Player(want)),
+                "{item}"
+            );
+            assert_eq!(
+                resolve(&key, none, false, APP),
+                None,
+                "{item}: plain keys belong to the page without a player"
+            );
+            assert_eq!(
+                resolve(
+                    &key,
+                    none,
+                    false,
+                    Ctx {
+                        text_focus: true,
+                        ..PLAYER
+                    }
+                ),
+                None,
+                "{item}: typing wins"
+            );
+        }
+        // Holding an arrow keeps changing the volume (and skipping), as on the Mac.
+        for (key, want) in [
+            (NamedKey::ArrowUp, PlayerKey::Up),
+            (NamedKey::ArrowDown, PlayerKey::Down),
+        ] {
+            assert_eq!(
+                resolve(&Key::Named(key), none, true, PLAYER),
+                Some(Action::Player(want))
+            );
+        }
+        // A held M does not flicker the mute.
+        assert_eq!(resolve(&ch("m"), none, true, PLAYER), None);
+        // Fullscreen outside the player's own key.
+        assert_eq!(
+            resolve(&Key::Named(NamedKey::F11), none, false, PLAYER),
+            Some(Action::ToggleFullscreen)
+        );
+        assert_eq!(
+            resolve(
+                &Key::Named(NamedKey::Enter),
+                ModifiersState::ALT,
+                false,
+                PLAYER
+            ),
+            Some(Action::ToggleFullscreen)
+        );
+        // A modifier turns a key into something else (Ctrl+Up is no volume step).
+        assert_eq!(
+            resolve(&Key::Named(NamedKey::ArrowUp), ctrl(), false, PLAYER),
+            None
         );
     }
 

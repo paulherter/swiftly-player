@@ -96,7 +96,7 @@ final class UnsupportedLink: WebSocketLink {
     @Test @MainActor func aPersonPageStartsWithTheCastEntry() async throws {
         let server = try await FixtureServer.start()
         defer { server.stop() }
-        let info = PersonInfo(id: "p1", name: "Anna Muster", role: "Hauptrolle", kind: "Actor", imageTag: nil)
+        let info = PersonInfo(id: "p1", name: "Anna Muster", role: "Hauptrolle", kind: "Actor", imageTag: nil, tmdb: nil, imageUrl: nil)
         let model = try makeCore().personModel(account: account(server), locale: "de", person: info, origin: nil)
         let controller = PersonController(model: model)
         #expect(controller.page.name == "Anna Muster")

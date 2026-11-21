@@ -3,7 +3,8 @@
 
 use crate::art;
 use std::rc::Rc;
-use swiftly_design::tokens::{colour, tv};
+use swiftly_design::tokens::tv;
+use swiftly_design::tokens_generated::color;
 use swiftly_layout::{Align, Alignment, EdgeInsets, FlexFrame};
 use swiftly_ui::components::{ButtonStyle, color, focus_id, themed_button, tile_card, tv_rail};
 use swiftly_ui::{Action, Cx, Env, FocusId, Node, ScopeSpec, Ui};
@@ -75,7 +76,10 @@ pub fn ui(env: Env, cx: Cx) -> Ui<()> {
                 align: Some(Alignment::TOP_LEADING),
                 ..FlexFrame::default()
             })
-            .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+            .background(
+                Node::rect(color(color::SURFACE_BASE), 0.0),
+                Alignment::CENTER,
+            )
     };
     Ui::new(view, (), env, cx)
 }

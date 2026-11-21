@@ -2,7 +2,7 @@
 //! pointer is near the right edge, fades out a second after the last movement, and its thumb can be dragged with the
 //! mouse, a touchpad or a finger. A click in the track pages. Colours come from the design tokens.
 
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::color;
 use swiftly_layout::Rect;
 use swiftly_motion::ScrollMetrics;
 use swiftly_render::{Color, DrawList};
@@ -120,12 +120,12 @@ pub(crate) fn paint(
     let rr = |r: Rect| swiftly_render::Rect::new(r.x, r.y, r.w, r.h);
     list.push_opacity(bar.alpha);
     if hot {
-        list.fill(rr(t), opaque(colour::HOVER_AREA), w / 2.0);
+        list.fill(rr(t), opaque(color::SURFACE_HOVER), w / 2.0);
     }
     let c = if hot {
-        colour::FONT_VERY_QUIET
+        color::TEXT_TERTIARY
     } else {
-        colour::RING_TRACK
+        color::RING_TRACK
     };
     list.fill(rr(th), opaque(c), w / 2.0);
     list.pop_opacity();

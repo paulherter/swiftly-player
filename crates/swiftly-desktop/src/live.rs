@@ -158,9 +158,13 @@ impl Core {
     pub fn open_with(mock: Option<swiftly_net::MockTransport>) -> Result<Core, String> {
         let dir = config_dir();
         let _ = std::fs::create_dir_all(&dir);
-        let settings = Arc::new(
-            JsonFileStore::open(dir.join("settings.json")).map_err(|e| format!("settings: {e}"))?,
-        );
+        // A damaged settings file is set aside and the app starts with defaults (accounts live in the secret store).
+        let (settings, recovered) = JsonFileStore::open_or_recover(dir.join("settings.json"))
+            .map_err(|e| format!("settings: {e}"))?;
+        if let Some(r) = recovered {
+            crate::crash::note_error("settings recovered", &r.line());
+        }
+        let settings = Arc::new(settings);
         // The core's own switches (empty series, delete lock) count from the first list on, not from the settings page.
         swiftly_vm::apply_stored_settings(&swiftly_settings::Settings::new(
             crate::settings_screen::Mem::shared(

@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# The texts of the direct distribution (supporter key, website link; `direct-only.txt`). The Play core is built without
+# it and does not contain them; direct builds, the desktop apps and the tests turn it on.
+supporter-key = []
+
 [dependencies]
 swiftly-net = { path = "../swiftly-net", default-features = false }
 # Swift's `Character` is a grapheme cluster: version/build digits are read per cluster.

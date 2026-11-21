@@ -7,7 +7,6 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -27,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.SwiftlyApplication
 import de.paulherter.swiftly.shared.*
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -119,8 +119,10 @@ private fun TvLicenseList(inventory: LicenseState?, app: SwiftlyApplication, las
         // URLs to type in: a TV usually has no browser.
         Spacer(Modifier.height(10.dp))
         licenseSources(inventory).forEach { Text(it, style = TvTheme.tile, color = Theme.fontQuiet) }
+        Spacer(Modifier.height(10.dp))
+        Text(licenseEarlierLine(), style = TvTheme.tile, color = Theme.fontQuiet)
         Spacer(Modifier.height(18.dp))
-        Column(Modifier.clip(RoundedCornerShape(TvTheme.cornerTile)).background(Theme.area).padding(5.dp)) {
+        Column(Modifier.clip(smoothRoundedShape(TvTheme.cornerTile)).background(Theme.area).padding(5.dp)) {
             LicenseRow(translated("Quelltext und schriftliches Angebot"), null, Modifier.focusRequester(focus("angebot"))) {
                 select("angebot", LicensePage.Offering)
             }
@@ -136,7 +138,7 @@ private fun TvLicenseList(inventory: LicenseState?, app: SwiftlyApplication, las
 @Composable
 private fun LicenseRow(title: String, under: String?, modifier: Modifier, perform: () -> Unit) {
     FocusArea(modifier.fillMaxWidth(), magnifier = 1f, perform = perform) { focus ->
-        Row(Modifier.fillMaxWidth().heightIn(min = TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
+        Row(Modifier.fillMaxWidth().heightIn(min = TvTheme.rowsHeight).clip(smoothRoundedShape(TvTheme.corner))
                 .background(if (focus) TvTheme.focusArea else androidx.compose.ui.graphics.Color.Transparent)
                 .padding(horizontal = 13.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -165,8 +167,8 @@ private fun TvReadArea(title: String, content: @Composable ColumnScope.() -> Uni
         Text(title, style = TvTheme.titleLarge, color = Theme.font, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(16.dp))
         Box(Modifier.weight(1f).fillMaxWidth().onSizeChanged { height = it.height }
-                .clip(RoundedCornerShape(TvTheme.cornerTile))
-                .border(2.dp, if (has) Theme.accent else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(TvTheme.cornerTile))
+                .clip(smoothRoundedShape(TvTheme.cornerTile))
+                .border(2.dp, if (has) Theme.accent else androidx.compose.ui.graphics.Color.Transparent, smoothRoundedShape(TvTheme.cornerTile))
                 .focusRequester(focus).onFocusChanged { has = it.isFocused }
                 .onPreviewKeyEvent { e ->
                     val down = e.key == Key.DirectionDown || e.key == Key.PageDown

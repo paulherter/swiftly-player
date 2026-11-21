@@ -259,7 +259,7 @@ fn all_movies() -> Vec<(usize, String)> {
     (0..MOVIES).map(|n| (n, movie(n))).collect()
 }
 
-fn decode(v: &str) -> String {
+pub(crate) fn decode(v: &str) -> String {
     let mut out = Vec::new();
     let b = v.as_bytes();
     let mut i = 0;

@@ -17,7 +17,7 @@ import de.paulherter.swiftly.shared.*
 /**
  * Profile -> Open-source licenses (phone). Mirrors iPhone `LicensesView`.
  *
- * Top: the libVLC notice and the source links. Below: the components bundled in the Android
+ * Top: the player notice and the source links. Below: the components bundled in the Android
  * app, each tappable for the full text. Data comes from `LICENSES/` (`LicenseState`).
  */
 @Composable
@@ -43,6 +43,8 @@ fun LicensesPage(open: (Destination) -> Unit, back: () -> Unit, app: SwiftlyAppl
                 open(Destination("angebot", translated("Quelltext und schriftliches Angebot"), "Lizenzangebot"))
             }
         }
+        Text(licenseEarlierLine(), style = Theme.body, color = Theme.fontQuiet,
+             modifier = Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 10.dp))
         Spacer(Modifier.height(22.dp))
         for ((title, list) in listOf(translated("Player") to inventory.group("player"), translated("Weitere Bausteine") to inventory.group("app"))) {
             if (list.isEmpty()) continue
@@ -128,7 +130,7 @@ fun LicenseOfferingPage(back: () -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     Text(s.title, style = Theme.rail, color = Theme.fontQuiet)
                     SelectionContainer {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { // token-lint: allow licence page spacing as before, tokenised in the design wave
                             s.paragraphs.forEach { Text(it, style = Theme.body, color = Theme.font) }
                         }
                     }

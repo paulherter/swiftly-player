@@ -12,12 +12,15 @@
 //!   answer of a Seerr in the other mode); `?jellyfin=on` etc. switches it back on; reset turns all on.
 //! * `POST /__seerr/reset` rebuilds the world; `GET /__seerr/log` lists every call made (for checks);
 //!   `POST /__seerr/fail?step=jellyfin[&times=N]` makes the next Jellyfin refresh fail (500);
+//!   `POST /__seerr/title-down` makes every title page answer 503 until `POST /__seerr/title-up` (the retry state);
 //!   `POST /__seerr/online` ends the 503 answer of the search term `__off` and of `/__seerr/offline`;
 //!   `POST /__seerr/offline` makes every search answer 503 (library results next to the offline line);
 //!   `POST /__seerr/arrive[?id=N]` adds an approved request of the signed-in account for film 1001, which the library
 //!   already has (the Home banner "<Titel> ist da").
 //! * Delete: `DELETE media/{id}/file` marks the version gone; `POST /Library/Refresh` (the Jellyfin side)
-//!   then hides it from the `--real-shapes` library when `SWIFTLY_FIXTURE_SEERR_DELETE_JELLYFIN=1`.
+//!   then hides it from the `--real-shapes` library. The running fixture server does this by itself
+//!   ([`follow_deletes`], called by `fixture-server`); the unit tests keep the library whole unless
+//!   `SWIFTLY_FIXTURE_SEERR_DELETE_JELLYFIN=1` is set.
 //! * The old routes of the Android comparisons (Tmdb 603, 1399, 77, 88, person 7) keep their answers; a
 //!   search term that matches nothing of the new world still gets the old list (except `zzzz`).
 
@@ -202,6 +205,8 @@ struct World {
     search_offline: bool,
     /// Every search answers 503 (`POST /__seerr/offline`), whatever the term.
     search_down: bool,
+    /// The title pages answer 503 (`POST /__seerr/title-down`, ended by `title-up` or a reset).
+    title_down: bool,
     log: Vec<String>,
 }
 
@@ -217,8 +222,17 @@ const KUESTENWACHE_SEASONS: &[(i64, &str)] = &[
 const NORDSEE_SEASONS: &[(i64, &str)] = &[(1, "2025-03-01"), (2, "2026-03-01")];
 /// A series nobody asked for yet: every season can be requested.
 const NORDMEER_SEASONS: &[(i64, &str)] = &[(1, "2024-02-02"), (2, "2025-02-02"), (3, "2026-02-02")];
-/// "Sweet P": season 2 airs in the future (a request for it must say when, not "searching").
-const SWEET_P_SEASONS: &[(i64, &str)] = &[(1, "2024-05-01"), (2, "2026-11-26")];
+/// "Sweet P": season 2 airs in the future (a request for it must say when, not "searching"). A week from the day
+/// the fixture runs, so the case never goes stale; the date is taken once per process.
+fn sweet_p_seasons() -> &'static [(i64, &'static str)] {
+    static SEASONS: std::sync::OnceLock<[(i64, &'static str); 2]> = std::sync::OnceLock::new();
+    SEASONS.get_or_init(|| {
+        [
+            (1, "2024-05-01"),
+            (2, Box::leak(day_from_today(7).into_boxed_str())),
+        ]
+    })
+}
 /// "TV Total": season 22 runs, everything aired is in the library, one more episode is still to come.
 const TV_TOTAL_SEASONS: &[(i64, &str)] = &[(21, "2025-09-01"), (22, "2026-09-01")];
 
@@ -302,7 +316,7 @@ fn catalogue() -> Vec<Def> {
             art: "tv",
             name: "Sweet P".into(),
             date: "2024-05-01",
-            seasons: SWEET_P_SEASONS,
+            seasons: sweet_p_seasons(),
         });
         defs.push(Def {
             tmdb: 3004,
@@ -450,6 +464,7 @@ impl World {
             sign_in_on: [true; 3],
             search_offline: true,
             search_down: false,
+            title_down: false,
             log: Vec::new(),
         }
     }
@@ -471,9 +486,10 @@ fn with_world<R>(f: impl FnOnce(&mut World) -> R) -> R {
 }
 
 /// True when the Jellyfin library no longer shows this version (after a delete and a refresh);
-/// only with `SWIFTLY_FIXTURE_SEERR_DELETE_JELLYFIN=1`.
+/// only in the running server (see `follow_deletes`) or with `SWIFTLY_FIXTURE_SEERR_DELETE_JELLYFIN=1`.
 pub fn library_hidden(tmdb: i64, is4k: bool) -> bool {
-    std::env::var_os("SWIFTLY_FIXTURE_SEERR_DELETE_JELLYFIN").is_some()
+    (FOLLOW_DELETES.load(std::sync::atomic::Ordering::Relaxed)
+        || std::env::var_os("SWIFTLY_FIXTURE_SEERR_DELETE_JELLYFIN").is_some())
         && with_world(|w| w.library_gone.contains(&(tmdb, is4k)))
 }
 
@@ -907,6 +923,14 @@ fn control(w: &mut World, method: &str, rest: &str, query: &str) -> Out {
             w.search_down = true;
             ok(r#"{"ok":true}"#.into())
         }
+        (_, "title-down") => {
+            w.title_down = true;
+            ok(r#"{"ok":true}"#.into())
+        }
+        (_, "title-up") => {
+            w.title_down = false;
+            ok(r#"{"ok":true}"#.into())
+        }
         (_, "online") => {
             w.search_offline = false;
             w.search_down = false;
@@ -1112,6 +1136,9 @@ fn title(w: &World, art: &str, id: i64, tail: &[&str]) -> Out {
             ),
         );
     };
+    if w.title_down && tail.is_empty() {
+        return message(503, "Seerr antwortet gerade nicht");
+    }
     match tail {
         [] => ok(detail(w, &d)),
         ["season", n] => {
@@ -1546,6 +1573,14 @@ fn delete_media(w: &mut World, mid: i64) -> Out {
         w.requests.retain(|r| r.tmdb != tmdb);
     }
     Some((204, String::new()))
+}
+
+/// Set by the fixture server: a deleted version leaves the library after the next refresh.
+static FOLLOW_DELETES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Makes the library follow deletes (only the real server run calls this; tests stay byte-stable).
+pub fn follow_deletes() {
+    FOLLOW_DELETES.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// The Seerr (and Jellyfin refresh) answer for one call, or `None` for a path it does not know.
@@ -2073,6 +2108,12 @@ mod tests {
     fn season_requests_are_added_only_on_demand() {
         assert_eq!(day_from_today(0).len(), 10);
         assert!(day_from_today(7) > day_from_today(0));
+        let sweet = sweet_p_seasons();
+        assert_eq!(sweet[1].0, 2);
+        assert!(
+            sweet[1].1 > day_from_today(0).as_str(),
+            "season 2 of Sweet P airs after today"
+        );
         let w = fresh(Role::User);
         assert_eq!(w.requests.len(), 7, "off by default");
     }

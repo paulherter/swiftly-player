@@ -258,9 +258,21 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     /// **Lifted here from `Sources/Shared/TitleDetails.swift`.** There it was
     /// unreachable for Linux, although nothing about it depends on UI or
     /// translation.
+    ///
+    /// The server's own percentage when it sends one; a server that sends only
+    /// the resume position (and the item its runtime) still gets the bar from
+    /// the two, like the shared core (`Item::watched_share`).
     public var watchedShare: Double? {
-        guard let percent = userData?.playedPercentage, percent > 0 else { return nil }
-        return percent / 100
+        guard let data = userData else { return nil }
+        let percent: Double
+        if let sent = data.playedPercentage {
+            percent = sent
+        } else if let position = data.playbackPositionTicks, let total = runTimeTicks, total > 0 {
+            percent = min(Double(position) / Double(total) * 100, 100)
+        } else {
+            return nil
+        }
+        return percent > 0 ? percent / 100 : nil
     }
 
     public var isWatched: Bool { userData?.played ?? false }

@@ -15,6 +15,14 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import de.paulherter.swiftly.rustcore.SeerrDiscoverRails
+import de.paulherter.swiftly.shared.smoothRoundedShape
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,11 +34,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -141,6 +150,20 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val disrupted = st.disrupted && !de.paulherter.swiftly.AccountSwitchTransition.waits
     val screen = KernRules.searchScreen(st.term, history.size.toLong(), !empty, answered, disrupted, waited)
 
+    // The empty page's Seerr rails (tvOS `discoverRails`): the last visit's rails at once, then the live read; without Seerr nothing is loaded or drawn.
+    val seerrOn = app.seerrConnected.value
+    LaunchedEffect(seerrOn) {
+        if (seerrOn && st.discover == null) {
+            val stale = try { withContext(Dispatchers.IO) { app.seerr.lists().restoreDiscover() } }
+                        catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+            if (stale != null && st.discover == null) st.discover = stale
+        }
+        val live = if (!seerrOn) null else try { withContext(Dispatchers.IO) { app.seerr.lists().loadDiscover() } }
+                   catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+        if (live != null || !seerrOn) st.discover = live
+    }
+    val railsShown = seerrOn && st.discover?.rails?.any { it.tiles.isNotEmpty() } == true
+
     val splitSeries = st.hit.filter { it.type == "Series" }
     val splitFilms = st.hit.filter { it.type == "Movie" }
     val titles = KernRules.searchTitlesShown(splitSeries.size.toLong(), splitFilms.size.toLong(), st.seerr.size.toLong())
@@ -149,6 +172,7 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
         "hits" -> (focus.lastHit?.takeIf { it in hitIds } ?: hitIds.firstOrNull())?.let { focus.hit(it) }
             ?: st.seerr.firstOrNull()?.let { focus.hit("seerr-" + it.key) }
         "history", "nothing" -> focus.recent
+        "start" -> if (railsShown) focus.rails else null
         else -> null
     }
 
@@ -195,6 +219,10 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
     }
     LaunchedEffect(inResults) { if (!inResults && scroll.value > 0) scroll.animateScrollTo(0, Motion.change()) }
 
+    // The soft shade under the tabs (drawn by `TvMain`) shows once the hits have moved under them.
+    LaunchedEffect(scroll) { snapshotFlow { scroll.value > 40 }.collect { TvLibraryScroll.scrolled = it } }
+    DisposableEffect(Unit) { onDispose { TvLibraryScroll.scrolled = false } }
+
     val reserve = with(density) { (headerBottom + 14.dp + TvTheme.titleSpacing + 23.dp).toPx() }
     val spec = remember(reserve) { SearchBringIntoView(reserve, with(density) { 40.dp.toPx() }) }
 
@@ -237,13 +265,16 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
                         when (which) {
                             "blank" -> Box(Modifier.height(1.dp))
                             "loading" -> Loading()
-                            "history" -> Recent(history, focus, onPick = { w ->
-                                historySet(KernRules.searchHistoryRemember(w, historyRaw))
-                                immediate[0] = true
-                                st.term = w
-                                focus.toKeys()
-                            }, onClear = { historySet(""); focus.toKeys() })
-                            "start" -> Note()
+                            "history" -> Column(verticalArrangement = Arrangement.spacedBy(TvTheme.railsSpacing)) {
+                                Recent(history, focus, onPick = { w ->
+                                    historySet(KernRules.searchHistoryRemember(w, historyRaw))
+                                    immediate[0] = true
+                                    st.term = w
+                                    focus.toKeys()
+                                }, onClear = { historySet(""); focus.toKeys() })
+                                if (railsShown) DiscoverRails(st.discover, focus, open, firstFocus = false)
+                            }
+                            "start" -> if (railsShown) DiscoverRails(st.discover, focus, open, firstFocus = true) else Note()
                             "hits" -> Hits(st, splitSeries, splitFilms, titles, focus, open)
                             "nothing" -> Column(verticalArrangement = Arrangement.spacedBy(TvSpec.searchGroupGap)) {
                                 // The way out is the keyboard next to it and the history below. The earlier
@@ -307,7 +338,7 @@ private fun Recent(history: List<String>, focus: SearchFocus, onPick: (String) -
     // 40 pt symbol in a 52 pt column, white focus surface over the group), the card is `groupsArea`.
     Column(Modifier.width(SearchLayout.historyWidth)) {
         Text(translated("Zuletzt gesucht"), style = TvTheme.rail, color = Theme.font, modifier = Modifier.padding(bottom = 12.dp))
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.groupsArea).padding(horizontal = 13.dp)) {
+        Column(Modifier.fillMaxWidth().clip(smoothRoundedShape(TvTheme.cornerArea)).background(TvTheme.groupsArea).padding(horizontal = 13.dp)) {
             history.forEachIndexed { i, w ->
                 HistoryRow(w, Glyph.History, if (i == 0) Modifier.focusRequester(focus.recent) else Modifier) { onPick(w) }
                 SeparatorLine()
@@ -345,6 +376,34 @@ private fun Hits(st: SearchState, series: List<GridTile>, films: List<GridTile>,
                        modifier = Modifier.focusRequester(focus.hit("seerr-" + t.key)),
                        focusChanged = { if (it) focus.lastHit = "seerr-" + t.key }) {
                     run.launch { openSeerrCard(app, t, open) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Seerr's trending / popular / coming-soon rails on the empty search page (tvOS `discoverRails`): the core's order and
+ * titles, one horizontal row per rail. A title the own server already has opens its normal page (`openSeerrCard`).
+ */
+@Composable
+private fun DiscoverRails(rails: SeerrDiscoverRails?, focus: SearchFocus, open: (Destination) -> Unit, firstFocus: Boolean) {
+    val app = LocalContext.current.applicationContext as SwiftlyApplication
+    val run = rememberCoroutineScope()
+    val shown = rails?.rails?.filter { it.tiles.isNotEmpty() }.orEmpty()
+    Column(Modifier.width(SearchLayout.resultsWidth), verticalArrangement = Arrangement.spacedBy(TvTheme.railsSpacing - TvTheme.railsPadding)) {
+        shown.forEachIndexed { r, rail ->
+            Column(verticalArrangement = Arrangement.spacedBy((TvTheme.titleSpacing - TvTheme.railsPadding).coerceAtLeast(0.dp))) {
+                Text(rail.title, style = TvTheme.rail, color = Theme.font)
+                // Room above and below: the focused tile grows beyond its layout size and must not be cut.
+                LazyRow(contentPadding = PaddingValues(vertical = TvTheme.railsPadding), horizontalArrangement = Arrangement.spacedBy(TvTheme.gridColumn)) {
+                    items(rail.tiles.size, key = { rail.tiles[it].key }) { i ->
+                        val t = rail.tiles[i]
+                        TvTile(tmdbImage(t.poster, 342), t.title, t.badge?.word ?: t.year?.toString(), opacity = if (t.onServer) 1f else 0.45f,
+                               modifier = if (firstFocus && r == 0 && i == 0) Modifier.focusRequester(focus.rails) else Modifier) {
+                            run.launch { openSeerrCard(app, t, open) }
+                        }
+                    }
                 }
             }
         }

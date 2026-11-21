@@ -11,6 +11,14 @@ import de.paulherter.swiftly.shared.Texts
 object KernRules {
     private val language get() = Texts.language
 
+    /**
+     * What the core takes from the stored settings: the switches it reads where no store is at hand ("Leere Serien
+     * ausblenden", "Löschen vom Server sperren"). Once at start, before the first list, and after such a switch changed.
+     */
+    fun storedSettingsApply(context: android.content.Context) = applyStoredSettings(
+        de.paulherter.swiftly.rustcore.host.AndroidSettingsStore(
+            de.paulherter.swiftly.rustcore.host.SharedStringPrefs(context.getSharedPreferences("swiftly", android.content.Context.MODE_PRIVATE))))
+
     // Home
     fun startRails(stored: Array<String>, disconnected: Boolean): String = legacyStartRails(stored.toList(), disconnected)
     fun startRailShifted(was: String, step: Long, stored: Array<String>, disconnected: Boolean): String =
@@ -61,6 +69,8 @@ object KernRules {
     fun collectionCountText(art: String, count: Long): String = legacyCollectionCountText(art, count, language)
     /** The order a library page starts on until the viewer chose another one: the core's rule. */
     fun defaultPageSorting(): String = legacyDefaultPageSorting()
+    /** The order a collection page starts on (release year): the core's rule, same for phone and TV. */
+    fun collectionPageSorting(): String = legacyCollectionPageSorting()
 
     // Search
     fun searchTermFits(term: String): Boolean = legacySearchTermFits(term)

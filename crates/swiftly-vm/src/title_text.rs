@@ -50,6 +50,13 @@ impl TitleText {
         }
     }
 
+    /// The runtime as a line, or nothing when it is unknown, zero or under one minute
+    /// (`swiftly_rules::display_rules::runtime_minutes`). Every runtime on a page goes through here.
+    pub(crate) fn runtime_line(&self, seconds: Option<f64>) -> Option<String> {
+        let seconds = seconds?;
+        swiftly_rules::display_rules::runtime_minutes(Some(seconds)).map(|_| self.runtime(seconds))
+    }
+
     /// The text of the resume button (`timeText(_:)`).
     pub(crate) fn time_text(&self, seconds: f64) -> String {
         let total = whole(seconds);
@@ -68,8 +75,8 @@ impl TitleText {
         if let Some(year) = item.production_year {
             parts.push(year.to_string());
         }
-        if let Some(seconds) = item.runtime_seconds().filter(|s| *s > 0.0) {
-            parts.push(self.runtime(seconds));
+        if let Some(line) = self.runtime_line(item.runtime_seconds()) {
+            parts.push(line);
         }
         if let Some(genres) = item.genres.as_ref().filter(|g| !g.is_empty()) {
             parts.push(
@@ -95,11 +102,8 @@ impl TitleText {
     /// The line under the Play button: the remaining time of a started title, else its runtime ("1 Std. 52 Min."),
     /// so the reserved slot is never empty. Nothing only while the runtime is not known yet.
     pub(crate) fn resume_slot(&self, item: &Item) -> Option<String> {
-        self.remaining(item).or_else(|| {
-            item.runtime_seconds()
-                .filter(|s| *s > 0.0)
-                .map(|s| self.runtime(s))
-        })
+        self.remaining(item)
+            .or_else(|| self.runtime_line(item.runtime_seconds()))
     }
 
     /// The label of the main button of a series page (`Item.seriesButton`).
@@ -345,6 +349,45 @@ mod player_head_tests {
         assert_eq!(
             player_head(Locale::parse("de"), &film),
             ("Film".into(), "1999 · 1 Std. 30 Min. · Drama, Krimi".into())
+        );
+    }
+
+    /// Test clips and unfinished metadata deliver a runtime of a few seconds. It is a number,
+    /// but "0 Min." is not information: the line leaves it out, like an unknown one.
+    #[test]
+    fn a_runtime_under_one_minute_is_left_out_of_the_line() {
+        for ticks in ["0", "120000000", "599999999"] {
+            let film = item(&format!(
+                r#"{{"Id":"2","Name":"Film","Type":"Movie","ProductionYear":2017,"RunTimeTicks":{ticks},"Genres":["Drama"]}}"#
+            ));
+            assert_eq!(
+                player_head(Locale::parse("de"), &film),
+                ("Film".into(), "2017 · Drama".into()),
+                "ticks {ticks}"
+            );
+        }
+        let film = item(
+            r#"{"Id":"2","Name":"Film","Type":"Movie","ProductionYear":2017,"RunTimeTicks":600000000,"Genres":["Drama"]}"#,
+        );
+        assert_eq!(
+            player_head(Locale::parse("de"), &film).1,
+            "2017 · 1 Min. · Drama"
+        );
+    }
+
+    #[test]
+    fn the_runtime_line_is_empty_for_unknown_and_sub_minute_values() {
+        let text = TitleText::new(Locale::parse("de"));
+        assert_eq!(text.runtime_line(None), None);
+        assert_eq!(text.runtime_line(Some(0.0)), None);
+        assert_eq!(text.runtime_line(Some(-5.0)), None);
+        assert_eq!(text.runtime_line(Some(f64::NAN)), None);
+        assert_eq!(text.runtime_line(Some(12.0)), None);
+        assert_eq!(text.runtime_line(Some(59.9)), None);
+        assert_eq!(text.runtime_line(Some(60.0)).as_deref(), Some("1 Min."));
+        assert_eq!(
+            text.runtime_line(Some(7680.0)).as_deref(),
+            Some("2 Std. 8 Min.")
         );
     }
 }

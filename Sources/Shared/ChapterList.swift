@@ -69,7 +69,7 @@ struct ChapterRowContent: View {
                 if let image { Image(decorative: image, scale: 1).resizable().scaledToFill() } else { Color.white.opacity(0.08) }
             }
             .frame(width: look.tile.width, height: look.tile.height)
-            .clipShape(RoundedRectangle(cornerRadius: look.tileRadius))
+            .clipShape(RoundedRectangle(cornerRadius: look.tileRadius, style: .continuous))
             VStack(alignment: .leading, spacing: look.textSpacing) {
                 Text(verbatim: row.title(numberTitle: numberTitle))
                     .font(.app(size: look.name, weight: row.current ? .semibold : .regular))

@@ -81,12 +81,12 @@ impl SeerrSection {
     }
 
     /// Whether the section belongs on the Start page of `form` at all (whatever its switch says). Handhelds show both.
-    /// The desktop drops "Meine Anfragen" (far too big there; it stays reachable through the profile entry) and keeps
-    /// the "ist da" banner. A TV shows neither: its Start page is for browsing and playing.
+    /// The desktop has no "ist da" banner (its Start page stays quiet) but keeps "Meine Anfragen", off until the user
+    /// switches it on, exactly as on a handheld. A TV shows neither: its Start page is for browsing and playing.
     pub fn on_start(self, form: HomeForm) -> bool {
         match form {
             HomeForm::Handheld => true,
-            HomeForm::Desktop => self == Self::Arrival,
+            HomeForm::Desktop => self == Self::Requests,
             HomeForm::Tv => false,
         }
     }
@@ -439,17 +439,17 @@ mod tests {
                 .filter(|r| all.contains(&r.as_str()))
                 .collect::<Vec<_>>()
         };
-        // Handheld: both, as stored. Desktop: only the banner. TV: none, even when stored or new.
+        // Handheld: both, as stored. Desktop: only the requests rail. TV: none, even when stored or new.
         assert_eq!(
             rows(HomeForm::Handheld),
             v(&["seerr:requests", "seerr:arrival"])
         );
-        assert_eq!(rows(HomeForm::Desktop), v(&["seerr:arrival"]));
+        assert_eq!(rows(HomeForm::Desktop), v(&["seerr:requests"]));
         assert!(rows(HomeForm::Tv).is_empty());
         // Never stored: the same sections, still on top.
         let fresh = StartOrder::applicable_for(&[], false, &[], true, HomeForm::Desktop);
-        assert_eq!(fresh[0], "seerr:arrival");
-        assert!(!fresh.contains(&"seerr:requests".to_owned()));
+        assert!(fresh.contains(&"seerr:requests".to_owned()));
+        assert!(!fresh.contains(&"seerr:arrival".to_owned()));
         assert_eq!(
             StartOrder::applicable_for(&[], false, &[], true, HomeForm::Tv),
             StartOrder::applicable(&[], false, &[])
@@ -460,8 +460,8 @@ mod tests {
             StartOrder::applicable_for(&stored, false, &[], true, HomeForm::Handheld)
         );
         assert!(SeerrSection::Requests.on_start(HomeForm::Handheld));
-        assert!(!SeerrSection::Requests.on_start(HomeForm::Desktop));
-        assert!(SeerrSection::Arrival.on_start(HomeForm::Desktop));
+        assert!(SeerrSection::Requests.on_start(HomeForm::Desktop));
+        assert!(!SeerrSection::Arrival.on_start(HomeForm::Desktop));
         assert!(!SeerrSection::Arrival.on_start(HomeForm::Tv));
     }
 

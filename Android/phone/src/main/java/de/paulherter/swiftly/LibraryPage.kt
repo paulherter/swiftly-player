@@ -23,7 +23,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,6 +57,7 @@ import de.paulherter.swiftly.rustcore.FilterPick
 import de.paulherter.swiftly.rustcore.FilterSheetPart
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Motion
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -131,6 +131,8 @@ class LibraryState(val art: String, private val store: Store) {
     var items by mutableStateOf<List<GridTile>>(emptyList()); private set
     var total by mutableIntStateOf(0); private set
     var loads by mutableStateOf(true); private set
+    /** How many calls of `load` are on their way; a reload the core started waits for them (`followListsStale`). */
+    var runs by mutableIntStateOf(0); private set
     /** The server did not answer, as opposed to "nothing here". */
     var disrupted by mutableStateOf(false); private set
     /** What the title offers to choose from; a menu only from `isMenu`. */
@@ -232,6 +234,11 @@ class LibraryState(val art: String, private val store: Store) {
     } catch (e: CancellationException) { throw e } catch (_: Exception) { false }
 
     suspend fun load(kern: RustKern) {
+        runs++
+        try { loadRun(kern) } finally { runs-- }
+    }
+
+    private suspend fun loadRun(kern: RustKern) {
         disrupted = false
         if (!offeringRead(kern)) {
             // No server and no content look the same here; told apart by whether the offer arrived at all.
@@ -345,12 +352,21 @@ class LibraryState(val art: String, private val store: Store) {
 fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelection: List<String>, open: (Destination) -> Unit) {
     val state = remember(art) { app.libraries.getOrPut(art) { LibraryState(art, app.store) } }
     val section = rememberCoroutineScope()
-    LaunchedEffect(state.sorting, state.filter) { state.load(app.rk) }
+    val grid = rememberLazyGridState()
+    // A new order starts at the top (iOS: `.toTop(order: identifier)`). The grid keys tiles by id and would otherwise
+    // follow the old first title to wherever it lands in the new order. Not on the first load of the page, which may
+    // restore a scroll position. `requestScrollToItem` also drops that key, so no frame shows the followed position.
+    var firstOrder by remember { mutableStateOf(true) }
+    LaunchedEffect(state.sorting, state.filter) {
+        state.load(app.rk)
+        if (firstOrder) firstOrder = false else grid.requestScrollToItem(0)
+    }
     // Mirrors `LibraryFilter.kept(in:)`: a filter the page no longer offers (the watchlist, switched off)
     // must not keep narrowing the list with no pill left to undo it.
     LaunchedEffect(filterSelection) { if (app.rk.filterStatus(state.filter) !in filterSelection) state.filterSet("alle") }
     WatchStateChange(app) { state.load(app.rk) }
-    val grid = rememberLazyGridState()
+    // The reloads the core starts by itself (another device, the link back, a delete): the tiles patch in, the grid stays.
+    LaunchedEffect(state) { followListsStale(app, { state.runs > 0 }) { state.load(app.rk) } }
     val density = LocalDensity.current
     // The hairline under the header hangs on this.
     val offset by remember {
@@ -542,7 +558,7 @@ fun GridTileView(k: GridTile, modifier: Modifier = Modifier, perform: () -> Unit
     Column(modifier.reveal().tilePress({ TileMenuRequest(k.id, k.title, k.type, k.poster, false, k.subline) }, perform)
             .semantics(mergeDescendants = true) { contentDescription = description },
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(smoothRoundedShape(Theme.cornerTile)).background(Theme.area)) {
             // No `SubcomposeAsyncImage` in the grid; see `TileView` on the home page.
             var missing by remember(k.poster) { mutableStateOf(k.poster == null) }
             if (missing) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

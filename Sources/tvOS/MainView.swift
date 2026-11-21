@@ -495,10 +495,9 @@ struct MainView: View {
             if (barPresent || anRoot), section == .movies || section == .seriesList || section == .search {
                 // Only a quiet shadow: the look's glow lies behind the page and must shine through.
                 HeaderHistory(soft: true).zIndex(1)
-                    .mask(alignment: .trailing) {
-                        Rectangle().frame(width: section == .search
-                                          ? Theme.screenWidth - (SearchLayout.historyLeft - SearchLayout.columnTrim) : nil)
-                    }
+                    .frame(width: section == .search
+                           ? Theme.screenWidth - (SearchLayout.historyLeft - SearchLayout.columnTrim) : nil)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                     .opacity(barPresent && LibraryScroll.shared.scrolled ? 1 : 0)
                     .animation(Theme.motion(.easeInOut(duration: 0.2)), value: LibraryScroll.shared.scrolled)
             }
@@ -818,6 +817,12 @@ struct MainView: View {
                 }
             }
             .targetPlace(model: model)
+            // **The gift sheet and "What's new" wait for a bare Start** (`GiftFlow.pagesAboveStart`): a page the person
+            // opened (a title, the profile) is not covered by a sheet that came on a timer. Every stack reports the same
+            // number; here and not on the window's long modifier chain.
+            .onChange(of: paths[Region.start.rawValue].count, initial: true) { _, depth in
+                GiftFlow.shared.startDepth(depth)
+            }
         }
     }
 }

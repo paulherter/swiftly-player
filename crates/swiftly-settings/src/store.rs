@@ -228,6 +228,32 @@ pub fn value_from_json(json: &serde_json::Value) -> Option<Value> {
     }
 }
 
+/// What [`JsonFileStore::open_or_recover`] did about a damaged file.
+#[derive(Debug)]
+pub struct Recovered {
+    /// Why the file could not be read.
+    pub reason: String,
+    /// Where the damaged file was kept, or why it could not be moved (the next write then replaces it).
+    pub kept: std::io::Result<PathBuf>,
+}
+
+impl Recovered {
+    /// One log line: what was wrong and where the copy is.
+    pub fn line(&self) -> String {
+        match &self.kept {
+            Ok(to) => format!(
+                "settings file is damaged ({}); kept as {} and started with defaults",
+                self.reason,
+                to.display()
+            ),
+            Err(e) => format!(
+                "settings file is damaged ({}); could not keep a copy ({e}), started with defaults",
+                self.reason
+            ),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct FileState {
     values: BTreeMap<String, Value>,
@@ -276,6 +302,30 @@ impl JsonFileStore {
             path,
             state: Mutex::new(state),
         })
+    }
+
+    /// Like [`JsonFileStore::open`], but a damaged file is no dead end: it is moved aside to
+    /// `<name>.broken-<time>` and the store starts empty (the defaults), so the app still starts.
+    /// The second value says what happened, for one log line; `None` when the file was fine.
+    ///
+    /// # Errors
+    /// Only a file that cannot be read at all (permissions, a failing disk).
+    pub fn open_or_recover(
+        path: impl AsRef<Path>,
+    ) -> Result<(Self, Option<Recovered>), StoreError> {
+        let path = path.as_ref();
+        match Self::open(path) {
+            Ok(store) => Ok((store, None)),
+            Err(StoreError::Corrupt(reason)) => {
+                let kept = swiftly_atomic::set_aside(path);
+                let store = Self {
+                    path: path.to_path_buf(),
+                    state: Mutex::new(FileState::default()),
+                };
+                Ok((store, Some(Recovered { reason, kept })))
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// The file this store writes to.

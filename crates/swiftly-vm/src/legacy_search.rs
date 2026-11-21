@@ -46,10 +46,10 @@ fn hit_info(item: &Item, words: &Words, text: &TitleText) -> String {
     {
         parts.push(text.with("%lld Staffeln", &[Arg::Int(count)]));
     }
-    if let Some(seconds) = item.runtime_seconds()
-        && item.kind() != ItemKind::Series
+    if item.kind() != ItemKind::Series
+        && let Some(line) = text.runtime_line(item.runtime_seconds())
     {
-        parts.push(text.runtime(seconds));
+        parts.push(line);
     }
     parts.join(" · ")
 }

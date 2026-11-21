@@ -2,8 +2,11 @@
 # Builds the Swiftly Player desktop packages on Linux. Output: target/desktop-dist
 #   Linux:   .tar.gz, .deb, .rpm      (needs dpkg-deb, rpmbuild)
 #            SWIFTLY_LINUX_ONLY=1 stops after these three
+#            SWIFTLY_WINDOWS_ONLY=1 skips them and builds only the Windows packages
 #   Windows: Setup.exe (NSIS, per user) and a portable .zip, both with libmpv-2.dll next to the exe; the exe is
 #            cross-compiled with `cargo xwin` (needs makensis in $NSISDIR, default ~/.local/nsis, and zip)
+#            NSISDIR layout: bin/makensis (built from the NSIS source with `scons SKIPSTUBS=all SKIPPLUGINS=all SKIPUTILS=all
+#            SKIPMISC=all NSIS_CONFIG_CONST_DATA_PATH=no install-compiler`) plus Stubs, Plugins, Include, Contrib of the Windows zip
 # libmpv-2.dll is not in git: it is read from $SWIFTLY_LIBMPV_DLL (default ~/swiftly-vendor/libmpv-2.dll).
 # MSIX is not produced: it needs the Windows SDK (makeappx) and a signing certificate.
 set -euo pipefail
@@ -13,17 +16,29 @@ cd "$(dirname "$0")/.."
 V=$(grep -m1 'MARKETING_VERSION:' project.yml | sed -E 's/.*MARKETING_VERSION: *"?([0-9][0-9.]*)"?.*/\1/')
 CV=$(grep -m1 '^version' crates/swiftly-desktop/Cargo.toml | cut -d'"' -f2)
 [ -n "$V" ] && [ "$V" = "$CV" ] || { echo "version mismatch: project.yml MARKETING_VERSION='$V', crates/swiftly-desktop/Cargo.toml version='$CV'" >&2; exit 1; }
+# The build number is the Apple apps' CURRENT_PROJECT_VERSION: the packaged app shows it in Settings ("Swiftly Player 1.1.0 (Build 49)"),
+# sends it with the update check and carries it in the Windows file version. build.rs reads it from the same file; the variable
+# makes it explicit here, and the packaging stops when the built binary does not carry exactly that row.
+B=$(grep -m1 'CURRENT_PROJECT_VERSION:' project.yml | sed -E 's/.*CURRENT_PROJECT_VERSION: *"?([0-9]+)"?.*/\1/')
+case "$B" in ''|*[!0-9]*) echo "no build number: CURRENT_PROJECT_VERSION in project.yml reads '$B'" >&2; exit 1 ;; esac
+export SWIFTLY_BUILD_NUMBER=$B
+ROW="Swiftly Player $V (Build $B)"
+row_check() { LC_ALL=C grep -aqF "$ROW" "$1" || { echo "the binary $1 does not carry the Settings row '$ROW'" >&2; exit 1; }; }
 # The Linux packages keep the name of the released app's packages ("swiftly-jellyfin"), so apt/dnf treat them as the
 # update of the installed 1.0.x and replace it; the new binary and launcher have their own names.
 PKG=swiftly-jellyfin
+# The oldest glibc the Linux packages promise to run on (ubuntu:22.04 = 2.35, the container below). The .deb depends on it
+# and Werkzeuge/glibc-check.sh fails the packaging when the binary needs a newer one.
+GLIBC_BASELINE=${SWIFTLY_MAX_GLIBC:-2.35}
 OUT=target/desktop-dist
 MPVDLL=${SWIFTLY_LIBMPV_DLL:-$HOME/swiftly-vendor/libmpv-2.dll}
 export NSISDIR=${NSISDIR:-$HOME/.local/nsis}
 A=Distribution/desktop
 ICON=crates/swiftly-desktop/assets/app-icon-256.png
-rm -rf "$OUT"; mkdir -p "$OUT"
+rm -rf "${OUT:?}"; mkdir -p "${OUT:?}"
 README="Swiftly Player $V. Starts without installation. Linux needs libmpv (package mpv-libs / libmpv2). Windows: libmpv-2.dll stays next to the exe; to update libmpv replace that file."
 
+if [ -z "${SWIFTLY_WINDOWS_ONLY:-}" ]; then
 echo "== Linux build"
 # The binary needs the glibc of the machine that built it, so by default it is built in a podman container with an OLD
 # glibc (ubuntu:22.04 = glibc 2.35: runs on Debian 12, Ubuntu 22.04 and everything newer). libmpv, Vulkan and the window
@@ -35,7 +50,7 @@ if [ -z "${SWIFTLY_NATIVE_LINUX_BUILD:-}" ] && command -v podman >/dev/null; the
   CACHE=${SWIFTLY_BUILD_CACHE:-$HOME/.cache/swiftly-linux-build}
   mkdir -p "$CACHE/cargo" "$CACHE/rustup" "$CACHE/target"
   flock "$CACHE/lock" podman run --rm -v "$PWD":/src -v "$CACHE":/cache -w /src \
-    -e CARGO_HOME=/cache/cargo -e RUSTUP_HOME=/cache/rustup -e CARGO_TARGET_DIR=/cache/target -e CARGO_TERM_COLOR=never \
+    -e SWIFTLY_BUILD_NUMBER -e CARGO_HOME=/cache/cargo -e RUSTUP_HOME=/cache/rustup -e CARGO_TARGET_DIR=/cache/target -e CARGO_TERM_COLOR=never \
     "$IMAGE" bash -c '
       set -e
       if ! command -v cc >/dev/null || ! dpkg -s libfontconfig1-dev >/dev/null 2>&1; then
@@ -51,7 +66,10 @@ else
   cargo build -q --release -p swiftly-desktop --features mpv
   BIN=${CARGO_TARGET_DIR:-target}/release/swiftly-desktop
 fi
+bash Werkzeuge/glibc-check.sh "$BIN" "$GLIBC_BASELINE"
+row_check "$BIN"
 STRIPPED="$OUT/swiftly-player"; cp "$BIN" "$STRIPPED"; strip "$STRIPPED"
+bash Werkzeuge/glibc-check.sh "$STRIPPED" "$GLIBC_BASELINE"
 
 # tar.gz
 T="$OUT/tar/swiftly-player-$V-linux-x64"; mkdir -p "$T"
@@ -76,7 +94,7 @@ Version: $V
 Section: video
 Priority: optional
 Architecture: amd64
-Depends: libmpv2 | libmpv1, libc6 (>= 2.35), ca-certificates, libfontconfig1, libfreetype6, libgcc-s1, libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libvulkan1 | libgl1-mesa-dri
+Depends: libmpv2 | libmpv1, libc6 (>= $GLIBC_BASELINE), ca-certificates, libfontconfig1, libfreetype6, libgcc-s1, libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libvulkan1 | libgl1-mesa-dri
 Installed-Size: $SIZE
 Maintainer: Paul Herter <kontakt@paulherter.de>
 Description: Swiftly Player, Jellyfin client
@@ -121,11 +139,13 @@ rpmbuild -bb --define "_topdir $RB" "$RB/SPECS/$PKG.spec" >/dev/null 2>"$OUT/rpm
 cp "$RB"/RPMS/*/*.rpm "$OUT/"
 
 if [ -n "${SWIFTLY_LINUX_ONLY:-}" ]; then   # SWIFTLY_LINUX_ONLY=1: tar.gz, deb and rpm only
-  rm -rf "$OUT/tar" "$OUT/root" "$OUT/deb" "$OUT/rpmbuild" "$STRIPPED"; ls -la "$OUT" | tail -n +2; exit 0
+  rm -rf "${OUT:?}/tar" "${OUT:?}/root" "${OUT:?}/deb" "${OUT:?}/rpmbuild" "${STRIPPED:?}"; ls -la "${OUT:?}" | tail -n +2; exit 0
+fi
 fi
 echo "== Windows build (cargo xwin)"
 cargo xwin build -q --release --target x86_64-pc-windows-msvc -p swiftly-desktop --features mpv
 EXE=${CARGO_TARGET_DIR:-target}/x86_64-pc-windows-msvc/release/swiftly-desktop.exe
+row_check "$EXE"
 S="$OUT/win/Swiftly Player"; mkdir -p "$S"
 cp "$EXE" "$S/Swiftly Player.exe"; echo "$README" > "$S/README.txt"
 if [ -f "$MPVDLL" ]; then
@@ -136,5 +156,5 @@ if [ -f "$MPVDLL" ]; then
 else
   echo "libmpv-2.dll missing at $MPVDLL: Windows Setup and portable zip skipped"
 fi
-rm -rf "$OUT/tar" "$OUT/root" "$OUT/deb" "$OUT/rpmbuild" "$OUT/win" "$STRIPPED"
+rm -rf "${OUT:?}/tar" "${OUT:?}/root" "${OUT:?}/deb" "${OUT:?}/rpmbuild" "${OUT:?}/win" "${STRIPPED:-}"
 ls -la "$OUT" | tail -n +2

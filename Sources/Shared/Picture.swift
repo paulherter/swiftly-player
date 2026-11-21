@@ -112,6 +112,10 @@ struct Picture<Placeholder: View>: View {
     /// The tile's picture standing in until the sharp one is there, and whether it is the same source as that one.
     @State private var standIn: Image?
     @State private var standIsSame = false
+    /// The address the latest load asked for. A reference, so setting it never redraws; a picture that lands after
+    /// the page's slide (`InTravel`) checks it so a late answer never covers the picture of a newer address.
+    @State private var asked = Asked()
+    private final class Asked { var url: URL? }
 
     /// **Look up what is known once at creation, not on every draw.**
     ///
@@ -190,6 +194,7 @@ struct Picture<Placeholder: View>: View {
             }
             .onChange(of: ready) { reveal() }
             .task(id: url) {
+                asked.url = url
                 guard let url else { loaded = nil; withoutImage = true; slot.map { $0.order.settle($0.index) }; return }
                 withoutImage = false
                 if let present = ImageCache.shared.image(url) {
@@ -219,9 +224,17 @@ struct Picture<Placeholder: View>: View {
                     slot.map { $0.order.settle($0.index) }
                     return
                 }
-                loaded = new
-                slot.map { $0.order.settle($0.index) }
-                reveal()
+                guard !Task.isCancelled else { return }
+                // **The one write that makes the picture appear goes through the slide gate** (`InTravel`): the
+                // fetch and the decode (off the main thread) ran during the slide, the placeholder keeps the final
+                // size, and the swap lands with everything else right after the slide.
+                let asking = asked
+                InTravel.land {
+                    guard asking.url == url else { return }
+                    loaded = new
+                    slot.map { $0.order.settle($0.index) }
+                    reveal()
+                }
             }
             .overlay(alignment: .bottom) {
                 // **Zero is not progress.**

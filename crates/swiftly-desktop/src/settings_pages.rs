@@ -5,7 +5,7 @@
 use crate::browse::wide;
 use crate::forms::{self, Fm, Trail};
 use crate::home::{Form, fill_frame, ins, rgba};
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::color;
 use swiftly_layout::{Align, Alignment};
 use swiftly_render::Color;
 use swiftly_support::licenses::{LicenseComponent, LicenseData};
@@ -134,7 +134,10 @@ pub fn segments(cx: &Cx, f: &Fm, prefix: &str, cells: &[Cell], chosen: usize, ea
             )
             .frame(Some(each), Some(28.0), Alignment::CENTER);
             let t = if on {
-                t.background(Node::rect(rgba(colour::FONT, 0.29), 6.0), Alignment::CENTER)
+                t.background(
+                    Node::rect(rgba(color::TEXT_PRIMARY, 0.29), 6.0),
+                    Alignment::CENTER,
+                )
             } else {
                 t
             };
@@ -144,7 +147,7 @@ pub fn segments(cx: &Cx, f: &Fm, prefix: &str, cells: &[Cell], chosen: usize, ea
                 n
             } else {
                 n.hover_surface(
-                    rgba(colour::FONT, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
+                    rgba(color::TEXT_PRIMARY, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
                     6.0,
                 )
             }
@@ -152,7 +155,10 @@ pub fn segments(cx: &Cx, f: &Fm, prefix: &str, cells: &[Cell], chosen: usize, ea
         .collect();
     Node::hstack(Align::Center, Some(2.0), items)
         .padding(ins(2.0, 2.0, 2.0, 2.0))
-        .background(Node::rect(color(colour::RAISED), 8.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_RAISED), 8.0),
+            Alignment::CENTER,
+        )
 }
 
 fn segment_row(cx: &Cx, icons: &Icons, title: &str, symbol: &str, strip: Node) -> Node {
@@ -162,14 +168,14 @@ fn segment_row(cx: &Cx, icons: &Icons, title: &str, symbol: &str, strip: Node) -
             Some(12.0),
             vec![
                 icons
-                    .node(symbol, 20.0, true, color(colour::FONT_QUIET))
+                    .node(symbol, 20.0, true, color(color::TEXT_SECONDARY))
                     .frame(Some(26.0), None, Alignment::CENTER),
                 label(
                     cx,
                     title,
                     15.0,
                     600,
-                    color(colour::FONT),
+                    color(color::TEXT_PRIMARY),
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
@@ -327,16 +333,16 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
     let on_off = |k: &str, sym: &str, title: &str, on: bool| {
         forms::row_kb(cx, icons, f, k, sym, title, None, Trail::Switch(on), true)
     };
-    let quiet = color(colour::FONT_VERY_QUIET);
+    let quiet = color(color::TEXT_TERTIARY);
     let glyph = |s: Size| Cell {
         text: "A".into(),
         size: s.glyph_size() as f32,
-        tint: color(colour::FONT),
+        tint: color(color::TEXT_PRIMARY),
     };
     let word = |t: &str| Cell {
         text: t.into(),
         size: 13.0,
-        tint: color(colour::FONT),
+        tint: color(color::TEXT_PRIMARY),
     };
     let size_cells: Vec<Cell> = Size::ALL.iter().map(|s| glyph(*s)).collect();
     let colour_cells: Vec<Cell> = SubColour::ALL
@@ -471,7 +477,7 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
                 "Rückgängig",
                 15.0,
                 400,
-                color(colour::FONT_QUIET),
+                color(color::TEXT_SECONDARY),
                 Some(1),
                 swiftly_text::Align::End,
             )
@@ -489,7 +495,7 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
                     "Zurückgesetzt",
                     15.0,
                     600,
-                    color(colour::FONT),
+                    color(color::TEXT_PRIMARY),
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
@@ -499,7 +505,10 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
         )
         .padding(ins(0.0, 16.0, 0.0, 16.0))
         .frame(Some(360.0), Some(48.0), Alignment::CENTER)
-        .background(Node::rect(color(colour::AREA), 14.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 14.0),
+            Alignment::CENTER,
+        )
         .appear_from(1.0, 0.0)
         .opacity(1.0, swiftly_ui::feel::leap());
         fill_frame(bar.padding(ins(0.0, 0.0, 16.0, 0.0)), Alignment::BOTTOM)
@@ -544,7 +553,7 @@ pub fn header_editor(
     show_save: bool,
 ) -> Node {
     let k = |s: &str| format!("{prefix}.{s}");
-    let quiet = color(colour::FONT_QUIET);
+    let quiet = color(color::TEXT_SECONDARY);
     let toggle = forms::tappable(
         Node::hstack(
             Align::Center,
@@ -579,7 +588,7 @@ pub fn header_editor(
             let locked = swiftly_jellyfin::OwnHeaders::is_locked(name);
             let del = forms::tappable(
                 icons
-                    .node("minus", 16.0, true, color(colour::FONT_VERY_QUIET))
+                    .node("minus", 16.0, true, color(color::TEXT_TERTIARY))
                     .frame(Some(28.0), Some(28.0), Alignment::CENTER),
                 f,
                 &k(&format!("del.{i}")),
@@ -623,7 +632,7 @@ pub fn header_editor(
                     "Den setzt Swiftly selbst.",
                     12.0,
                     400,
-                    color(colour::ERROR),
+                    color(color::STATE_ERROR),
                     Some(1),
                     swiftly_text::Align::Start,
                 ));
@@ -638,13 +647,13 @@ pub fn header_editor(
                 Align::Center,
                 Some(6.0),
                 vec![
-                    icons.node("plus", 12.0, true, color(colour::MARK_ACCENT)),
+                    icons.node("plus", 12.0, true, color(crate::look_glow::accent())),
                     label(
                         cx,
                         "Header hinzufügen",
                         12.0,
                         400,
-                        color(colour::MARK_ACCENT),
+                        color(crate::look_glow::accent()),
                         Some(1),
                         swiftly_text::Align::Start,
                     ),
@@ -699,7 +708,7 @@ pub struct SeerrView {
 /// `SeerrSettingsView`.
 pub fn seerr_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SeerrView) -> Node {
     let mut col = vec![wide(
-        label(cx, "Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen.", 15.0, 400, color(colour::FONT_QUIET), None, swiftly_text::Align::Start),
+        label(cx, "Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen.", 15.0, 400, color(color::TEXT_SECONDARY), None, swiftly_text::Align::Start),
         Alignment::LEADING,
     )
     .padding(ins(10.0, 0.0, 0.0, 0.0))];
@@ -759,7 +768,7 @@ pub fn seerr_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SeerrView) -> N
                         e,
                         12.0,
                         400,
-                        color(colour::ERROR),
+                        color(color::STATE_ERROR),
                         None,
                         swiftly_text::Align::Start,
                     ),
@@ -810,6 +819,255 @@ pub fn seerr_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SeerrView) -> N
         env,
         f,
         "Seerr",
+        forms::Cols::One,
+        vec![vec![Node::vstack(Align::Start, Some(0.0), col)]],
+        None,
+    )
+}
+
+// ---- Supporter key ---------------------------------------------------------------------------------------------------
+
+/// Where the support page stands. One state for the whole page; the transitions are the screen's.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeyStage {
+    /// The ask: the website and "Ich habe einen Unterstützer-Schlüssel".
+    Intro,
+    /// The key field; `refused` after a key that did not count.
+    Entering {
+        /// The last key did not count.
+        refused: bool,
+    },
+    /// A key counts (just entered, or stored from an earlier start): plan word ("Monatlich" / "Für immer") and the
+    /// name in the key.
+    Thanks {
+        /// "Monatlich" or "Für immer".
+        plan: &'static str,
+        /// The name in the key.
+        name: Option<String>,
+    },
+}
+
+/// What the support page draws.
+#[derive(Clone, PartialEq)]
+pub struct SupportView {
+    /// Where the page stands.
+    pub stage: KeyStage,
+    /// The key as typed.
+    pub text: String,
+    /// The field has the keyboard.
+    pub focus: bool,
+    /// What the shared editor of the field shows (caret, selection, composition).
+    pub edit: Option<swiftly_text::Display>,
+}
+
+/// "Swiftly unterstützen" on Windows and Linux: the website button, and the key entry of the direct build (the Android
+/// direct sheet's flow: `GrowDirect.kt`, `FlavorSupport.kt`).
+pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) -> Node {
+    let line = |s: &str, size: f32, c: swiftly_design::types::Colour, top: f32| {
+        wide(
+            label(cx, s, size, 400, color(c), None, swiftly_text::Align::Start),
+            Alignment::LEADING,
+        )
+        .padding(ins(top, 0.0, 0.0, 0.0))
+    };
+    let mut col = Vec::new();
+    match &v.stage {
+        KeyStage::Intro => {
+            col.push(
+                wide(
+                    label(
+                        cx,
+                        "Hilf Swiftly zu wachsen",
+                        22.0,
+                        700,
+                        color(color::TEXT_PRIMARY),
+                        None,
+                        swiftly_text::Align::Start,
+                    ),
+                    Alignment::LEADING,
+                )
+                .padding(ins(10.0, 0.0, 0.0, 0.0)),
+            );
+            col.push(line(
+                "Dein Beitrag hält Swiftly am Laufen.",
+                15.0,
+                color::TEXT_PRIMARY,
+                8.0,
+            ));
+            col.push(line(
+                "Open Source, keine Werbung, alles zum Schauen bleibt kostenlos.",
+                15.0,
+                color::TEXT_SECONDARY,
+                6.0,
+            ));
+            col.push(line(
+                "Mit deinem Unterstützer-Schlüssel bekommst du ein Herz in „Über“ und zusätzliche App-Icons.",
+                15.0,
+                color::TEXT_SECONDARY,
+                6.0,
+            ));
+            let mut rows = vec![forms::row_kb(
+                cx,
+                icons,
+                f,
+                "key.web",
+                "heart",
+                "Auf der Website unterstützen",
+                None,
+                Trail::Chevron,
+                true,
+            )];
+            if crate::support_key::AVAILABLE {
+                rows.push(forms::row_kb(
+                    cx,
+                    icons,
+                    f,
+                    "key.have",
+                    "key",
+                    "Ich habe einen Unterstützer-Schlüssel",
+                    None,
+                    Trail::Chevron,
+                    true,
+                ));
+            }
+            col.push(forms::setting_group(cx, f, "", 26.0, rows));
+        }
+        KeyStage::Entering { refused } => {
+            col.push(line(
+                "Den Schlüssel bekommst du, nachdem du uns auf der Website unterstützt hast: auf der Danke-Seite und per E-Mail.",
+                15.0,
+                color::TEXT_SECONDARY,
+                10.0,
+            ));
+            let mut form = vec![forms::input_ex(
+                cx,
+                icons,
+                f,
+                "key.field",
+                "key",
+                "SS2-…",
+                &v.text,
+                false,
+                v.focus,
+                v.edit.as_ref(),
+            )];
+            if *refused {
+                form.push(
+                    wide(
+                        label(
+                            cx,
+                            "Dieser Schlüssel passt nicht. Prüf ihn auf Tippfehler und versuch es noch einmal.",
+                            12.0,
+                            400,
+                            color(color::STATE_ERROR),
+                            None,
+                            swiftly_text::Align::Start,
+                        ),
+                        Alignment::LEADING,
+                    )
+                    .padding(ins(2.0, 0.0, 0.0, 0.0)),
+                );
+            }
+            // No greyed button: with nothing typed there is nothing to press.
+            if !v.text.trim().is_empty() {
+                form.push(
+                    forms::button(
+                        cx,
+                        icons,
+                        f,
+                        "key.go",
+                        "Aktivieren",
+                        Some("key"),
+                        true,
+                        false,
+                        true,
+                    )
+                    .padding(ins(8.0, 0.0, 0.0, 0.0)),
+                );
+            }
+            form.push(forms::row_kb(
+                cx,
+                icons,
+                f,
+                "key.mail",
+                "link",
+                "Schlüssel verloren? Schreib uns an",
+                Some(crate::support_key::CONTACT),
+                Trail::None,
+                true,
+            ));
+            col.push(
+                wide(
+                    Node::vstack(Align::Start, Some(12.0), form),
+                    Alignment::LEADING,
+                )
+                .padding(ins(26.0, 0.0, 0.0, 0.0)),
+            );
+        }
+        KeyStage::Thanks { plan, name } => {
+            col.push(
+                wide(
+                    Node::hstack(
+                        Align::Center,
+                        Some(10.0),
+                        vec![
+                            icons.node("heart.fill", 22.0, true, color(crate::look_glow::accent())),
+                            label(
+                                cx,
+                                "Danke. Du bist dabei.",
+                                22.0,
+                                700,
+                                color(color::TEXT_PRIMARY),
+                                None,
+                                swiftly_text::Align::Start,
+                            ),
+                        ],
+                    ),
+                    Alignment::LEADING,
+                )
+                .padding(ins(10.0, 0.0, 0.0, 0.0)),
+            );
+            col.push(line(
+                "Mit deinem Unterstützer-Schlüssel bekommst du ein Herz in „Über“ und zusätzliche App-Icons.",
+                15.0,
+                color::TEXT_SECONDARY,
+                8.0,
+            ));
+            let mut rows = vec![forms::row_ex(
+                cx,
+                icons,
+                f,
+                "key.plan",
+                "key",
+                "Unterstützer",
+                None,
+                Trail::Value(swiftly_l10n::t(plan)),
+                true,
+                false,
+            )];
+            if let Some(n) = name {
+                rows.push(forms::row_ex(
+                    cx,
+                    icons,
+                    f,
+                    "key.name",
+                    "user",
+                    n,
+                    None,
+                    Trail::None,
+                    true,
+                    false,
+                ));
+            }
+            col.push(forms::setting_group(cx, f, "", 26.0, rows));
+        }
+    }
+    shell(
+        cx,
+        icons,
+        env,
+        f,
+        "Swiftly unterstützen",
         forms::Cols::One,
         vec![vec![Node::vstack(Align::Start, Some(0.0), col)]],
         None,
@@ -899,20 +1157,20 @@ pub fn licences_page(
     ));
     let mut body = vec![
         wide(
-            label(cx, "Swiftly Player spielt mit libmpv und FFmpeg (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.", 15.0, 400, color(colour::FONT_QUIET), None, swiftly_text::Align::Start),
+            label(cx, "Swiftly Player spielt mit libmpv und FFmpeg (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.", 15.0, 400, color(color::TEXT_SECONDARY), None, swiftly_text::Align::Start),
             Alignment::LEADING,
         )
         .padding(ins(10.0, 0.0, 4.0, 0.0)),
         forms::setting_group(cx, f, "libmpv und FFmpeg", 22.0, player),
+        wide(
+            label(cx, "Frühere Versionen enthielten VLCKit und libVLC (LGPL 2.1 oder später). Das schriftliche Angebot für ihren Quelltext gilt weiter, siehe „Quelltext und schriftliches Angebot“.", 15.0, 400, color(color::TEXT_SECONDARY), None, swiftly_text::Align::Start),
+            Alignment::LEADING,
+        )
+        .padding(ins(10.0, 0.0, 4.0, 0.0)),
     ];
-    for (title, g) in [
-        ("Weitere Bausteine", "app"),
-        ("In libmpv eingebaut", "in-vlckit"),
-    ] {
-        let rows = group(g);
-        if !rows.is_empty() {
-            body.push(forms::setting_group(cx, f, title, 28.0, rows));
-        }
+    let rows = group("app");
+    if !rows.is_empty() {
+        body.push(forms::setting_group(cx, f, "Weitere Bausteine", 28.0, rows));
     }
     shell(
         cx,
@@ -934,12 +1192,12 @@ pub fn licence_detail(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, c: &LicenseComp
             value,
             15.0,
             400,
-            color(colour::FONT),
+            color(color::TEXT_PRIMARY),
             None,
             swiftly_text::Align::Start,
         )];
         if route {
-            line.push(icons.node("arrow-up-right", 12.0, true, color(colour::FONT_VERY_QUIET)));
+            line.push(icons.node("arrow-up-right", 12.0, true, color(color::TEXT_TERTIARY)));
         }
         wide(
             Node::vstack(
@@ -951,7 +1209,7 @@ pub fn licence_detail(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, c: &LicenseComp
                         name,
                         12.0,
                         400,
-                        color(colour::FONT_VERY_QUIET),
+                        color(color::TEXT_TERTIARY),
                         Some(1),
                         swiftly_text::Align::Start,
                     ),
@@ -979,7 +1237,7 @@ pub fn licence_detail(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, c: &LicenseComp
                 n,
                 12.0,
                 400,
-                color(colour::FONT_QUIET),
+                color(color::TEXT_SECONDARY),
                 None,
                 swiftly_text::Align::Start,
             ),
@@ -1003,7 +1261,7 @@ pub fn licence_detail(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, c: &LicenseComp
                             p,
                             12.0,
                             400,
-                            color(colour::FONT_QUIET),
+                            color(color::TEXT_SECONDARY),
                             None,
                             swiftly_text::Align::Start,
                         ),
@@ -1016,7 +1274,7 @@ pub fn licence_detail(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, c: &LicenseComp
                 "Der Text fehlt in dieser Fassung.",
                 12.0,
                 400,
-                color(colour::FONT_QUIET),
+                color(color::TEXT_SECONDARY),
                 None,
                 swiftly_text::Align::Start,
             )],
@@ -1053,7 +1311,7 @@ pub fn offering_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, data: &LicenseDa
                         p,
                         12.0,
                         400,
-                        color(colour::FONT_QUIET),
+                        color(color::TEXT_SECONDARY),
                         None,
                         swiftly_text::Align::Start,
                     ),
@@ -1166,7 +1424,7 @@ pub fn pick_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, title: &str, v: &Pic
                 t,
                 15.0,
                 400,
-                color(colour::FONT_QUIET),
+                color(color::TEXT_SECONDARY),
                 None,
                 swiftly_text::Align::Start,
             ),
@@ -1250,7 +1508,7 @@ pub fn licences_missing_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm) -> Node 
             "Die Lizenzliste fehlt in dieser Fassung. Du findest sie auf GitHub in THIRD-PARTY-NOTICES.md.",
             15.0,
             400,
-            color(colour::FONT_QUIET),
+            color(color::TEXT_SECONDARY),
             None,
             swiftly_text::Align::Start,
         ),

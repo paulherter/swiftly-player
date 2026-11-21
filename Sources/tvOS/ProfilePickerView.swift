@@ -87,8 +87,6 @@ extension AppModel {
 /// profile (`RootView`); a press starts the ordinary account switch.
 struct ProfilePicker: View {
     let model: AppModel
-    /// The launch curtain is gone: the entrance may begin.
-    let entered: Bool
     /// The chosen account is no longer there.
     let vanished: () -> Void
 
@@ -107,9 +105,8 @@ struct ProfilePicker: View {
         var frameRect: [String: CGRect] = [:]
     }
 
-    init(model: AppModel, entered: Bool, vanished: @escaping () -> Void) {
+    init(model: AppModel, vanished: @escaping () -> Void) {
         self.model = model
-        self.entered = entered
         self.vanished = vanished
         _lastAvatar = State(initialValue: model.session?.accountKey ?? model.accounts.first?.accountKey ?? "")
     }
@@ -156,12 +153,17 @@ struct ProfilePicker: View {
         .accessibilityElement(children: .contain)
         .onAppear {
             focus = .profile(lastAvatar)
-            if entered { shown = true }
+            shown = true
         }
-        .onChange(of: entered) { _, now in if now { shown = true } }
-        // The picker may come up while the curtain still holds tvOS's first focus pass; see `TVFocusGuard`.
-        .tvFocusGuard("picker", key: entered)
+        // The picker is the first thing the window shows at launch: tvOS's first focus pass runs against it; see `TVFocusGuard`.
+        .tvFocusGuard("picker", key: shown)
         .onChange(of: focus) { old, new in
+            // The first focus pass ran while the avatars still faded in (opacity 0: not focusable, so the `focus = ...` of
+            // `onAppear` went nowhere) and handed focus to the switch, the only thing focusable. The first profile is where focus starts.
+            if old == nil, new == .askSwitch {
+                focus = .profile(lastAvatar)
+                return
+            }
             guard case let .profile(key)? = new else { return }
             // Coming up from the switch: back to the avatar we left, not to whichever lies
             // geometrically above.

@@ -32,17 +32,20 @@ public final class PersonController {
 
     /// Details and the first page of the filmography.
     public func load(dates: any DateText = LongDateText()) async throws {
-        page = try await model.load(dates: dates)
+        let new = try await model.load(dates: dates)
+        PageLanding.gate { [self] in page = new }
     }
 
     /// The Seerr titles of the person, once the details are in.
     public func loadSeerr(_ seerr: SeerrModel?) async throws {
-        page = try await model.loadSeerr(seerr: seerr)
+        let new = try await model.loadSeerr(seerr: seerr)
+        PageLanding.gate { [self] in page = new }
     }
 
     /// A title came into view; the end of the list loads the next page.
     public func titleVisible(_ id: String) async throws {
-        page = try await model.titleVisible(id: id)
+        let new = try await model.titleVisible(id: id)
+        PageLanding.gate { [self] in page = new }
     }
 
     public func toggleBiography() { page = model.toggleBiography() }

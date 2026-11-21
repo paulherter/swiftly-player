@@ -51,7 +51,7 @@ final class AppCore {
     private init() {
         let platform = AppPlatform(name: AppModel.deviceName)
         raw = SwiftlyCore.Core(
-            platform: platform, secrets: KeychainSecretStore(),
+            platform: platform, secrets: KeychainSecretStore(service: ProofIsolation.keychainService()),
             store: store,
             // The user's own gateway headers go to the own server, like every other request of the app.
             http: URLSessionHttpClient(prepare: { $0.ownHeadersSet() }, observe: Self.observer))

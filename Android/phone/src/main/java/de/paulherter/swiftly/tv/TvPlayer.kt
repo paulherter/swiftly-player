@@ -1,6 +1,8 @@
 package de.paulherter.swiftly.tv
 
 import de.paulherter.swiftly.rustcore.host.CoreWords
+import de.paulherter.swiftly.rustcore.PlayerStartVeil
+import de.paulherter.swiftly.rustcore.playerStartFailure
 import de.paulherter.swiftly.rustcore.SubtitleSearchIntent
 import de.paulherter.swiftly.rustcore.SubtitleSearchPhase
 import de.paulherter.swiftly.rustcore.SubtitleSearchVm
@@ -31,6 +33,8 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
+import coil3.compose.AsyncImage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
@@ -46,7 +50,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -107,6 +110,7 @@ import de.paulherter.swiftly.episodesRead
 import de.paulherter.swiftly.episodesPreload
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import de.paulherter.swiftly.KernRules
 import de.paulherter.swiftly.seriesRead
@@ -505,7 +509,17 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
 
         if (!mediaWork.imageFree && mediaWork.cardsSwitch == null) {
             Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-                if (mediaWork.hint == null) TvLoader(size = 64.dp)
+                if (mediaWork.startVeil == PlayerStartVeil.FAILED) {
+                    // **The start failed** (error or the core's start timeout): "Das startet nicht", focus on "Erneut versuchen"
+                    // (`startFailedVeil` on tvOS). Back closes as everywhere.
+                    val failure = remember { playerStartFailure() }
+                    val retryFocus = remember { FocusRequester() }
+                    LaunchedEffect(Unit) { delay(80); runCatching { retryFocus.requestFocus() } }
+                    TvEmpty(translated(failure.header), translated(failure.text), symbol = Glyph.Warning,
+                            button = translated(failure.primary) to { mediaWork.startAgain() },
+                            buttonModifier = Modifier.focusRequester(retryFocus),
+                            quietButton = translated(failure.quiet) to { mediaWork.finish(close) }, top = 0.dp)
+                } else if (mediaWork.hint == null) TvLoader(size = 64.dp)
             }
         }
 
@@ -666,10 +680,10 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
         // **The menus**: the core builds every level; the box takes the capsule's place (the season box hangs under the pill).
         TvPlayerMenuLayer(menuSession, { de.paulherter.swiftly.playerMenus(app, mediaWork, menuSession, emptyList(), seasonList, seasonShown) },
             press = { a -> de.paulherter.swiftly.playerMenuPress(app, mediaWork, menuSession, run, close, emptyList(), { seasonChosen = it },
-                { unfoldLayer("suche") }, a) })
+                { unfoldLayer("suche") }, {}, a) })
         TvPlayerMenuLayer(seasonSession, { de.paulherter.swiftly.playerMenus(app, mediaWork, seasonSession, emptyList(), seasonList, seasonShown) },
             press = { a -> de.paulherter.swiftly.playerMenuPress(app, mediaWork, seasonSession, run, close, emptyList(), { seasonChosen = it },
-                { unfoldLayer("suche") }, a) })
+                { unfoldLayer("suche") }, {}, a) })
         val lastKind = remember { arrayOfNulls<de.paulherter.swiftly.MenuKind>(1) }
         LaunchedEffect(menuSession.isOpen, menuSession.kind) {
             val k = menuSession.kind
@@ -698,8 +712,8 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
         LaunchedEffect(openLayer, folgenShown) { if (openLayer != null) lastLayer = openLayer!! else if (folgenShown) lastLayer = "folgen" }
         // The Folgen box opens and closes with the motion of the other menu boxes; the search layer keeps its plain fade.
         AnimatedVisibility(visible = layerOpen,
-                enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.98f, transformOrigin = TransformOrigin(0f, 0f), animationSpec = menuOpenSpring),
-                exit = fadeOut(tween(140, easing = menuCloseCurve)) + scaleOut(targetScale = 0.98f, transformOrigin = TransformOrigin(0f, 0f), animationSpec = tween(140, easing = menuCloseCurve))) {
+                enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.96f, transformOrigin = TransformOrigin(1f, 0f), animationSpec = menuOpenSpring),
+                exit = fadeOut(tween(140, easing = menuCloseCurve)) + scaleOut(targetScale = 0.96f, transformOrigin = TransformOrigin(1f, 0f), animationSpec = tween(140, easing = menuCloseCurve))) {
             @OptIn(ExperimentalComposeUiApi::class)
             Box(Modifier.fillMaxSize()
                     // **Open for a panel above** (tile menu of an episode): otherwise `Cancel` would lock its
@@ -711,7 +725,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
                 // **No blur:** VLC draws into a `SurfaceView`, which the system composites separately, so a
                 // `RenderEffect` does not reach it (same as on the phone, `Ebenengrund` in PlayerPage.kt).
                 // Substitute: pure black, 80 %.
-                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.8f)))
+                if (!folgenShown || openLayer != null) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.8f)))
                 when (openLayer ?: if (folgenShown) "folgen" else lastLayer) {
                     "suche" -> TvSearchLayer(mediaWork) { layerClose() }
                     "folgen" -> plan?.takeIf { hasEpisodes || mediaWork.chapterCount > 0 }?.let { p ->
@@ -789,7 +803,7 @@ private fun TvLoader(size: androidx.compose.ui.unit.Dp) {
 private fun TvOfferingPill(text: String, share: Double?, seconds: Int?, running: Boolean, length: Double,
                             modifier: Modifier = Modifier, perform: () -> Unit) {
     val fillContent = de.paulherter.swiftly.continuousFill(share, running, length)
-    val form = RoundedCornerShape(TvTheme.corner)
+    val form = smoothRoundedShape(TvTheme.corner)
     FocusArea(modifier = modifier.semantics(mergeDescendants = true) {
         if (seconds != null) stateDescription = translated("Startet in %lld Sekunden", seconds)
     }, magnifier = TvTheme.focusMagnifier, perform = perform) { focus ->
@@ -880,8 +894,8 @@ private fun TvTimeBar(app: SwiftlyApplication, position: () -> Double, duration:
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     image?.let {
                         Image(it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(200.dp, 112.5.dp).clip(RoundedCornerShape(TvTheme.corner))
-                                .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(TvTheme.corner)))
+                            modifier = Modifier.size(200.dp, 112.5.dp).clip(smoothRoundedShape(TvTheme.corner))
+                                .border(1.dp, Color.White.copy(alpha = 0.35f), smoothRoundedShape(TvTheme.corner)))
                     }
                     // **With a chapter its name precedes the time**, on one line and at most as wide as the thumbnail;
                     // a long name is truncated, never the time.
@@ -968,7 +982,7 @@ private fun LayersRow(text: String, selected: Boolean, modifier: Modifier = Modi
     FocusArea(modifier.fillMaxWidth().semantics { this.selected = selected }, magnifier = TvTheme.focusMagnifierWide,
               lift = true, liftCorner = TvTheme.corner, perform = perform) { focus ->
         Row(Modifier.fillMaxWidth().height(TvPlayerMetric.rowHeight)
-                .background(if (focus) Color.White else Color.Transparent, RoundedCornerShape(TvTheme.corner))
+                .background(if (focus) Color.White else Color.Transparent, smoothRoundedShape(TvTheme.corner))
                 .padding(horizontal = TvPlayerMetric.inset),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             val color = if (focus) Theme.reason else if (selected) Theme.font else Theme.fontQuiet
@@ -1015,10 +1029,6 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, hasEpisodes
     val strip = rememberLazyListState(episodes.indexOfFirst { it.id == runningId }.coerceAtLeast(0))
     val running = remember { FocusRequester() }
     val pill = remember { FocusRequester() }
-    // **No sliding on open.** The row used to sit at the running episode on the left edge; the first
-    // focus animated it to the pivot (30 %), so it slid in from the left. Until the first focus is set,
-    // the row therefore jumps there without motion.
-    var immediate by remember { mutableStateOf(true) }
     val focusLaid = remember { booleanArrayOf(false) }
     val pillFocus = remember { booleanArrayOf(false) }
 
@@ -1059,9 +1069,6 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, hasEpisodes
         val i = episodes.indexOfFirst { it.id == runningId }
         if (i >= 0 && strip.layoutInfo.visibleItemsInfo.none { it.index == i }) strip.scrollToItem(i)
         focusPut(running)
-        // Follow with motion again only after the first focus.
-        repeat(2) { withFrameNanos { } }
-        immediate = false
     }
     // Without episodes the pill keeps focus, otherwise it would stay on the invisible button behind it.
     LaunchedEffect(Unit) {
@@ -1101,65 +1108,117 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, hasEpisodes
         else if (!session.isOpen && session.kind == null && seasonMenuWas[0]) { seasonMenuWas[0] = false; focusPut(pill) }
     }
 
-    Column(Modifier.fillMaxSize().padding(top = TvTheme.edgeTop)) {
-        Column(Modifier.padding(horizontal = TvTheme.edgePage).zIndex(1f), verticalArrangement = Arrangement.spacedBy(TvPlayerMetric.titleSpacing)) {
-            // Placeholder: the title itself is in the player and does not fade with it.
-            Text(title, style = TvPlayerMetric.title, maxLines = 1, modifier = Modifier.alpha(0f))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (hasEpisodes && tab == de.paulherter.swiftly.FolgenTab.Episodes) {
-                    if (seasons.isNotEmpty()) TvButton(seasons.firstOrNull { it.id == selected }?.name ?: translated("Staffel"), Glyph.AngleDown,
-                            Modifier.focusRequester(pill), height = 30.dp, focusChanged = { pillFocus[0] = it }) {
+    // **The Folgen box** (tvOS `TVFolgenBox`): the dark menu box top right, as wide as the other player boxes' family but wider for
+    // the stills; its first row is the season button, then the vertical list. The season list is a second box (`TvPlayerMenuLayer`).
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.align(Alignment.TopEnd).padding(top = TvTheme.edgeTop - 6.dp, end = TvTheme.edgePage).width(TvFolgenMetric.width)
+                .clip(smoothRoundedShape(TvFolgenMetric.radius)).background(Theme.raised)
+                .border(BorderStroke(1.dp, TvTheme.edge), smoothRoundedShape(TvFolgenMetric.radius))
+                .padding(TvFolgenMetric.boxPad)) {
+            if (!hasEpisodes) Text(translated("Kapitel"), style = Theme.listTitle.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), color = Theme.font,
+                    modifier = Modifier.height(TvFolgenMetric.row).wrapContentHeight(Alignment.CenterVertically).padding(horizontal = 12.dp))
+            else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (tab == de.paulherter.swiftly.FolgenTab.Episodes) {
+                    if (seasons.isNotEmpty()) FolgenTabButton(seasons.firstOrNull { it.id == selected }?.name ?: translated("Staffel"), true, true,
+                            Modifier.focusRequester(pill), focusChanged = { pillFocus[0] = it }) {
                         AppLog.writeOut("[Ebene] Staffel-Knopf")
                         session.open(de.paulherter.swiftly.MenuKind.Seasons)
                     }
-                } else if (hasEpisodes) TvButton(translated("Folgen"), null, Modifier.focusRequester(pill), height = 30.dp, focusChanged = { pillFocus[0] = it }) {
+                    else FolgenTabButton(translated("Folgen"), true, false, Modifier.focusRequester(pill), focusChanged = { pillFocus[0] = it }) {}
+                } else FolgenTabButton(translated("Folgen"), false, false, Modifier.focusRequester(pill), focusChanged = { pillFocus[0] = it }) {
                     tab = de.paulherter.swiftly.FolgenTab.Episodes
                 }
-                // A film has this one tab only: a plain word, no button.
-                if (chapters.rows.isNotEmpty() && hasEpisodes) TvButton(translated("Kapitel"), null, Modifier.focusRequester(chapterTab), height = 30.dp,
-                        active = tab == de.paulherter.swiftly.FolgenTab.Chapters) { tab = de.paulherter.swiftly.FolgenTab.Chapters }
-                else if (chapters.rows.isNotEmpty()) Text(translated("Kapitel"), style = TvTheme.body, color = Theme.font)
+                if (chapters.rows.isNotEmpty()) FolgenTabButton(translated("Kapitel"), tab == de.paulherter.swiftly.FolgenTab.Chapters, false,
+                        Modifier.focusRequester(chapterTab)) { tab = de.paulherter.swiftly.FolgenTab.Chapters }
             }
-        }
-        if (tab == de.paulherter.swiftly.FolgenTab.Chapters) {
-            val now = chapters.rows.indexOfFirst { it.current }.coerceAtLeast(0)
-            LazyRow(Modifier.padding(top = 22.dp), state = rememberLazyListState(now),
-                    contentPadding = PaddingValues(horizontal = TvTheme.edgePage, vertical = TvTheme.railsPadding),
-                    horizontalArrangement = Arrangement.spacedBy(TvTheme.tileSpacing)) {
-                itemsIndexed(chapters.rows, key = { _, c -> c.index }) { i, c ->
-                    de.paulherter.swiftly.TvChapterTile(c, chapters.numberTitle, preview(c.start), if (i == now) Modifier.focusRequester(chapterFocus) else Modifier) { jump(c.start) }
+            if (tab == de.paulherter.swiftly.FolgenTab.Chapters) {
+                val now = chapters.rows.indexOfFirst { it.current }.coerceAtLeast(0)
+                LazyColumn(Modifier.heightIn(max = TvFolgenMetric.listMax), state = rememberLazyListState(now)) {
+                    itemsIndexed(chapters.rows, key = { _, c -> c.index }) { i, c ->
+                        val bitmap = preview(c.start)
+                        FolgenRow(if (i == now) Modifier.focusRequester(chapterFocus) else Modifier, { jump(c.start) }, bitmap, null,
+                                  c.heading(chapters.numberTitle), if (c.current) "${translated("Läuft")} · ${c.startText}" else c.startText,
+                                  false, c.current, null, null)
+                    }
                 }
-            }
-        } else
-        // Clear space below the season pill, otherwise the row would stick to it.
-        if (episodes.isNotEmpty()) CompositionLocalProvider(LocalBringIntoViewSpec provides if (immediate) TvRailWithoutMotion else TvRailsBringIntoView) {
-            val start = episodes.indexOfFirst { it.id == runningId }.coerceAtLeast(0)
-            LazyRow(Modifier.padding(top = 22.dp).graphicsLayer { alpha = reveal.value }, state = strip,
-                    contentPadding = PaddingValues(horizontal = TvTheme.edgePage, vertical = TvTheme.railsPadding),
-                    horizontalArrangement = Arrangement.spacedBy(TvTheme.tileSpacing)) {
-                itemsIndexed(episodes, key = { _, f -> f.id }) { i, f ->
-                    // Long OK or the menu key: the tile menu, in the player only with the watch state
-                    // (`TileMenuRequest.inPlayer`); the tile itself already starts the episode.
-                    val menu = de.paulherter.swiftly.LocalTileMenu.current
-                    val lengthy: (() -> Unit)? = menu?.let { m -> {
-                        m(de.paulherter.swiftly.TileMenuRequest(f.id, f.name.ifEmpty { f.title }, "Episode",
-                            f.image, true, f.subline, inPlayer = true,
-                            afterwards = { run.launch { episodesRefresh() } }))
-                    } }
-                    TvEpisodesTile(f, if (i == start) Modifier.focusRequester(running) else Modifier, lengthy = lengthy) { start(f) }
+            } else if (episodes.isNotEmpty()) {
+                LazyColumn(Modifier.heightIn(max = TvFolgenMetric.listMax).graphicsLayer { alpha = reveal.value }, state = strip) {
+                    itemsIndexed(episodes, key = { _, f -> f.id }) { i, f ->
+                        // Long OK or the menu key: the tile menu, in the player only with the watch state
+                        // (`TileMenuRequest.inPlayer`); the row itself already starts the episode.
+                        val menu = de.paulherter.swiftly.LocalTileMenu.current
+                        val lengthy: (() -> Unit)? = menu?.let { m -> {
+                            m(de.paulherter.swiftly.TileMenuRequest(f.id, f.name.ifEmpty { f.title }, "Episode",
+                                f.image, true, f.subline, inPlayer = true,
+                                afterwards = { run.launch { episodesRefresh() } }))
+                        } }
+                        val title = f.number?.let { "${translated("F%d", it)} · ${f.name}" } ?: f.name
+                        val subline = buildList {
+                            f.runtimeMin?.let { add(translated("%lld Min", it)) }
+                            f.remainingTime?.let { add(it) }
+                        }.joinToString(" · ").ifEmpty { null }
+                        FolgenRow(if (f.id == runningId) Modifier.focusRequester(running) else Modifier, { start(f) }, null, f.image,
+                                  title, subline, f.watched, f.id == runningId, if (f.watched) null else f.progress, lengthy)
+                    }
                 }
             }
         }
     }
 }
 
-/** Like `TvRailsBringIntoView`, but without motion, for the first focus on open. */
-@OptIn(ExperimentalFoundationApi::class)
-@Suppress("DEPRECATION")
-private object TvRailWithoutMotion : BringIntoViewSpec {
-    override val scrollAnimationSpec: AnimationSpec<Float> = snap()
-    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
-        TvRailsBringIntoView.calculateScrollDistance(offset, size, containerSize)
+/** Sizes of the Folgen box (tvOS `TVFolgenMetric`, 860 pt halved); the season box hangs from it (`TvPlayerMenuLayer`). */
+internal object TvFolgenMetric {
+    val width = 430.dp
+    val listMax = 300.dp
+    val row = 36.dp
+    val boxPad = 6.dp
+    /** Same as the menu box (`TvMenuMetric`): card corner, rows and tabs `radius.small` (concentric with the 6 dp pad), the still a tile at 8 % of its width = `radius.small`. */
+    val radius = TvTheme.cornerArea
+    val rowRadius = TvTheme.cornerSmall
+    val stillRadius = TvTheme.cornerSmall
+    val still = androidx.compose.ui.unit.DpSize(88.dp, 50.dp)
+}
+
+/** A tab of the Folgen box's header: white with dark text on focus, the open one carries a line under its label. */
+@Composable
+private fun FolgenTabButton(text: String, on: Boolean, chevron: Boolean, modifier: Modifier = Modifier, focusChanged: (Boolean) -> Unit = {}, perform: () -> Unit) {
+    FocusArea(modifier.semantics { selected = on }, magnifier = 1f, focusChanged = focusChanged, perform = perform) { lit ->
+        val ink = if (lit) Theme.reason else if (on) Theme.font else Theme.fontVeryQuiet
+        Column(Modifier.clip(smoothRoundedShape(TvFolgenMetric.rowRadius)).background(if (lit) Color.White else Color.Transparent).padding(horizontal = 12.dp, vertical = 4.dp)) {
+            Row(Modifier.height(26.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(text, style = Theme.listTitle.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), color = ink, maxLines = 1)
+                if (chevron) Symbol(Glyph.AngleDown, 10.dp, color = ink, strength = Strength.Semibold)
+            }
+            Box(Modifier.height(2.dp).fillMaxWidth().background(if (on) ink else Color.Transparent, CircleShape))
+        }
+    }
+}
+
+/** One row of the Folgen box: still (episode picture or chapter frame), "F2 · Title", runtime and progress; focus white with dark text. */
+@Composable
+private fun FolgenRow(modifier: Modifier, perform: () -> Unit, bitmap: android.graphics.Bitmap?, image: String?, title: String, subline: String?,
+                      watched: Boolean, now: Boolean, progress: Double?, lengthy: (() -> Unit)?) {
+    FocusArea(modifier.fillMaxWidth().semantics(mergeDescendants = true) { selected = now; contentDescription = title }, magnifier = 1f, lengthy = lengthy, perform = perform) { lit ->
+        Row(Modifier.fillMaxWidth().clip(smoothRoundedShape(TvFolgenMetric.rowRadius)).background(if (lit) Color.White else Color.Transparent).padding(horizontal = 6.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(TvFolgenMetric.still.width, TvFolgenMetric.still.height).clip(smoothRoundedShape(TvFolgenMetric.stillRadius)).background(Theme.area)) {
+                if (bitmap != null) Image(bitmap.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                else AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop,
+                                colorFilter = if (watched) de.paulherter.swiftly.WATCHED_DIM else null, modifier = Modifier.fillMaxSize())
+                progress?.takeIf { it > 0 && it < 1 }?.let { a ->
+                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(Color.White.copy(alpha = 0.22f))) {
+                        Box(Modifier.fillMaxWidth(a.toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(Theme.accent))
+                    }
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = Theme.listTitle.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold), color = if (lit) Theme.reason else if (watched) Theme.fontQuiet else Theme.font,
+                     maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (!subline.isNullOrEmpty()) Text(subline, style = Theme.listTitle.copy(fontSize = 12.sp, fontWeight = FontWeight.Normal),
+                     color = if (lit) Theme.reason.copy(alpha = 0.7f) else if (now) Theme.accent else Theme.fontVeryQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
 }
 
 /** `scrim` on tvOS 1.1: one gradient, .65 > 0 at .32 > 0 at .62 > .8. */

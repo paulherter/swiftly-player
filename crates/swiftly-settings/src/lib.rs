@@ -18,5 +18,5 @@ pub mod value;
 
 pub use key::{Key, KeyInfo, Scope, SettingValue, jellyfin_server, plex_server, server_key};
 pub use settings::Settings;
-pub use store::{JsonFileStore, KeyValueStore, MemoryStore, StoreError};
+pub use store::{JsonFileStore, KeyValueStore, MemoryStore, Recovered, StoreError};
 pub use value::{Value, ValueType};

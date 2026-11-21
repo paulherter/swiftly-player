@@ -19,6 +19,12 @@ public func runtime(_ seconds: Double) -> String {
                    : translated("\(m) Min.")
 }
 
+/// The runtime as text, or nothing when it is unknown, zero or under one minute
+/// (``DisplayRules/runtimeMinutes(seconds:)``).
+public func runtimeLine(_ seconds: Double?) -> String? {
+    DisplayRules.runtimeMinutes(seconds: seconds).map { _ in runtime(seconds ?? 0) }
+}
+
 /// “1:23 h” or “42 min”, for the resume button.
 ///
 /// Without translation: “h” and “min” are the same in both languages.
@@ -42,7 +48,7 @@ extension Item {
     public var secondaryLine: String {
         var parts: [String] = []
         if let year = productionYear { parts.append(String(year)) }
-        if let seconds = runtimeSeconds, seconds > 0 { parts.append(runtime(seconds)) }
+        if let line = runtimeLine(runtimeSeconds) { parts.append(line) }
         if let genres, !genres.isEmpty {
             parts.append(genres.prefix(2).joined(separator: ", "))
         }

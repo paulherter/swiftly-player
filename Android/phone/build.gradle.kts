@@ -53,7 +53,7 @@ android {
         applicationId = "de.paulherter.swiftly"
         minSdk = 28
         targetSdk = 36
-        versionCode = 43
+        versionCode = 44
         versionName = "1.1.0"
         // **Switch-to-Play-Store build for the current beta testers** (`-PbetaRedirect=true`, never set
         // permanently): the app shows only a notice page (`BetaRedirectPage`). Off by default.
@@ -62,7 +62,7 @@ android {
         // crashed at startup. libVLC shipped four ABIs, x86 never worked.
         // armeabi-v7a for TVs with 32-bit Android: without it the app was invisible in the store there.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") + (findProperty("extraAbi")?.toString()?.split(",").orEmpty()) }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -100,7 +100,6 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(project(":ffmpeg"))
-    implementation(libs.lottie.compose)
     implementation(libs.zxing.core)
     implementation(libs.play.review.ktx)
     implementation(libs.androidx.tvprovider)
@@ -108,22 +107,17 @@ dependencies {
     // Only the play flavor: the direct build must not even declare the BILLING permission
     // (the library's manifest adds it).
     "playImplementation"(libs.billing)
+    // Play Services pulls androidx.fragment 1.1.0 into the Play flavor; the release lint check for `registerForActivityResult`
+    // (InvalidFragmentVersionForActivityResult) rejects anything below 1.3.0. Lottie used to bring a newer one in; this keeps it explicit.
+    constraints { implementation("androidx.fragment:fragment:1.5.4") { because("lint needs fragment 1.3.0 or newer for the ActivityResult API") } }
     // Only for the JVM tests (`StreamNextLeaderTest`).
     testImplementation("junit:junit:4.13.2")
+    // The real `org.json` (the Android stub throws in JVM tests): `SwitchAnswerTest` reads core answers.
     testImplementation("org.json:json:20240303")
     // Only for the device tests (`CertificatesTest`), on the emulator.
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
-
-// **The start animation lives once in the repo** (`Sources/Shared/Assets`) and is copied here at
-// build time; a second file would drift.
-val copyStartAnimation by tasks.registering(Copy::class) {
-    from(rootProject.file("../Sources/Shared/Assets/startanimation.json"))
-    into(layout.buildDirectory.dir("generated/startanimation"))
-}
-android.sourceSets.getByName("main").assets.srcDir(file("build/generated/startanimation"))
-tasks.named("preBuild") { dependsOn(copyStartAnimation) }
 
 // **The subtitle typeface lives once in the repo** (`Sources/Shared/Assets/Inter-SemiBold.ttf`, the file the Apple overlay
 // draws with) and is shipped as an asset under `fonts/`; `TextCaptionView` reads it from there, so the letters are the same.

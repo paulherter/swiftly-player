@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -41,6 +40,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.shared.Motion
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import org.json.JSONObject
 import kotlin.math.PI
@@ -159,7 +159,7 @@ fun SubtitlePreview(facts: SubtitleFacts, previewHeight: Dp, modifier: Modifier 
             PreviewPicture()
             PreviewText(facts, colour, points, bottomGap)
         },
-        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(cornerRadius))
+        modifier = modifier.fillMaxWidth().clip(smoothRoundedShape(cornerRadius))
             // One element: the text itself is part of the picture and is not read.
             .clearAndSetSemantics { contentDescription = label; stateDescription = sentence },
     ) { measurables, constraints ->

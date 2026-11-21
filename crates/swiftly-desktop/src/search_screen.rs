@@ -10,7 +10,8 @@ use crate::hub::HubSlotExt;
 use crate::net::AppTransport;
 use std::rc::Rc;
 use std::sync::Arc;
-use swiftly_design::tokens::{colour, touch, tv};
+use swiftly_design::tokens::{touch, tv};
+use swiftly_design::tokens_generated::{color, desktop as dtok};
 use swiftly_layout::{Align, Alignment, Axis, EdgeInsets};
 use swiftly_library::MemoryKeyValue;
 use swiftly_render::{Color, DrawList, RgbaImage};
@@ -98,7 +99,7 @@ fn section_title(cx: &Cx, m: &Metrics, s: &str, tracking: f32) -> Node {
         cx,
         s,
         style,
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(1),
         swiftly_text::Align::Start,
     )
@@ -148,7 +149,7 @@ fn recents_block(cx: &Cx, m: &Metrics, ctx: &Ctx, recents: &[String]) -> Node {
                     cx,
                     if tv { "Verlauf löschen" } else { "Löschen" },
                     st(if tv { 30.0 } else { 13.0 }, 500),
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     Some(1),
                     swiftly_text::Align::End,
                 )
@@ -165,13 +166,18 @@ fn recents_block(cx: &Cx, m: &Metrics, ctx: &Ctx, recents: &[String]) -> Node {
             Some(12.0),
             vec![
                 ctx.icons
-                    .node("clock-counter-clockwise", icon, true, color(colour::FONT))
+                    .node(
+                        "clock-counter-clockwise",
+                        icon,
+                        true,
+                        color(color::TEXT_PRIMARY),
+                    )
                     .frame(Some(icon), None, Alignment::CENTER),
                 text(
                     cx,
                     word,
                     st(word_size, 600),
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
@@ -187,7 +193,7 @@ fn recents_block(cx: &Cx, m: &Metrics, ctx: &Ctx, recents: &[String]) -> Node {
         );
         if i + 1 < recents.len() {
             rows.push(
-                Node::rect(color(colour::LINE), 0.0)
+                Node::rect(color(color::BORDER_HAIRLINE), 0.0)
                     .frame(None, Some(1.0), Alignment::CENTER)
                     .padding(ins(0.0, m.edge + 34.0, 0.0, 0.0)),
             );
@@ -205,10 +211,10 @@ fn result_metrics(m: Metrics) -> Metrics {
     Metrics {
         tile_w: 120.0,
         tile_h: 180.0,
-        row_gap: 20.0,
-        gap: 16.0,
+        row_gap: dtok::SPACE_GROUP_TOP,
+        gap: dtok::SPACE_TILE_GAP,
         title: swiftly_design::TextStyle {
-            size: 14.0,
+            size: dtok::TEXT_LABEL_TILE_CAPTION.size,
             weight: 600,
             tracking: 0.0,
             uppercase: false,
@@ -333,13 +339,13 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                     "magnifying-glass",
                     if tv { 88.0 } else { 44.0 },
                     true,
-                    color(colour::FONT),
+                    color(color::TEXT_PRIMARY),
                 ),
                 text(
                     cx,
                     "Filme, Serien und Folgen durchsuchen",
                     st(if tv { 30.0 } else { 15.0 }, 400),
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(1),
                     swiftly_text::Align::Center,
                 ),
@@ -491,7 +497,7 @@ fn tv_letter_key(cx: &Cx, ch: &str) -> Node {
         cx,
         ch,
         st(30.0, 600),
-        colour::FONT_QUIET,
+        color::TEXT_SECONDARY,
         Some(1),
         swiftly_text::Align::Center,
     );
@@ -508,8 +514,8 @@ fn tv_letter_key(cx: &Cx, ch: &str) -> Node {
             } => Paint::FocusText {
                 text,
                 style,
-                rest: color(colour::FONT_QUIET),
-                focused: color(colour::REASON),
+                rest: color(color::TEXT_SECONDARY),
+                focused: color(color::SURFACE_BASE),
                 lines,
                 align,
             },
@@ -537,9 +543,9 @@ fn tv_icon_key(
     muted: bool,
 ) -> Node {
     let rest = if muted {
-        colour::FONT_VERY_QUIET
+        color::TEXT_TERTIARY
     } else {
-        colour::FONT_QUIET
+        color::TEXT_SECONDARY
     };
     let mut icon = ctx.icons.node(asset, pt, outlined, color(rest));
     for p in &mut icon.paint {
@@ -547,7 +553,7 @@ fn tv_icon_key(
             *p = Paint::FocusImage {
                 image,
                 rest: color(rest),
-                focused: color(colour::REASON),
+                focused: color(color::SURFACE_BASE),
                 radius,
             };
         }
@@ -556,12 +562,17 @@ fn tv_icon_key(
 }
 
 fn tv_field(cx: &Cx, ctx: &Ctx, term: &str) -> Node {
-    let mut row = vec![
-        ctx.icons
-            .node("magnifying-glass", 28.0, true, color(colour::FONT_QUIET)),
-    ];
+    let mut row =
+        vec![
+            ctx.icons
+                .node("magnifying-glass", 28.0, true, color(color::TEXT_SECONDARY)),
+        ];
     let caret = || {
-        Node::rect(color(colour::MARK_ACCENT), 0.0).frame(Some(3.0), Some(34.0), Alignment::CENTER)
+        Node::rect(color(crate::look_glow::accent()), 0.0).frame(
+            Some(3.0),
+            Some(34.0),
+            Alignment::CENTER,
+        )
     };
     if term.is_empty() {
         row.push(Node::hstack(
@@ -573,7 +584,7 @@ fn tv_field(cx: &Cx, ctx: &Ctx, term: &str) -> Node {
                     cx,
                     "Titel, Serie, Person",
                     st(28.0, 400),
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 )
@@ -596,7 +607,7 @@ fn tv_field(cx: &Cx, ctx: &Ctx, term: &str) -> Node {
                     cx,
                     &shown.replace(' ', "\u{00A0}"),
                     st(28.0, 400),
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
@@ -612,7 +623,10 @@ fn tv_field(cx: &Cx, ctx: &Ctx, term: &str) -> Node {
             Some(TV_FIELD),
             Alignment::LEADING,
         )
-        .background(Node::rect(color(colour::AREA), 8.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 8.0),
+            Alignment::CENTER,
+        )
 }
 
 fn tv_keyboard(cx: &Cx, ctx: &Ctx, term: &str) -> Node {
@@ -679,7 +693,7 @@ fn tv_keyboard(cx: &Cx, ctx: &Ctx, term: &str) -> Node {
     .padding(EdgeInsets::all(TV_INSET))
     .frame(Some(TV_KEYBOARD), None, Alignment::TOP_LEADING)
     .background(
-        Node::rect(color(colour::GROUPS_AREA), 16.0),
+        Node::rect(color(color::SURFACE_GROUP), 16.0),
         Alignment::CENTER,
     )
 }
@@ -701,12 +715,12 @@ fn tv_note(cx: &Cx, ctx: &Ctx, w: f32, asset: &str, sentence: &str) -> Node {
         Some(20.0),
         vec![
             ctx.icons
-                .node(asset, 88.0, true, color(colour::FONT_VERY_QUIET)),
+                .node(asset, 88.0, true, color(color::TEXT_TERTIARY)),
             text(
                 cx,
                 sentence,
                 st(30.0, 400),
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 None,
                 swiftly_text::Align::Center,
             ),
@@ -727,12 +741,12 @@ fn tv_empty(
 ) -> Node {
     let mut v = vec![
         ctx.icons
-            .node(asset, 88.0, true, color(colour::FONT_VERY_QUIET)),
+            .node(asset, 88.0, true, color(color::TEXT_TERTIARY)),
         text(
             cx,
             title,
             st(44.0, 700),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(2),
             swiftly_text::Align::Center,
         ),
@@ -740,7 +754,7 @@ fn tv_empty(
             cx,
             hint,
             st(30.0, 400),
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             None,
             swiftly_text::Align::Center,
         ),
@@ -751,14 +765,14 @@ fn tv_empty(
                 cx,
                 b,
                 tv::text::BUTTON,
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(1),
                 swiftly_text::Align::Center,
             )
             .padding(EdgeInsets::symmetric(tv::TAB_PADDING, 0.0))
             .frame(None, Some(tv::TAB_HEIGHT), Alignment::CENTER)
             .background(
-                Node::rect(color(colour::SURFACE_TRANSLUCENT), 999.0),
+                Node::rect(color(color::SURFACE_TRANSLUCENT), 999.0),
                 Alignment::CENTER,
             )
             .key("retry")
@@ -1427,6 +1441,17 @@ impl SearchScreen {
     /// Whether the right-click menu is open.
     pub fn menu_open(&self) -> bool {
         self.menu.is_open()
+    }
+
+    /// The shortcut of `entry` (Ctrl+D, Ctrl+Shift+G, Ctrl+I) while the right-click menu is open. False when it did nothing.
+    pub fn menu_shortcut(&mut self, entry: &crate::tile_menu::Entry) -> bool {
+        match self.menu.pick_entry(entry) {
+            Some(crate::desk::Pick::Row(id, i)) => {
+                self.picked(&id, i);
+                true
+            }
+            _ => false,
+        }
     }
 
     /// A right click on a result tile.

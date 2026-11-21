@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -54,6 +53,7 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -257,7 +257,7 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                        fadeOut(tween(90, easing = Motion.soft))) {
                 Box(Modifier.padding(start = 12.dp).size(44.dp).tapOn { st.term = ""; focusManager.clearFocus(); st.searchMode = false },
                     contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(Theme.corner)).background(Theme.area), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(36.dp).clip(smoothRoundedShape(Theme.corner)).background(Theme.area), contentAlignment = Alignment.Center) {
                         Symbol(Glyph.Cross, 15.dp, color = Theme.font, strength = Strength.Semibold, description = translated("Suche schließen"))
                     }
                 }
@@ -373,7 +373,7 @@ private fun SearchField(text: String, change: (String) -> Unit, focus: FocusRequ
                      atTap: (Boolean) -> Unit, submit: () -> Unit) {
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     // 48 as every other field; it was the only one at 44.
-    Row(modifier.heightIn(min = Theme.buttonHeight).clip(RoundedCornerShape(Theme.cornerField)).background(Theme.area)
+    Row(modifier.heightIn(min = Theme.buttonHeight).clip(smoothRoundedShape(Theme.cornerField)).background(Theme.area)
             .clickable(remember { MutableInteractionSource() }, null) { focus.requestFocus() }
             .padding(start = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {

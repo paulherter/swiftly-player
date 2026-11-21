@@ -70,3 +70,4 @@
 - F-oracle-V50 | domain `requests_plex` | status pinned
 - F-oracle-V51 | domain `requests_plex` | status pinned
 - F-oracle-V52 | domain `requests_plex` | status pinned
+- F-oracle-H01 | domain `play_display` | status pinned

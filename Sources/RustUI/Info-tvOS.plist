@@ -29,5 +29,10 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Swiftly Rust looks for your Jellyfin server on your home network.</string>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>StartBackground</string>
+	</dict>
 </dict>
 </plist>

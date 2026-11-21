@@ -3,52 +3,64 @@ import SwiftUI
 import SwiftlyCore
 
 /// **"Problem melden"** in the app's own sheet shell: the kind (Bild, Ton, Untertitel, Sonstiges), a few words,
-/// and the place it is about (season, episode and the player's position, filled in by the host). The core creates
-/// the issue; its refusal is shown in the sheet in Seerr's own words.
+/// and the place it is about (season, episode and the player's position). The sheet only draws what the core's
+/// report flow answers (`flow.info`): every word, the phase and whether "Melden" is live come from the core, and
+/// so does its refusal, shown in Seerr's own words.
 struct ReportIssueSheet: View {
     @Binding var opened: Bool
     let flow: SeerrReportFlow
-    let model: AppModel
 
+    /// The words in the field. The core keeps them too (`setMessage`); this is only what the field edits.
+    @State private var draft = ""
     @FocusState private var typing: Bool
-
-    private static let kinds: [(SwiftlyCore.IssueKind, String)] = [
-        (.video, String(localized: "Bild")),
-        (.audio, String(localized: "Ton")),
-        (.subtitles, String(localized: "Untertitel")),
-        (.other, String(localized: "Sonstiges")),
-    ]
 
     var body: some View {
         Color.clear
             .allowsHitTesting(false)
             .sheet(opened: $opened) { content }
+            .onChange(of: opened) { _, open in
+                if open {
+                    draft = flow.info?.message ?? ""
+                } else {
+                    flow.dismiss()
+                }
+            }
     }
 
     @ViewBuilder
     private var content: some View {
-        SheetCategory(text: Text("Problem melden"))
-        if let place = flow.place {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: place.title)
-                    .font(.app(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.font)
-                    .lineLimit(1)
-                if let line = place.line {
-                    Text(verbatim: line).font(Theme.small).foregroundStyle(Theme.fontQuiet)
+        if let info = flow.info {
+            SheetCategory(text: Text(verbatim: info.heading))
+            if !info.title.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: info.title)
+                        .font(.app(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.font)
+                        .lineLimit(1)
+                    if let line = info.line {
+                        Text(verbatim: line).font(Theme.small).foregroundStyle(Theme.fontQuiet)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Theme.edgeSpacing)
+                .padding(.bottom, 10)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Theme.edgeSpacing)
-            .padding(.bottom, 10)
+            if info.phase == .sent {
+                sent(info)
+            } else {
+                form(info)
+            }
         }
-        if flow.phase == .sent {
+    }
+
+    private func sent(_ info: SwiftlyCore.ReportIssueInfo) -> some View {
+        Group {
             HStack(spacing: 10) {
                 Image(icon: "checkmark.circle", size: 18)
                     .font(.app(size: 18))
                     .foregroundStyle(Theme.accent)
                     .accessibilityHidden(true)
-                Text("Gemeldet. Danke.")
+                Text(verbatim: info.sentText)
                     .font(.app(size: 15))
                     .foregroundStyle(Theme.font)
                 Spacer(minLength: 0)
@@ -58,20 +70,24 @@ struct ReportIssueSheet: View {
             .accessibilityIdentifier("report-sent")
             SheetLine()
             Button { opened = false } label: {
-                Text("Fertig")
+                Text(verbatim: info.doneText)
                     .font(.app(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.accent)
                     .frame(maxWidth: .infinity, minHeight: Theme.rowHeight)
             }
             .buttonStyle(Theme.PressRow())
-        } else {
-            ForEach(Array(Self.kinds.enumerated()), id: \.offset) { pair in
-                let selected = flow.kind == pair.element.0
-                Button { flow.kind = pair.element.0 } label: {
+        }
+    }
+
+    private func form(_ info: SwiftlyCore.ReportIssueInfo) -> some View {
+        Group {
+            ForEach(Array(info.kinds.enumerated()), id: \.offset) { pair in
+                let row = pair.element
+                Button { flow.setKind(row.kind) } label: {
                     HStack {
-                        Text(verbatim: pair.element.1).font(.app(size: 15)).foregroundStyle(Theme.font)
+                        Text(verbatim: row.text).font(.app(size: 15)).foregroundStyle(Theme.font)
                         Spacer(minLength: 8)
-                        if selected {
+                        if row.selected {
                             Image(icon: "checkmark", size: 14)
                                 .font(.app(size: 14, weight: .semibold))
                                 .foregroundStyle(Theme.accent)
@@ -83,21 +99,22 @@ struct ReportIssueSheet: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(Theme.PressRow())
-                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityAddTraits(row.selected ? .isSelected : [])
                 .accessibilityIdentifier("report-kind-\(pair.offset)")
             }
-            TextField("Was stimmt nicht?", text: Binding(get: { flow.message }, set: { flow.message = $0 }))
+            TextField(info.placeholder, text: $draft)
                 .font(.app(size: 15))
                 .focused($typing)
                 .submitLabel(.done)
                 .onSubmit { typing = false }
+                .onChange(of: draft) { _, words in flow.setMessage(words) }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 11)
                 .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
                 .padding(.horizontal, Theme.edgeSpacing)
                 .padding(.vertical, 10)
                 .accessibilityIdentifier("report-message")
-            if case .failed(let text) = flow.phase {
+            if case .failed(let text) = info.phase {
                 Text(verbatim: text)
                     .font(Theme.small)
                     .foregroundStyle(Theme.warning)
@@ -110,23 +127,18 @@ struct ReportIssueSheet: View {
             SheetLine()
             Button {
                 typing = false
-                Task { await flow.send(model) }
+                Task { await flow.send() }
             } label: {
-                Text(flow.phase == .sending ? "Wird gemeldet …" : "Melden")
+                Text(verbatim: info.sendLabel)
                     .font(.app(size: 15, weight: .semibold))
-                    .foregroundStyle(canSend ? Theme.accent : Theme.fontVeryQuiet)
+                    .foregroundStyle(info.canSend ? Theme.accent : Theme.fontVeryQuiet)
                     .frame(maxWidth: .infinity, minHeight: Theme.rowHeight)
             }
             .buttonStyle(Theme.PressRow())
-            .disabled(!canSend)
+            .disabled(!info.canSend)
             .accessibilityIdentifier("report-send")
             SheetLine()
-            SheetCancel { opened = false }
+            SheetCancel(text: info.cancelText) { opened = false }
         }
-    }
-
-    /// A report needs a few words; the core sends nothing empty.
-    private var canSend: Bool {
-        flow.phase != .sending && !flow.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -71,6 +70,7 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 
 /** Where the code is typed (the page the QR code opens on tvOS). */
@@ -176,7 +176,7 @@ private fun QrCode(address: String) {
                 mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M, EncodeHintType.MARGIN to 0))
         }.getOrNull()
     } ?: return
-    Box(Modifier.size(TvSpec.plexQrSize + TvSpec.plexQrInset * 2).clip(RoundedCornerShape(TvTheme.corner)).background(Color.White)
+    Box(Modifier.size(TvSpec.plexQrSize + TvSpec.plexQrInset * 2).clip(smoothRoundedShape(TvTheme.corner)).background(Color.White)
             .clearAndSetSemantics { },
         contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(TvSpec.plexQrSize)) {
@@ -195,7 +195,7 @@ private fun CodeFields(code: String) {
     Row(Modifier.clearAndSetSemantics { contentDescription = translated("Code") + " " + code.toList().joinToString(" ") },
         horizontalArrangement = Arrangement.spacedBy(TvSpec.plexCodeSpacing)) {
         code.forEach { c ->
-            Box(Modifier.size(TvSpec.plexCodeWidth, TvSpec.plexCodeHeight).clip(RoundedCornerShape(TvTheme.corner)).background(Theme.raised),
+            Box(Modifier.size(TvSpec.plexCodeWidth, TvSpec.plexCodeHeight).clip(smoothRoundedShape(TvTheme.corner)).background(Theme.raised),
                 contentAlignment = Alignment.Center) {
                 Text(c.toString(), style = TvTheme.titleLarge.copy(fontSize = size, fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum"),
                      color = Theme.font)
@@ -242,7 +242,7 @@ private fun Profiles(model: PlexSignInModel, profiles: List<PlexProfile>) {
 /** On the portrait's upper right edge, as a mark on a picture: a small field, not a circle (round is only what is a picture). */
 @Composable
 private fun LockMark() {
-    Box(Modifier.size(TvSpec.plexLockBadge).background(Theme.raised, RoundedCornerShape(TvTheme.cornerSmall)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(TvSpec.plexLockBadge).background(Theme.raised, smoothRoundedShape(TvTheme.cornerSmall)), contentAlignment = Alignment.Center) {
         Symbol(Glyph.Padlock, TvSpec.plexLockIcon, color = Theme.fontQuiet, strength = Strength.Semibold)
     }
 }
@@ -278,7 +278,7 @@ private fun PinEntry(model: PlexSignInModel, profile: PlexProfile) {
             val boxFill by androidx.compose.animation.animateColorAsState(if (focused) Color.White else Theme.raised, tvTween(TvSpec.focusMs), label = "pin")
             Row(horizontalArrangement = Arrangement.spacedBy(TvSpec.plexPinSpacing)) {
                 repeat(4) { index ->
-                    Box(Modifier.size(TvSpec.plexPinWidth, TvSpec.plexPinHeight).clip(RoundedCornerShape(TvTheme.corner)).background(boxFill),
+                    Box(Modifier.size(TvSpec.plexPinWidth, TvSpec.plexPinHeight).clip(smoothRoundedShape(TvTheme.corner)).background(boxFill),
                         contentAlignment = Alignment.Center) {
                         Text(if (index < pin.length) "•" else "", style = TvTheme.titleLarge, color = if (focused) Theme.reason else Theme.font)
                     }
@@ -329,7 +329,7 @@ private fun ServerRow(model: PlexSignInModel, server: PlexServer, modifier: Modi
     val other = model.connecting != null && !busy
     FocusArea(modifier.fillMaxWidth().alpha(if (other) TvSpec.pickerDimWaitingOpacity else 1f), magnifier = 1f,
               perform = { if (!other) model.pickServer(server) }) { focus ->
-        Row(Modifier.fillMaxWidth().heightIn(min = TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
+        Row(Modifier.fillMaxWidth().heightIn(min = TvTheme.rowsHeight).clip(smoothRoundedShape(TvTheme.corner))
                 .background(tvFocusSurface(focus)).padding(horizontal = TvSpec.pickerCardInsetHorizontal),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvSpec.plexServerGap)) {
             Box(Modifier.width(TvSpec.plexServerIconBox), contentAlignment = Alignment.Center) {

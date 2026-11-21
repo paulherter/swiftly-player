@@ -222,6 +222,8 @@ fn start_request() -> StartRequest {
         flavour: Flavour::Aether,
         hardware_av1: false,
         no_dolby_vision_decoder: false,
+        video_decoders: swiftly_playback::video_decoders::VideoDecoders::default(),
+        decoder_refused: false,
         ask_versions: true,
         downloaded: None,
         ordered: None,

@@ -77,11 +77,17 @@ impl Desk {
     }
 
     /// The device's settings (the arrival switch and the closed banners).
-    /// The "Meine Anfragen" switch as the Start page honours it: the core takes the section off the desktop Start page
-    /// whatever the switch says (`SeerrSection::on_start`; it stays reachable through the profile entry).
+    /// The "Meine Anfragen" switch as the Start page honours it (off until the user switches it on).
     fn requests_rail_on(st: &swiftly_settings::Settings<crate::settings_screen::Mem>) -> bool {
         st.get(&keys::SEERR_REQUESTS_RAIL)
             && swiftly_library::SeerrSection::Requests.on_start(swiftly_library::HomeForm::Desktop)
+    }
+
+    /// The "ist da" switch as the Start page honours it: the core keeps that banner off the desktop Start page whatever
+    /// the switch says (`SeerrSection::on_start`), so its library lookup is not read either.
+    fn arrival_on(st: &swiftly_settings::Settings<crate::settings_screen::Mem>) -> bool {
+        st.get(&keys::SEERR_ARRIVAL_HINT)
+            && swiftly_library::SeerrSection::Arrival.on_start(swiftly_library::HomeForm::Desktop)
     }
 
     fn settings(&self) -> swiftly_settings::Settings<crate::settings_screen::Mem> {
@@ -94,7 +100,11 @@ impl Desk {
     /// The library lookup of the home block (arrival banners): this account's Jellyfin/Emby server by TMDB id.
     fn finder(
         &self,
-    ) -> impl Fn(String, i64) -> std::pin::Pin<Box<dyn Future<Output = Option<String>> + Send>>
+    ) -> impl Fn(
+        String,
+        i64,
+    )
+        -> std::pin::Pin<Box<dyn Future<Output = Option<swiftly_vm::LibraryHit>> + Send>>
     + Clone
     + Send
     + Sync
@@ -108,12 +118,10 @@ impl Desk {
                     return None;
                 }
                 let kind = if art == "tv" { "Series" } else { "Movie" };
-                core.client_for(&account)
-                    .ok()?
-                    .item_id_by_tmdb(tmdb, kind)
-                    .await
-                    .ok()
-                    .flatten()
+                let client = core.client_for(&account).ok()?;
+                let id = client.item_id_by_tmdb(tmdb, kind).await.ok().flatten()?;
+                let cover = client.image_url_by_id(&id, 360).map(|u| u.to_string());
+                Some(swiftly_vm::LibraryHit { id, cover })
             })
         }
     }
@@ -162,7 +170,7 @@ impl Desk {
             .iter()
             .filter_map(|s| s.parse().ok())
             .collect();
-        let on = st.get(&keys::SEERR_ARRIVAL_HINT);
+        let on = Self::arrival_on(&st);
         let requests_on = Self::requests_rail_on(&st);
         *self.applied.lock().unwrap_or_else(|e| e.into_inner()) = Some((on, requests_on));
         let find = self.finder();
@@ -204,10 +212,7 @@ impl Desk {
     /// switching them on reads the block again. Returns whether anything changed.
     pub fn follow_switches(&self) -> bool {
         let st = self.settings();
-        let now = (
-            st.get(&keys::SEERR_ARRIVAL_HINT),
-            Self::requests_rail_on(&st),
-        );
+        let now = (Self::arrival_on(&st), Self::requests_rail_on(&st));
         let before = *self.applied.lock().unwrap_or_else(|e| e.into_inner());
         match before {
             Some(b) if b == now => false,

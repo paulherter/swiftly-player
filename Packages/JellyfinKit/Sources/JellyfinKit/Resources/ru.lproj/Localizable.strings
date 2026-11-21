@@ -165,9 +165,6 @@
 "Das kann ein Plex-Server nicht." = "Plex-сервер этого не умеет.";
 "Kapitel %lld" = "Глава %lld";
 
-"VLC, Dolby Vision und HDR mit AVPlayer" = "VLC, Dolby Vision и HDR через AVPlayer";
 
 "Immer AVPlayer" = "Всегда AVPlayer";
 
-"Immer VLC" = "Всегда VLC";
-"Aether, bei Problemen VLC" = "Aether, при проблемах VLC";

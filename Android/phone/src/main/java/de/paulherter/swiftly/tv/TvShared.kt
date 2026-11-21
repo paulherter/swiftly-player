@@ -33,6 +33,7 @@ import de.paulherter.swiftly.SheetRequest
 import de.paulherter.swiftly.SharedGroup
 import de.paulherter.swiftly.SwiftlyApplication
 import de.paulherter.swiftly.Choice
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.takeoverIcon
 import de.paulherter.swiftly.werWatch
 import de.paulherter.swiftly.stateTextOf

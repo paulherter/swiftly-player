@@ -107,6 +107,8 @@ struct TileMenu: ViewModifier {
                 // If the tile holds focus, `TileStyle` fetches the series' state ahead of time;
                 // see `SeriesCache.nextPreload`.
                 .environment(\.tilePreload, { [item, model] in
+                    // A film's page loads ahead of the click, so it opens complete (`DetailWarm`).
+                    if item.type == "Movie" { DetailWarm.prepare(item, app: model) }
                     await SeriesCache.shared.nextPreload(toward: item, with: model)
                 })
         } else {
@@ -321,7 +323,7 @@ private struct TilePreview: View {
             var parts: [String] = []
             if let abbreviation = item.episodeCode { parts.append(abbreviation) }
             parts.append(item.name)
-            if let s = item.runtimeSeconds, s > 0 { parts.append(runtime(s)) }
+            if let line = runtimeLine(item.runtimeSeconds) { parts.append(line) }
             return parts.joined(separator: " · ")
         }
         return item.secondaryLine

@@ -25,7 +25,7 @@ abis=("$@"); [ ${#abis[@]} -gt 0 ] || abis=(arm64-v8a armeabi-v7a x86_64)
 [ -f ffmpeg-$FFMPEG_VER.tar.xz ] || curl -fsSLO https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VER.tar.xz
 echo "$FFMPEG_SHA256  ffmpeg-$FFMPEG_VER.tar.xz" | shasum -a 256 -c -
 ext=media/libraries/decoder_ffmpeg/src/main
-mkdir -p "$out/java" && rm -rf "$out/java/androidx" && cp -R "$ext/java/androidx" "$out/java/"
+mkdir -p "${out:?}/java" && rm -rf "${out:?}/java/androidx" && cp -R "${ext:?}/java/androidx" "${out:?}/java/"
 
 for abi in "${abis[@]}"; do
   case $abi in
@@ -34,7 +34,7 @@ for abi in "${abis[@]}"; do
     x86_64)      arch=x86_64;  cpu=x86-64;  triple=x86_64-linux-android$API; extra=(--disable-asm);;
     *) echo "unknown abi $abi"; exit 1;;
   esac
-  src="$work/src-$abi"; rm -rf "$src"; mkdir -p "$src"; tar -xf ffmpeg-$FFMPEG_VER.tar.xz -C "$src" --strip-components=1
+  src="${work:?}/src-$abi"; rm -rf "${src:?}"; mkdir -p "${src:?}"; tar -xf ffmpeg-$FFMPEG_VER.tar.xz -C "${src:?}" --strip-components=1
   ( cd "$src"
     opts=(--target-os=android --enable-shared --disable-static --disable-doc --disable-programs --disable-everything
           --disable-avdevice --disable-avformat --disable-swscale --disable-postproc --disable-avfilter --disable-symver

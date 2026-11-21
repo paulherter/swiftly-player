@@ -3,10 +3,10 @@
 //! for `touch`, `desktop` and `tv`. Differences from the Swift `SeriesView` are noted in the code.
 
 use crate::detail_screen::{
-    Art, HERO_DESKTOP, Head, Kit, Pushed, UiState, VERSION_MENU_WIDTH, body_touch, cast_rail,
-    fill_frame, ground, hero, hero_buttons, ins, look, menu_key, mood_strips, poster_tile,
-    resume_info, rgba, sheet, status_card, tile_rail, top_bar, txt, txt_center, version_entries,
-    weight, wide,
+    Art, HERO_DESKTOP, Head, Kit, MoodFade, Pushed, UiState, VERSION_MENU_WIDTH, body_touch,
+    cast_rail, fill_frame, ground, hero, hero_buttons, ins, look, menu_key, mood_strips,
+    poster_tile, resume_info, rgba, sheet, status_card, tile_rail, top_bar, txt, txt_center,
+    version_entries, weight, wide,
 };
 use crate::home::Form;
 use crate::home_data::Scenario;
@@ -14,7 +14,8 @@ use crate::net::AppTransport;
 use crate::title_data;
 use std::rc::Rc;
 use std::sync::Arc;
-use swiftly_design::tokens::{colour, touch, tv};
+use swiftly_design::tokens::{touch, tv};
+use swiftly_design::tokens_generated::color;
 use swiftly_layout::{Align, Alignment, Axis};
 use swiftly_render::{Color, DrawList, RgbaImage};
 use swiftly_ui::components::{color, focus_id};
@@ -37,6 +38,10 @@ struct Data {
     /// Whether the hero picture's hues are known: the mood backdrop is built from them, and the page must be rebuilt when
     /// they arrive after the page (the view alone never learns about them).
     tones: bool,
+    /// `ImageMood.reveal`: the tone arriving after the first build fades in place (1 when it was there); the held
+    /// tone (still sliding in) is not drawn yet.
+    mood_alpha: f32,
+    hold_mood: bool,
 }
 
 /// A tile for an episode row, so the tile menu knows what it is (the Mac builds the menu from the episode's `Item`).
@@ -132,7 +137,7 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
             lk.corner,
         )
         .paint(Paint::Stroke {
-            color: color(colour::TILE_BORDER),
+            color: color(color::BORDER_TILE),
             width: 1.0,
             radius: lk.corner,
         });
@@ -143,10 +148,10 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
     if e.watched {
         let check = k
             .icons
-            .node("check", 12.0, true, color(colour::FONT))
+            .node("check", 12.0, true, color(color::TEXT_PRIMARY))
             .frame(Some(22.0), Some(22.0), Alignment::CENTER)
             .background(
-                Node::rect(color(colour::SCRIM_BUTTON), 11.0),
+                Node::rect(color(color::SCRIM_BUTTON), 11.0),
                 Alignment::CENTER,
             )
             .padding(ins(0.0, 0.0, 6.0, 6.0));
@@ -157,9 +162,9 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
         None => e.title.clone(),
     };
     let tcolor = if e.watched {
-        colour::FONT_QUIET
+        color::TEXT_SECONDARY
     } else {
-        colour::FONT
+        color::TEXT_PRIMARY
     };
     let second = e
         .remaining
@@ -174,7 +179,7 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
             vec![
                 img,
                 txt(k.cx, &name, lk.tile, tcolor, Some(1)).frame(Some(w), None, Alignment::LEADING),
-                txt(k.cx, &second, lk.small, colour::FONT_VERY_QUIET, Some(1)).frame(
+                txt(k.cx, &second, lk.small, color::TEXT_TERTIARY, Some(1)).frame(
                     Some(w),
                     None,
                     Alignment::LEADING,
@@ -190,7 +195,7 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
         // Download and More appear under the pointer (`SeriesView.swift:817`: "a pointer cannot swipe"). They are
         // always in the layout and only faded, so the text does not reflow on hover: 18 wide, 14 apart, 12 from the
         // text, 2 down.
-        let quiet = color(colour::FONT_QUIET);
+        let quiet = color(color::TEXT_SECONDARY);
         let hidden = Color::new(quiet.r, quiet.g, quiet.b, 0.0);
         let mut icons = Vec::new();
         if crate::live::current().is_none_or(|w| w.download_button()) {
@@ -252,7 +257,7 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
         .key(key)
         .on_tap(Action::from(format!("episode:{}", e.id).as_str()))
         .on_secondary(Action::from(format!("tilemenu:{}", e.id).as_str()))
-        .hover_surface(color(colour::GROUPS_AREA), 12.0)
+        .hover_surface(color(color::SURFACE_GROUP), 12.0)
         .hoverable()
         .press_style(swiftly_ui::interact::PressStyle::Row);
     }
@@ -265,7 +270,7 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
                 k.cx,
                 &second,
                 weight(lk.small, 12.0, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(1),
             ),
         ],
@@ -298,7 +303,7 @@ pub(crate) fn mac_episode_row(
         k.cx,
         name,
         weight(lk.body, 15.0, 600),
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(2),
     )];
     if !second.is_empty() {
@@ -306,7 +311,7 @@ pub(crate) fn mac_episode_row(
             k.cx,
             second,
             weight(lk.small, 12.0, 400),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(1),
         ));
     }
@@ -315,7 +320,7 @@ pub(crate) fn mac_episode_row(
             "check-circle.fill",
             14.0,
             false,
-            color(colour::FONT_VERY_QUIET),
+            color(color::TEXT_TERTIARY),
         ));
     }
     let mut lines = vec![Node::hstack(Align::Center, Some(8.0), head)];
@@ -324,7 +329,7 @@ pub(crate) fn mac_episode_row(
             k.cx,
             o,
             weight(lk.small, 13.0, 400),
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             Some(3),
         ));
     }
@@ -354,12 +359,12 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
                         Align::Start,
                         Some(8.0),
                         vec![
-                            Node::rect(color(colour::AREA), 3.0).frame(
+                            Node::rect(color(color::SURFACE_CONTROL), 3.0).frame(
                                 Some(220.0),
                                 Some(14.0),
                                 Alignment::CENTER,
                             ),
-                            Node::rect(color(colour::AREA), 3.0).frame(
+                            Node::rect(color(color::SURFACE_CONTROL), 3.0).frame(
                                 Some(90.0),
                                 Some(11.0),
                                 Alignment::CENTER,
@@ -370,7 +375,7 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
                         Align::Start,
                         Some(16.0),
                         vec![
-                            Node::rect(color(colour::AREA), 10.0).frame(
+                            Node::rect(color(color::SURFACE_CONTROL), 10.0).frame(
                                 Some(w),
                                 Some(h),
                                 Alignment::CENTER,
@@ -387,7 +392,7 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
         EpisodesStatus::Loading => {
             let rows: Vec<Node> = (0..4)
                 .map(|_| {
-                    Node::rect(color(colour::AREA), lk.corner)
+                    Node::rect(color(color::SURFACE_CONTROL), lk.corner)
                         .frame(Some(w), Some(h), Alignment::CENTER)
                         .padding(ins(8.0, lk.edge, 8.0, lk.edge))
                 })
@@ -403,7 +408,7 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
                 "Keine Folgen in dieser Staffel"
             },
             weight(lk.body, 15.0, 400),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             1,
         )
         .frame(Some(820.0), Some(200.0), Alignment::TOP)
@@ -412,7 +417,7 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
             k.cx,
             "Keine Folgen in dieser Staffel",
             lk.body,
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             Some(1),
         )
         .padding(ins(24.0, lk.edge, 24.0, lk.edge)),
@@ -424,10 +429,16 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
                 Some(0.0),
                 vec![
                     k.icons
-                        .node("hard-drive-x", 30.0, true, color(colour::FONT_QUIET))
+                        .node("hard-drive-x", 30.0, true, color(color::TEXT_SECONDARY))
                         .padding(ins(0.0, 0.0, 14.0, 0.0)),
-                    txt_center(k.cx, "Server ist abgetaucht", lk.rail, colour::FONT, 1)
-                        .padding(ins(0.0, 0.0, 6.0, 0.0)),
+                    txt_center(
+                        k.cx,
+                        "Server ist abgetaucht",
+                        lk.rail,
+                        color::TEXT_PRIMARY,
+                        1,
+                    )
+                    .padding(ins(0.0, 0.0, 6.0, 0.0)),
                     txt_center(
                         k.cx,
                         &format!(
@@ -435,7 +446,7 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
                             crate::desk::card().server_name()
                         ),
                         lk.body,
-                        colour::FONT_VERY_QUIET,
+                        color::TEXT_TERTIARY,
                         3,
                     )
                     .frame(Some(262.0), None, Alignment::CENTER),
@@ -443,7 +454,7 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
                         k.cx,
                         "Erneut versuchen",
                         weight(lk.body, 15.0, 500),
-                        colour::MARK_ACCENT,
+                        crate::look_glow::accent(),
                         1,
                     )
                     .frame(None, Some(44.0), Alignment::CENTER)
@@ -512,7 +523,7 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
                         k.cx,
                         "Mehr Folgen",
                         weight(lk.body, 14.0, 600),
-                        colour::MARK_ACCENT,
+                        crate::look_glow::accent(),
                         Some(1),
                     )
                     .padding(ins(12.0, lk.edge, 12.0, 0.0))
@@ -563,14 +574,29 @@ fn tabs(k: &Kit, d: &Data, sx: &UiState) -> Node {
             // `TabButton`: the word turns bright under the pointer as well.
             let lit = on || (mac && sx.hover_tab == Some(i as u8));
             let c = if lit {
-                colour::FONT
+                color::TEXT_PRIMARY
             } else {
-                colour::FONT_QUIET
+                color::TEXT_SECONDARY
             };
             // The tab is as wide as its word, the chevron and the gap: a long season name ("Staffel 13") must never be
             // squeezed into what the row proposes for the half of the pair (`fixedSize`).
-            let mut row =
-                vec![txt(k.cx, s, weight(lk.rail, size, 600), c, Some(1)).fixed_size(true, false)];
+            // A season name longer than 320 pt (a custom name) is cut with an ellipsis, so the row of tabs never runs out of the window.
+            let style = weight(lk.rail, size, 600);
+            let natural =
+                k.cx.measure_text(
+                    s,
+                    &swiftly_text::TextStyle::from(style),
+                    Some(1),
+                    swiftly_layout::Proposal::NIL,
+                )
+                .w;
+            let word = txt(k.cx, s, style, c, Some(1));
+            let word = if natural > 320.0 {
+                word.frame(Some(320.0), None, Alignment::LEADING)
+            } else {
+                word.fixed_size(true, false)
+            };
+            let mut row = vec![word];
             if *chevron {
                 // Mac: the chevron points up while the season list is open (`chevronOpen`).
                 let name = if !mac {
@@ -595,7 +621,7 @@ fn tabs(k: &Kit, d: &Data, sx: &UiState) -> Node {
                 // 11 below the word, the open tab carries a 2 pt white line (`TabButton`).
                 let line = Node::rect(
                     if on {
-                        color(colour::FONT)
+                        color(color::TEXT_PRIMARY)
                     } else {
                         Color::CLEAR
                     },
@@ -626,7 +652,11 @@ fn tabs(k: &Kit, d: &Data, sx: &UiState) -> Node {
     );
     if mac {
         // The hairline runs under the whole tab row, 820 wide from the 36 margin.
-        let line = Node::rect(color(colour::LINE), 0.0).frame(None, Some(1.0), Alignment::CENTER);
+        let line = Node::rect(color(color::BORDER_HAIRLINE), 0.0).frame(
+            None,
+            Some(1.0),
+            Alignment::CENTER,
+        );
         return Node::vstack(
             Align::Start,
             Some(0.0),
@@ -655,7 +685,13 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
     };
     let head = match lk.form {
         Form::Touch => vec![hero(&k, h, vec![]), body_touch(&k, h, sx.overview_open)],
-        Form::Desktop => vec![hero(&k, h, hero_buttons(&k, h, sx.overview_open))],
+        // Mac `SeriesView`: the tabs stand at a fixed place under the button row (`railBottom + 8`), whatever the head
+        // holds, so the head has a fixed height too (the tab row's own inset is the 32 pt).
+        Form::Desktop => vec![hero(&k, h, hero_buttons(&k, h, sx.overview_open)).frame(
+            None,
+            Some(swiftly_design::tokens::desktop::DETAIL_RAIL_BOTTOM + 32.0),
+            Alignment::TOP_LEADING,
+        )],
         Form::Tv => vec![hero(&k, h, hero_buttons(&k, h, false))],
     };
     let section = match sx.tab {
@@ -670,7 +706,7 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
                         cx,
                         "Keine Besetzung hinterlegt.",
                         weight(lk.body, 15.0, 400),
-                        colour::FONT_VERY_QUIET,
+                        color::TEXT_TERTIARY,
                         Some(1),
                     )
                     .padding(ins(0.0, lk.edge, 0.0, 0.0))
@@ -735,7 +771,7 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
                     cx,
                     "Nichts Ähnliches gefunden",
                     weight(lk.body, 15.0, 400),
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     Some(1),
                 )
                 .padding(ins(0.0, lk.edge, 0.0, 0.0))
@@ -746,7 +782,7 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
                 } else {
                     "Nichts Ähnliches gefunden."
                 };
-                txt(cx, s, lk.body, colour::FONT_QUIET, Some(2))
+                txt(cx, s, lk.body, color::TEXT_SECONDARY, Some(2))
                     .padding(ins(0.0, lk.edge, 0.0, lk.edge))
             } else {
                 tile_rail(
@@ -785,20 +821,27 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
         Node::vstack(Align::Start, Some(0.0), kids).padding(ins(0.0, 0.0, bottom_pad, 0.0)),
         Alignment::TOP_LEADING,
     );
-    let tones = k.art.tones_for(h.image.as_ref(), &h.id);
+    let tones = if d.hold_mood {
+        Vec::new()
+    } else {
+        k.art.tones_for(h.image.as_ref(), &h.id)
+    };
+    let mood_alpha = d.mood_alpha;
     if lk.form == Form::Touch && !tones.is_empty() {
         // The mood-colour backdrop of the title pages (`StretchedMood` over `since + 1300`), as on the Detail page.
         let since = if lk.pad { 420.0 } else { 350.0 };
         let total = since + swiftly_images::mood::RUN_OUT as f32;
         column = column.background(
-            mood_strips(&tones, since, (0.0, total), 0.0, env.size.w, |_| 1.0),
+            mood_strips(&tones, since, (0.0, total), 0.0, env.size.w, |_| mood_alpha),
             Alignment::TOP_LEADING,
         );
     }
     if lk.form == Form::Desktop && !tones.is_empty() {
         let total = HERO_DESKTOP + swiftly_images::mood::RUN_OUT as f32;
         column = column.background(
-            mood_strips(&tones, HERO_DESKTOP, (0.0, total), 0.0, env.size.w, |_| 1.0),
+            mood_strips(&tones, HERO_DESKTOP, (0.0, total), 0.0, env.size.w, |_| {
+                mood_alpha
+            }),
             Alignment::TOP_LEADING,
         );
     }
@@ -864,6 +907,10 @@ pub struct SeriesScreen {
     fresh_season: Option<(Option<String>, Option<i64>)>,
     picked_season: bool,
     art: Rc<Art>,
+    /// What was there at the first refresh (the tone), the fade of a later one, and whether the push has settled once.
+    first_tone: Option<bool>,
+    mood: MoodFade,
+    settled_once: bool,
 }
 
 impl SeriesScreen {
@@ -917,6 +964,9 @@ impl SeriesScreen {
             fresh_season: None,
             picked_season: false,
             art: art3,
+            first_tone: None,
+            mood: MoodFade::default(),
+            settled_once: false,
         };
         s.refresh();
         s
@@ -933,12 +983,27 @@ impl SeriesScreen {
             more: vm.more(),
             menu: menu.iter().map(|e| e.text.clone()).collect(),
             tones,
+            mood_alpha: 1.0,
+            hold_mood: false,
         }
     }
 
     fn refresh(&mut self) {
         self.menu = self.vm.more_menu();
-        let d = Self::data(&self.vm, &self.menu, &self.art);
+        let mut d = Self::data(&self.vm, &self.menu, &self.art);
+        // `InTravel`: the tone that lands while the page still slides in waits for the push to settle, then fades in
+        // place (`ImageMood.reveal`); it never changes the size of the backdrop.
+        if self.host.depth() > 1 && self.host.covers() {
+            self.settled_once = true;
+        }
+        let travelling = self.host.depth() > 1 && !self.host.covers() && !self.settled_once;
+        let first = *self.first_tone.get_or_insert(d.tones);
+        let reduce = self.host.ui().env().reduce_motion;
+        let (hold, alpha) = self
+            .mood
+            .step(d.tones, first, travelling, self.host.now, reduce);
+        d.hold_mood = hold;
+        d.mood_alpha = alpha;
         // The Extras tab goes away with the extras: back to the episodes (`SeriesView.swift:251`).
         if self.host.sx.tab == 3 && d.more.extras.is_empty() {
             self.host.sx.tab = 0;
@@ -1345,6 +1410,22 @@ impl SeriesScreen {
                 items.push(popover::MenuEntry::Item(
                     MenuItem::new(Action::from("download"), "Laden").icon("arrow-circle-down"),
                 ));
+                if crate::desk::report_offered() {
+                    items.push(popover::MenuEntry::Item(
+                        MenuItem::new(Action::from("report"), swiftly_l10n::t("Problem melden"))
+                            .icon("warning"),
+                    ));
+                }
+                if crate::desk::delete_offered() {
+                    items.push(popover::MenuEntry::Item(
+                        MenuItem::new(
+                            Action::from("delete"),
+                            swiftly_l10n::t("Vom Server löschen"),
+                        )
+                        .icon("trash")
+                        .destructive(),
+                    ));
+                }
                 self.host
                     .sx
                     .menu
@@ -1444,6 +1525,12 @@ impl SeriesScreen {
                     .map(|f| swiftly_layout::Rect::new(f[0], f[1], f[2], f[3]));
                 self.host.sx.menu.close();
                 self.download_req = Some(at);
+            } else if is("report") {
+                self.host.sx.menu.close();
+                crate::desk::request_report(&self.vm.button().id, None);
+            } else if is("delete") {
+                self.host.sx.menu.close();
+                crate::desk::request_delete(&self.vm.button().id, true);
             } else if is("menu:0") && self.menu.is_empty() {
                 // No entries from the core (scripted pages): the season mark, as before.
                 self.host.sx.sheet = 0;
@@ -1668,6 +1755,7 @@ impl SeriesScreen {
 
     /// One frame at `now` ms.
     pub fn frame(&mut self, now: f64) -> (DrawList, bool) {
+        self.host.now = now;
         self.refresh();
         if self.vm.button().message.is_some() {
             let since = *self.message_since.get_or_insert(now);
@@ -1678,7 +1766,8 @@ impl SeriesScreen {
         } else {
             self.message_since = None;
         }
-        let r = self.host.frame_list(now);
+        let mut r = self.host.frame_list(now);
+        r.1 |= self.mood.is_busy();
         self.drain(now);
         self.pump_effects();
         r
@@ -1733,8 +1822,11 @@ impl SeriesScreen {
 
     /// Shows the real pictures of the server through `hub` (without it the demo art stays).
     #[must_use]
-    pub fn with_images(self, hub: std::rc::Rc<crate::hub::ImageHub>) -> Self {
+    pub fn with_images(mut self, hub: std::rc::Rc<crate::hub::ImageHub>) -> Self {
         crate::hub::HubSlotExt::attach(&self.host.hub, hub);
+        // What was "there at the first build" is what the real pictures say, not the demo art the constructor saw.
+        self.first_tone = None;
+        self.mood = MoodFade::default();
         self
     }
 
@@ -1745,7 +1837,7 @@ impl SeriesScreen {
 
     /// An animation or a glide needs another frame.
     pub fn wants_frame(&self) -> bool {
-        self.host.wants_frame()
+        self.host.wants_frame() || self.mood.is_busy()
     }
 
     /// A new window size or scale.

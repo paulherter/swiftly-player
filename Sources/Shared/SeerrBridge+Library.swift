@@ -26,6 +26,12 @@ final class JellyfinSeerrLibrary: SwiftlyCore.SeerrLibrary, @unchecked Sendable 
         }
     }
 
+    /// The library item's own cover, so the "ist da" banner has a picture even when the TMDB poster is missing.
+    func cover(id: String) async throws -> String? {
+        guard let client = await server() as? JellyfinClient else { return nil }
+        return await client.imageURL(itemID: id, maxHeight: 360)?.absoluteString
+    }
+
     func refresh() async throws {
         guard let client = await server() as? JellyfinClient else {
             throw SwiftlyCore.LibraryFailure.Other(message: "This media server has no library scan call")

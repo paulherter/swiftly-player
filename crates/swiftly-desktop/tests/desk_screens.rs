@@ -444,23 +444,30 @@ fn every_area_keeps_its_own_pushed_page() {
 }
 
 #[test]
-fn the_wordmark_is_artwork_in_the_sidebar() {
+fn the_sidebar_has_no_wordmark_and_its_rows_start_under_the_window_buttons() {
     let mut s = shell();
     let mut now = 0.0;
     run(&mut s, &mut now, 400.0);
-    let w = nodes(&s)
-        .into_iter()
-        .find(|n| {
-            n.label == "Swiftly"
-                && n.bounds
-                    .is_some_and(|b| b[0] < 220.0 && b[1] > 30.0 && b[1] < 100.0)
-        })
-        .expect("wordmark node");
-    let b = w.bounds.unwrap();
-    // 26 pt high, 76 wide (the artwork's box 3005 x 1024).
+    let all = nodes(&s);
     assert!(
-        (b[3] - 26.0).abs() < 1.0 && (b[2] - 76.3).abs() < 1.5,
-        "wordmark box {b:?}"
+        !all.iter()
+            .any(|n| n.label == "Swiftly" && n.bounds.is_some_and(|b| b[0] < 220.0)),
+        "the wordmark is gone from the sidebar"
+    );
+    let top = swiftly_design::tokens_generated::desktop::SPACE_SIDEBAR_TOP;
+    let first = all
+        .iter()
+        .filter(|n| n.bounds.is_some_and(|b| b[0] < 220.0 && b[1] >= 0.0))
+        .filter(|n| {
+            ["Start", "Filme", "Serien", "Suche"]
+                .iter()
+                .any(|l| n.label.starts_with(l))
+        })
+        .map(|n| n.bounds.unwrap()[1])
+        .fold(f32::INFINITY, f32::min);
+    assert!(
+        (first - top).abs() < 1.0,
+        "the first row starts {first} pt from the top, not {top}"
     );
 }
 
@@ -526,28 +533,22 @@ fn area_change_cross_fades_the_content_but_not_the_sidebar() {
     );
 }
 
+/// No launch curtain: the first frame already is the real page, with the sidebar rows in it and nothing over them.
 #[test]
-fn launch_curtain_runs_the_macs_times() {
-    // Spec D: 80 frames at 60 fps = 1.333 s, 0.5 s hold, easeOut 0.35 s fade; Spec A: hard stop 3.5 s.
+fn the_first_frame_is_the_real_start() {
     let mut s = shell();
-    s.suite_mut().unwrap().enable_curtain();
     let _ = s.frame(0.0);
-    let su = s.suite_mut().unwrap();
-    assert!(su.curtain_up(100.0));
+    let rows: Vec<String> = nodes(&s)
+        .into_iter()
+        .filter(|n| n.bounds.is_some_and(|b| b[0] < 220.0))
+        .map(|n| n.label)
+        .collect();
     assert!(
-        su.curtain_up(1333.0 + 500.0 - 20.0),
-        "the curtain leaves before the hold is over"
+        rows.iter().any(|l| l.starts_with("Start")) && rows.iter().any(|l| l.starts_with("Filme")),
+        "sidebar rows in the first frame: {rows:?}"
     );
-    assert!(
-        su.curtain_up(1333.0 + 500.0 + 100.0),
-        "half way through the fade it is still there"
-    );
-    assert!(
-        !su.curtain_up(1333.0 + 500.0 + 350.0 + 20.0),
-        "the fade is over after 0.35 s"
-    );
-    assert!(!su.curtain_up(3500.0));
 }
+
 #[test]
 fn genre_chips_row_opens_the_genre_page() {
     let mut s = shell();
@@ -674,10 +675,10 @@ fn the_players_x_closes_the_player_and_not_the_app() {
     );
 }
 
-/// A title given at launch opens the player while the launch curtain still plays; the player draws no curtain, so it
-/// must not be left up to swallow the player's clicks (a video file opened from the file manager had a dead player).
+/// A title given at launch opens the player at once; its close button takes the first click (a video file opened from the
+/// file manager once had a dead player under a curtain).
 #[test]
-fn a_player_opened_under_the_launch_curtain_takes_clicks() {
+fn a_player_opened_at_launch_takes_clicks() {
     let mut s = shell();
     let mut now = 0.0;
     run(&mut s, &mut now, 300.0);
@@ -690,8 +691,6 @@ fn a_player_opened_under_the_launch_curtain_takes_clicks() {
     s.tap_at((x as f32, y as f32), now);
     run(&mut s, &mut now, 1500.0);
     assert!(s.suite_mut().unwrap().player_open());
-    // The curtain comes up with the player already open.
-    s.suite_mut().unwrap().enable_curtain();
     run(&mut s, &mut now, 100.0);
     let close = nodes(&s)
         .into_iter()
@@ -702,7 +701,7 @@ fn a_player_opened_under_the_launch_curtain_takes_clicks() {
     run(&mut s, &mut now, 600.0);
     assert!(
         !s.suite_mut().unwrap().player_open(),
-        "the curtain swallowed the click"
+        "the close button did not take the click"
     );
 }
 
@@ -1045,4 +1044,25 @@ fn shift_and_the_vertical_wheel_scroll_a_rail_sideways() {
         (tile_y(&s) - rest_y).abs() > 20.0,
         "the plain wheel scrolls the page after Shift is released"
     );
+}
+
+/// Profile page open, then a click on the sidebar row "Suche": the field has the keyboard, so typing reaches it (the
+/// click goes through the panel's way out, not through the plain tab switch).
+#[test]
+fn search_has_the_keyboard_after_the_profile_panel() {
+    let mut s = shell();
+    let mut now = 0.0;
+    run(&mut s, &mut now, 300.0);
+    assert!(s.suite_mut().unwrap().open_settings(now));
+    run(&mut s, &mut now, 900.0);
+    let row = nodes(&s)
+        .into_iter()
+        .find(|n| n.label.starts_with("Suche") && n.bounds.is_some_and(|b| b[0] < 220.0))
+        .expect("sidebar row Suche");
+    let (x, y) = centre(&row);
+    s.tap_at((x as f32, y as f32), now);
+    run(&mut s, &mut now, 900.0);
+    let suite = s.suite_mut().unwrap();
+    assert_eq!(suite.tab(), 3, "the Suche section is open");
+    assert!(suite.wants_text(), "the search field has the keyboard");
 }

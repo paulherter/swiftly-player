@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,6 +46,7 @@ import de.paulherter.swiftly.rustcore.ServerAdminPage
 import de.paulherter.swiftly.rustcore.ServerAdminState
 import de.paulherter.swiftly.rustcore.ServerLogsState
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 
 // Phone drawing of the admin sections of the hub (Anfragen queue, Meldungen, Server). State: ManagementAdminModels.kt.
 
@@ -77,7 +77,7 @@ private fun Heading(text: String) = Text(text, style = Theme.small.copy(fontWeig
 
 @Composable
 private fun Card(content: @Composable ColumnScope.() -> Unit) =
-    Column(Modifier.padding(horizontal = Theme.edgeSpacing).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Theme.area).padding(14.dp),
+    Column(Modifier.padding(horizontal = Theme.edgeSpacing).fillMaxWidth().clip(smoothRoundedShape(16.dp)).background(Theme.area).padding(14.dp),
            verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
 
 // ------------------------------------------------------------------ Anfragen (queue)
@@ -86,7 +86,8 @@ private fun Card(content: @Composable ColumnScope.() -> Unit) =
 fun ColumnScope.AdminQueueContent(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val run = rememberCoroutineScope()
     val model = remember { AdminQueueModel(app, run) }
-    LaunchedEffect(Unit) { model.load() }
+    // Also when a verb on the request page changed the queue (it stays under that page on the stack).
+    LaunchedEffect(RequestsChanged.version.intValue) { model.load() }
     val i = model.info
     when {
         i == null || i.load == ListLoad.LOADING || i.load == ListLoad.IDLE -> Wait()
@@ -94,17 +95,17 @@ fun ColumnScope.AdminQueueContent(app: SwiftlyApplication, open: (Destination) -
         else -> {
             Pills(i.pills.map { p -> Triple(p.title + " " + p.count, p.selected) { model.pill(p.pill) } })
             if (i.rows.isEmpty()) Quiet(adminWords().nothingRequested)
-            i.rows.forEach { r -> QueueRow(r, open = { open(Destination(r.art + ":" + r.tmdb, r.title, "Seerrtitel")) }, model = model) }
+            i.rows.forEach { r -> QueueRow(r, open = { open(Destination(r.id.toString(), r.title, "Anfrage")) }, model = model) }
         }
     }
 }
 
 @Composable
 private fun QueueRow(r: SeerrRequestRow, open: () -> Unit, model: AdminQueueModel) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing, vertical = 6.dp).semantics { contentDescription = "queue-row-" + r.id },
+    Row(Modifier.fillMaxWidth().pressRow(open).padding(horizontal = Theme.edgeSpacing, vertical = 6.dp).semantics { contentDescription = "queue-row-" + r.id },
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         AsyncImage(model = tmdbImage(r.poster, 185), contentDescription = r.title, contentScale = ContentScale.Crop,
-                   modifier = Modifier.size(48.dp, 72.dp).clip(RoundedCornerShape(6.dp)).background(Theme.area).tapOn(open))
+                   modifier = Modifier.size(48.dp, 72.dp).clip(smoothRoundedShape(6.dp)).background(Theme.area).tapOn(open))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(listOfNotNull(r.title, r.year?.let { "($it)" }).joinToString(" "), style = Theme.listTitle, color = Theme.font, maxLines = 2)
             Text(r.badge.line, style = Theme.small, color = SeerrBadgeMark.color(r.badge.kind))
@@ -173,7 +174,7 @@ fun ColumnScope.AdminIssuesContent(app: SwiftlyApplication, open: (Destination) 
 private fun IssueHead(r: SeerrIssueRow, open: (Destination) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         AsyncImage(model = tmdbImage(r.poster, 185), contentDescription = r.title, contentScale = ContentScale.Crop,
-                   modifier = Modifier.size(40.dp, 60.dp).clip(RoundedCornerShape(6.dp)).background(Theme.area))
+                   modifier = Modifier.size(40.dp, 60.dp).clip(smoothRoundedShape(6.dp)).background(Theme.area))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(r.title, style = Theme.listTitle, color = Theme.font, maxLines = 2)
             Text(listOfNotNull(r.kindWord, r.place, r.timeText, r.statusWord).joinToString(" · "), style = Theme.small, color = if (r.isOpen) Theme.accent else Theme.fontQuiet)
@@ -272,7 +273,7 @@ private fun ServerAskDialog(model: ServerAdminModel) {
     val ask = model.ask
     if (ask is ServerAdminAsk.Nothing) return
     Dialog(onDismissRequest = { model.cancel() }) {
-        Column(Modifier.clip(RoundedCornerShape(20.dp)).background(Theme.area).padding(20.dp).semantics { contentDescription = "server-ask" },
+        Column(Modifier.clip(smoothRoundedShape(20.dp)).background(Theme.area).padding(20.dp).semantics { contentDescription = "server-ask" },
                verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val (title, note, action) = when (ask) {
                 is ServerAdminAsk.Restart -> Triple(ask.title, ask.note, ask.action)

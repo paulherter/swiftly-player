@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +50,7 @@ import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.motionReduced
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -176,7 +176,7 @@ fun TileMenuStatus(app: SwiftlyApplication, wish: TileMenuRequest?, open: (Desti
                     }
                     alpha = if (calm) a else (a * 3f).coerceIn(0f, 1f)
                 }
-                .clip(RoundedCornerShape(Theme.cornerArea)).background(Theme.reason)) {
+                .clip(smoothRoundedShape(Theme.cornerArea)).background(Theme.reason)) {
             AsyncImage(model = w.image, contentDescription = null, contentScale = ContentScale.Crop,
                        modifier = Modifier.size(width, imageHeight))
             Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -193,7 +193,7 @@ fun TileMenuStatus(app: SwiftlyApplication, wish: TileMenuRequest?, open: (Desti
                     val m = if (calm) 1f else 0.9f + 0.1f * a
                     scaleX = m; scaleY = m; alpha = a.coerceIn(0f, 1f)
                 }
-                .clip(RoundedCornerShape(Theme.cornerArea)).background(Theme.raised)) {
+                .clip(smoothRoundedShape(Theme.cornerArea)).background(Theme.raised)) {
             entries.forEachIndexed { i, (value, text, symbolText) ->
                 if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Theme.line))
                 Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).pressRow { act(value) }.padding(horizontal = 16.dp),

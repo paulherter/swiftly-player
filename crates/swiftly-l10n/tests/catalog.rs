@@ -3,6 +3,9 @@ use swiftly_l10n::catalog::{Catalog, Origin, Resolution, SourceStat, Text};
 use swiftly_l10n::check::{self, Finding};
 use swiftly_l10n::{Arg, Locale, PluralCategory, Translator, codegen, plural, source};
 
+/// The number of keys in `direct-only.txt`.
+const DIRECT_ONLY_KEYS: usize = 22;
+
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -20,10 +23,16 @@ fn tr(tag: &str) -> Translator {
 #[test]
 fn key_counts_match_the_sources() {
     let cat = Catalog::builtin();
-    // Hard numbers, so a silently shrinking catalogue is caught even without the sources.
-    assert_eq!(cat.entries().len(), 1341);
+    // Hard numbers, so a silently shrinking catalogue is caught even without the sources. A build without the
+    // `supporter-key` feature (the Play core) lacks the texts of `direct-only.txt`.
+    let hidden = if cfg!(feature = "supporter-key") {
+        0
+    } else {
+        DIRECT_ONLY_KEYS
+    };
+    assert_eq!(cat.entries().len(), 1367 - hidden);
     for lang in ["de", "en", "ru"] {
-        assert_eq!(cat.key_count(lang), 1341, "{lang}");
+        assert_eq!(cat.key_count(lang), 1367 - hidden, "{lang}");
     }
     assert_eq!(cat.languages(), vec!["de", "en", "ru"]);
     assert_eq!(cat.info_plist().len(), 3);
@@ -42,20 +51,31 @@ fn key_counts_match_the_sources() {
         .iter()
         .filter(|e| e.origin == Origin::Package)
         .count();
-    assert_eq!((app_only, both, package_only), (1202, 68, 71));
+    if cfg!(feature = "supporter-key") {
+        assert_eq!((app_only, both, package_only), (1231, 67, 69));
+    }
 
     let Some(parsed) = sources() else { return };
     for lang in ["de", "en", "ru"] {
-        assert_eq!(source::count(&parsed.app, lang), 1270, "xcstrings {lang}");
+        assert_eq!(source::count(&parsed.app, lang), 1298, "xcstrings {lang}");
         assert_eq!(source::count(&parsed.info, lang), 3, "InfoPlist {lang}");
         let union = parsed
             .merged
             .values()
             .filter(|e| e.langs.contains_key(lang))
             .count();
-        assert_eq!(cat.key_count(lang), union, "merged {lang}");
+        let hidden_here = if cfg!(feature = "supporter-key") {
+            0
+        } else {
+            parsed
+                .direct_only
+                .iter()
+                .filter(|k| parsed.merged[*k].langs.contains_key(lang))
+                .count()
+        };
+        assert_eq!(cat.key_count(lang), union - hidden_here, "merged {lang}");
     }
-    // Raw package files: 139 strings per language, stringsdict 4 / 4 / 5.
+    // Raw package files: 136 strings per language, stringsdict 4 / 4 / 5.
     for (lang, dict) in [("de", 4), ("en", 4), ("ru", 5)] {
         let dir = root()
             .join(source::PACKAGE_RESOURCES)
@@ -64,7 +84,7 @@ fn key_counts_match_the_sources() {
             &std::fs::read_to_string(dir.join("Localizable.strings")).unwrap(),
         )
         .unwrap();
-        assert_eq!(strings.len(), 139, "strings {lang}");
+        assert_eq!(strings.len(), 136, "strings {lang}");
         let d = source::parse_stringsdict(
             &std::fs::read_to_string(dir.join("Localizable.stringsdict")).unwrap(),
         )
@@ -77,7 +97,7 @@ fn key_counts_match_the_sources() {
     assert!(fresh.contains(&SourceStat {
         source: "Localizable.xcstrings",
         lang: "ru",
-        keys: 1270
+        keys: 1298
     }));
 }
 
@@ -453,5 +473,78 @@ fn new_texts_of_the_apple_beta_exist_in_english_and_russian() {
     ] {
         assert_eq!(tr(lang).t("Mehr Folgen"), more, "{lang}");
         assert_eq!(tr(lang).t("Verschieben"), moves, "{lang}");
+    }
+}
+
+#[test]
+fn the_direct_only_list_matches_the_catalogue() {
+    let Some(parsed) = sources() else { return };
+    // `source::load` already refuses a listed key that does not exist and a support-key text that is not listed.
+    assert_eq!(parsed.direct_only.len(), DIRECT_ONLY_KEYS);
+    let file = std::fs::read_to_string(root().join(source::DIRECT_ONLY)).unwrap();
+    // A new text that talks about the key must be refused until it is listed.
+    let mut with_new = source::Parsed::default();
+    with_new.merged.insert(
+        "Neuer Text".into(),
+        source::RawEntry {
+            origin: Origin::App,
+            langs: [(
+                "en".to_owned(),
+                source::RawText::Simple("Enter your Supporter Key".into()),
+            )]
+            .into(),
+        },
+    );
+    let err = source::direct_only(&with_new, &file).unwrap_err();
+    assert!(
+        err.contains("not listed") && err.contains("Neuer Text"),
+        "{err}"
+    );
+}
+
+/// The Play core: a build without the feature has none of the direct distribution's texts, in any language.
+#[cfg(not(feature = "supporter-key"))]
+#[test]
+fn a_build_without_the_feature_has_no_direct_only_text() {
+    let Some(parsed) = sources() else { return };
+    let cat = Catalog::builtin();
+    for key in &parsed.direct_only {
+        assert!(
+            cat.get(key).is_none(),
+            "{key:?} is in the catalogue of a build without `supporter-key`"
+        );
+    }
+    let words = [
+        "supporter key",
+        "unterstützer-schlüssel",
+        "supporterkey",
+        "swiftlyplayer.com/supporter",
+        "pay.paulherter",
+    ];
+    for e in cat.entries() {
+        let texts = e.langs.iter().map(|(_, t)| t.other().to_lowercase());
+        for t in std::iter::once(e.key.to_lowercase()).chain(texts) {
+            assert!(
+                !words.iter().any(|w| t.contains(w)),
+                "{:?} is a direct-only text in the Play catalogue",
+                e.key
+            );
+        }
+    }
+}
+
+/// The direct build still has all of them, in German, English and Russian.
+#[cfg(feature = "supporter-key")]
+#[test]
+fn a_build_with_the_feature_has_every_direct_only_text() {
+    let Some(parsed) = sources() else { return };
+    let cat = Catalog::builtin();
+    for key in &parsed.direct_only {
+        let e = cat
+            .get(key)
+            .unwrap_or_else(|| panic!("{key:?} missing with `supporter-key`"));
+        for lang in ["de", "en", "ru"] {
+            assert!(e.text(lang).is_some(), "{key:?} has no {lang} text");
+        }
     }
 }

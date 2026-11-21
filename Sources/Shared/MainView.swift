@@ -268,6 +268,11 @@ struct MainView: View {
             else if let a = takeover.offering { hereContinueWatching(a) }
         }
         .task { takeover.start(model) }
+        // **The gift sheet and "What's new" wait for a bare Start** (`GiftFlow.pagesAboveStart`): a page the person opened
+        // (profile, settings, a title) is not covered by a sheet that came on a timer.
+        .onChange(of: paths[Region.start.rawValue].count, initial: true) { _, depth in
+            GiftFlow.shared.startDepth(depth)
+        }
         // **"Go to the home page"** (the looks from the profile, "Show me my Home" on the
         // thank-you page): whatever lies above the home page is popped, so the profile slides
         // away to the right like on "back", and the person stays on the home page.
@@ -338,6 +343,23 @@ struct MainView: View {
             }
             guard let entry = flow.entry else { return }
             paths[section.rawValue].append(ManagementHubRoute(entry))
+        }
+        .task {
+            // Proof hook: `-SwiftlyOpenSettings settings|playback|presentation|subtitles` opens that settings page cold
+            // (Allgemein, Wiedergabe, Darstellung, and Untertitel-Look as the page one level deeper than Wiedergabe).
+            let args = ProcessInfo.processInfo.arguments
+            guard let at = args.firstIndex(of: "-SwiftlyOpenSettings"), at + 1 < args.count else { return }
+            try? await Task.sleep(for: .seconds(4))
+            switch args[at + 1] {
+            case "settings": paths[section.rawValue].append(SettingsRoute())
+            case "playback": paths[section.rawValue].append(PlaybackRoute())
+            case "presentation": paths[section.rawValue].append(PresentationRoute())
+            case "subtitles":
+                paths[section.rawValue].append(PlaybackRoute())
+                try? await Task.sleep(for: .seconds(1))
+                paths[section.rawValue].append(SubtitleLookRoute())
+            default: break
+            }
         }
         .task {
             guard AccountSwitchRun.an else { return }

@@ -19,7 +19,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -61,6 +60,7 @@ import androidx.compose.animation.core.MutableTransitionState
 import coil3.compose.AsyncImage
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Motion
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -77,12 +77,16 @@ import org.json.JSONObject
 
 data class Season(val id: String, val name: String, val number: Int? = null)
 data class EpisodesState(val id: String, val resume: Boolean, val remainingTime: String?, val progress: Double?,
-                       val season: Int?, val episode: Int?, val since: Double? = null)
+                       val season: Int?, val episode: Int?, val since: Double? = null,
+                       /** The player top bar facts of this episode (the core's `kopf`). */
+                       val head: String? = null)
 data class Episode(val id: String, val title: String, val subline: String?, val image: String?,
                  val progress: Double?, val watched: Boolean, val since: Double? = null,
                  /** Raw, for TV; `TvSeries` builds the catalog format "F2 · Title" from it. */
                  val name: String = "", val number: Int? = null,
-                 val runtimeMin: Int? = null, val remainingTime: String? = null)
+                 val runtimeMin: Int? = null, val remainingTime: String? = null,
+                 /** The player top bar facts of this episode (the core's `kopf`). */
+                 val head: String? = null)
 
 /** Reply from `Kern.series`; button text, season preselection and cast are already fixed there. */
 data class Series(
@@ -136,7 +140,7 @@ internal fun seriesRead(json: String): Series = JSONObject(json).let { o ->
           o.fieldText("methode") ?: o.optJSONObject("beleg")?.fieldText("methode"),
           o.optJSONObject("stand")?.let { s ->
               EpisodesState(s.getString("id"), s.optBoolean("fortsetzen"), s.fieldText("restzeit"), s.fieldNumber("fortschritt"),
-                          if (s.isNull("staffel")) null else s.getInt("staffel"), if (s.isNull("folge")) null else s.getInt("folge"), s.fieldNumber("ab"))
+                          if (s.isNull("staffel")) null else s.getInt("staffel"), if (s.isNull("folge")) null else s.getInt("folge"), s.fieldNumber("ab"), s.optJSONObject("kopf")?.toString())
           },
           o.optString("knopftext"),
           o.fieldList("staffeln") { Season(it.getString("id"), it.getString("name"), if (it.isNull("nummer") || !it.has("nummer")) null else it.getInt("nummer")) },
@@ -152,7 +156,7 @@ internal fun episodesRead(json: String): List<Episode> = JSONArray(json).let { a
         a.getJSONObject(i).let { f ->
             Episode(f.getString("id"), f.getString("titel"), f.fieldText("unterzeile"), f.fieldText("bild"), f.fieldNumber("fortschritt"), f.optBoolean("gesehen"), f.fieldNumber("ab"),
                   f.optString("name"), if (f.isNull("nummer")) null else f.getInt("nummer"),
-                  if (f.isNull("laufzeitMin")) null else f.getInt("laufzeitMin"), f.fieldText("restzeit"))
+                  if (f.isNull("laufzeitMin")) null else f.getInt("laufzeitMin"), f.fieldText("restzeit"), f.optJSONObject("kopf")?.toString())
         }
     }
 }
@@ -244,7 +248,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
             } catch (e: CancellationException) { throw e } catch (_: Exception) { null } else null
             series = new
             app.seriesCache[target.id] = new
-            if (queuedPress) new.state?.let { st -> queuedPress = false; playDefault(app, st.id, st.since) { jerk(Jerk.Medium) } }
+            if (queuedPress) new.state?.let { st -> queuedPress = false; playDefault(app, st.id, st.since, st.head) { jerk(Jerk.Medium) } }
             // Fetch the schedule only now: `planLoad` writes into `series`. Started earlier, `series` was still
             // empty on first open (the episode fetch runs before), the result was lost and the badge missing.
             new.state?.let { st -> section.launch { planLoad(st.id) } } ?: run { planLoaded = true }
@@ -345,18 +349,21 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                 // Button and action row form one block: 8 between them, 14 to everything else.
                 Column(Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    val menu = LocalTileMenu.current
                     PlayButton(Glyph.Play, s?.buttonText ?: translated("Lädt…"),
                                an = s == null || s.state != null || s.seed, main = true,
-                               // Long press: the series' tile menu, as on its tile.
-                               lengthy = menu?.let { m -> {
-                                   m(TileMenuRequest(target.id, name, "Series", s?.headerImage, landscape = true,
-                                                        s?.secondaryLine, afterwards = { section.launch { load() } }))
-                               } }) {
+                               progress = s?.state?.progress, remaining = s?.state?.remainingTime,
+                               // Long press: the versions of the episode the button starts (iPhone `PlayMenu`). Only the state
+                               // episode's versions are asked, per press; with one version nothing opens and the hold is swallowed.
+                               lengthy = {
+                                   val st = s?.state
+                                   if (st != null) section.launch {
+                                       val episode = withContext(Dispatchers.IO) { runCatching { titleRead(app.rk.title(st.id).await()) }.getOrNull() }
+                                       versionMenu(app, episode, st.id, st.since)?.invoke()
+                                   }
+                               }) {
                         val st = s?.state
-                        if (st != null) { jerk(Jerk.Medium); playDefault(app, st.id, st.since) } else queuedPress = true
+                        if (st != null) { jerk(Jerk.Medium); playDefault(app, st.id, st.since, st.head) } else queuedPress = true
                     }
-                    ResumeSlot(s?.state?.remainingTime, s?.state?.progress)
                     if (seriesDisturbed && s == null) DisturbHint(app.serverAddress(), spacingTop = 12.dp,
                         retry = { seriesDisturbed = false; section.launch { load() } })
                 }
@@ -380,30 +387,31 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                     ActionButton(if (watched) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle, translated("Gesehen"), watched, translated("Gesehen")) {
                         toggle(!watched, { watched = it }) { id, an -> app.rk.watched(id, an).await() }
                     }
+                    // Seerr's entry of the Mehr menu (the core's title menu rule); none without a connection or the right.
+                    val reportWords by produceState<String?>(null, app.seerrStored()) { value = seerrReportEntry(app) }
+                    val deleteWords by produceState<String?>(null, app.seerrStored()) { value = seerrDeleteEntry(app) }
                     ActionButton(Glyph.More, translated("Mehr"), false, translated("Mehr")) {
-                        // `TitleActions.forSeries`.
-                        val entries = buildList {
-                            // The trailer, when Download has its place in the row; not twice.
-                            if (app.settings.downloadButtonShow) add(Choice("trailer", translated("Trailer")))
-                            s?.state?.let {
-                                add(Choice("vonvorn", translated("Folge von vorn abspielen")))
-                                // **"Next episode" yields to "Watch together"**: the sheet should not get longer, and the next
-                                // episode is reachable via the list.
-                                if (app.gemeinsam.value.mayCreate) add(Choice("gemeinsam", translated("Gemeinsam schauen")))
-                                else add(Choice("naechste", translated("Nächste Folge abspielen")))
-                            }
-                            if (s?.state != null) app.playOnChoices().forEach { add(Choice(it.first, it.second)) }
-                            add(Choice("zufaellig", translated("Zufällig abspielen")))
-                            add(Choice("metadaten", translated("Metadaten neu einlesen")))
-                        }
+                        // The core's list (`DetailVm::more_menu`): the trailer (when Download has the row's place), "Abspielen auf ...",
+                        // "Folge von vorn", "Gemeinsam schauen" or "Nächste Folge" (the core rule), shuffle, metadata.
+                        val more = phoneMore(app, series = true, planKnown = s?.state != null, begun = false,
+                            together = app.gemeinsam.value.mayCreate)
                         // Translated: German "F" for Folge, English "E" for episode. This was hard-coded as "E",
                         // also in German.
                         val abbreviation = s?.state?.let { st -> if (st.season != null && st.episode != null) " · " + translated("S%d F%d", st.season, st.episode) else "" }.orEmpty()
-                        app.sheet.value = SheetRequest(name + abbreviation, entries, null,
-                            mapOf("trailer" to Glyph.Film, "vonvorn" to Glyph.Rewind, "naechste" to Glyph.Skip, "zufaellig" to Glyph.Shuffle,
-                                  "gemeinsam" to Glyph.Cluster, "metadaten" to Glyph.Reload) +
-                                app.playOnChoices().associate { it.first to Glyph.Tv }) { choice ->
+                        app.sheet.value = SheetRequest(name + abbreviation, more.choices + listOfNotNull(reportWords?.let { Choice(MORE_REPORT, it) }, deleteWords?.let { Choice(MORE_DELETE, it) }), null,
+                                more.icons + (MORE_REPORT to Glyph.Exclamation) + (MORE_DELETE to Glyph.Papierkorb),
+                                cautionary = setOf(MORE_DELETE)) { choice ->
                             if (s?.state?.let { st -> app.playOnChosen(choice, st.id) } == true) return@SheetRequest
+                            if (choice == MORE_DELETE) {
+                                s?.id?.let { id -> section.launch { kotlinx.coroutines.delay(SheetSwitch)
+                                    if (!deleteFlowOpen(app, id, back)) message = translated("Seerr kennt diesen Titel nicht.") } }
+                                return@SheetRequest
+                            }
+                            if (choice == MORE_REPORT) {
+                                s?.id?.let { id -> section.launch { kotlinx.coroutines.delay(SheetSwitch)
+                                    if (!reportIssueOpen(app, id, null)) message = translated("Dieser Titel hat keine TMDB-Nummer.") } }
+                                return@SheetRequest
+                            }
                             if (choice == "gemeinsam") {
                                 s?.state?.let { st -> section.launch { kotlinx.coroutines.delay(SheetSwitch)
                                     sharedCreateOpen(app, st.id, if (st.season != null && st.episode != null) sharedTitleRow("", s.name, st.season, st.episode) else s.name) } }
@@ -412,7 +420,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                             section.launch {
                                 when (choice) {
                                     "trailer" -> trailerStart()
-                                    "vonvorn" -> s?.state?.let { st -> playDefault(app, st.id, null) }
+                                    "vonvorn" -> s?.state?.let { st -> playDefault(app, st.id, null, st.head) }
                                     // Without a next episode, report it rather than silently doing nothing.
                                     "naechste" -> s?.state?.let { st ->
                                         val afterThat = withContext(Dispatchers.IO) { app.rk.episodeAfter(st.id, s.id).await() }
@@ -497,7 +505,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                                         m(TileMenuRequest(f.id, f.title, "Episode", f.image, landscape = true, f.subline,
                                                              afterwards = { section.launch { load() } }))
                                     } }
-                                    EpisodesRow(f, lengthy = lengthy) { playDefault(app, f.id, f.since) }
+                                    EpisodesRow(f, lengthy = lengthy) { playDefault(app, f.id, f.since, f.head) }
                                 }
                             }
                         } }
@@ -637,7 +645,7 @@ internal fun SeasonHeader(seasons: List<Season>, selected: String?, opened: Bool
                     withFrameNanos { }
                     scroll.scrollTo(selectedRow[0] + selectedRow[1] / 2 - roomPx / 2)
                 }
-                Column(Modifier.width(IntrinsicSize.Max).widthIn(min = 180.dp).heightIn(max = room).clip(RoundedCornerShape(Theme.corner))
+                Column(Modifier.width(IntrinsicSize.Max).widthIn(min = 180.dp).heightIn(max = room).clip(smoothRoundedShape(Theme.corner))
                         .background(Theme.area).then(if (reason != null) Modifier.background(reason).background(surfaceTranslucent) else Modifier)
                         .verticalScroll(scroll)) {
                     seasons.forEach { st ->
@@ -671,7 +679,7 @@ internal fun EpisodesRow(f: Episode, end: (@Composable () -> Unit)? = null, leng
         // the background shone through, and on a page in image colour every watched still took on its tint.
         // The running episode in the player: a larger picture, no surface (`EpisodesRow.ongoing`).
         val width = if (ongoing) Theme.episodeWidthOngoing else Theme.episodeWidth
-        Box(Modifier.size(width, width * (Theme.episodeHeight.value / Theme.episodeWidth.value)).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
+        Box(Modifier.size(width, width * (Theme.episodeHeight.value / Theme.episodeWidth.value)).clip(smoothRoundedShape(Theme.cornerTile)).background(Theme.area)) {
             AsyncImage(model = f.image, contentDescription = null, contentScale = ContentScale.Crop,
                        colorFilter = if (f.watched) WATCHED_DIM else null, modifier = Modifier.fillMaxSize())
             // Bar and tick together would be the same information twice.

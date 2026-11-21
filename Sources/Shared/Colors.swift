@@ -1,6 +1,38 @@
 import JellyfinKit
 import SwiftUI
 
+/// A design-token colour (`0xRRGGBBAA`, generated `SwiftlyDesignTokens.Palette`) as an sRGB colour.
+extension Color {
+    init(token rgba: UInt32) {
+        self.init(.sRGB,
+                  red: Double((rgba >> 24) & 0xFF) / 255,
+                  green: Double((rgba >> 16) & 0xFF) / 255,
+                  blue: Double((rgba >> 8) & 0xFF) / 255,
+                  opacity: Double(rgba & 0xFF) / 255)
+    }
+}
+
+#if os(iOS) || os(macOS)
+extension SwiftlyDesignTokens {
+    /// The layout set of the platform this build runs on: touch (iPhone, iPad) or desktop (Mac).
+    #if os(macOS)
+    typealias Layout = Desktop
+    #else
+    typealias Layout = Touch
+    #endif
+}
+#endif
+
+extension Theme {
+    /// Minimum height of a chip or value pill and of the rows that reserve its space: token `size.chip-height` on the
+    /// iPhone (32); tvOS keeps its own 30 until its migration.
+    #if os(iOS) || os(macOS)
+    static let pillMinHeight: CGFloat = CGFloat(SwiftlyDesignTokens.Layout.sizeChipHeight)
+    #else
+    static let pillMinHeight: CGFloat = 30
+    #endif
+}
+
 /// The colours - the only part of the appearance both platforms share
 /// verbatim.
 ///
@@ -37,7 +69,11 @@ enum Theme {
     // surfaces are large and whose content is colourful.
     //
     // Pure black stays where it belongs: behind the picture in the player.
+    #if os(iOS) || os(macOS) || os(tvOS)
+    static let reason = Color(token: SwiftlyDesignTokens.Palette.surfaceBase)   // token surface.base
+    #else
     static let reason   = Color(red: 0.063, green: 0.063, blue: 0.063)   // #101010
+    #endif
     /// **Every surface you can touch** - settings card, sheet, the button under
     /// the play button, season button, input field.
     ///
@@ -55,7 +91,11 @@ enum Theme {
     /// #262626 nearly doubles the step to the background (0.0956 instead of 0.0534)
     /// and is also the upper limit: one step higher and `schriftSehrLeise` drops
     /// below 4.5 on it.
+    #if os(iOS) || os(macOS) || os(tvOS)
+    static let area = Color(token: SwiftlyDesignTokens.Palette.surfaceControl)   // token surface.control
+    #else
     static let area = Color(red: 0.149, green: 0.149, blue: 0.149)   // #262626
+    #endif
     /// **The background of a group on a settings page.**
     ///
     /// `area` carries buttons - small objects that must stand out from the
@@ -65,7 +105,11 @@ enum Theme {
     ///
     /// The step to the background is thus 0.062 instead of 0.096 - about two thirds.
     /// The rows inside stay readable: `schriftSehrLeise` has 5.78.
+    #if os(iOS) || os(macOS) || os(tvOS)
+    static let groupsArea = Color(token: SwiftlyDesignTokens.Palette.surfaceGroup)   // token surface.group
+    #else
     static let groupsArea = Color(red: 0.118, green: 0.118, blue: 0.118)  // #1E1E1E
+    #endif
 
     /// **The eight tones of the profile marks.**
     ///
@@ -92,7 +136,11 @@ enum Theme {
     ]
     /// **What lies on a `area`** - a chip in a card, a selected filter chip,
     /// the press on a row. Not what lies on the page: that is `area`.
+    #if os(iOS) || os(macOS) || os(tvOS)
+    static let raised = Color(token: SwiftlyDesignTokens.Palette.surfaceRaised)   // token surface.raised
+    #else
     static let raised = Color(red: 0.188, green: 0.188, blue: 0.188)   // #303030
+    #endif
 
     /// **Full values, no opacity.** Opacity changes the effect as soon as
     /// something else is underneath - over a poster "quiet" became "unreadable".
@@ -109,8 +157,16 @@ enum Theme {
     /// `schriftLeise` is the middle level Apple does not have: it only has `label`
     /// and `secondaryLabel` plus a placeholder tone. Our views have three ranks, so
     /// one in between is needed - white at 80 percent, computed fixed.
+    #if os(iOS) || os(macOS) || os(tvOS)
+    static let font = Color(token: SwiftlyDesignTokens.Palette.textPrimary)   // token text.primary
+    #else
     static let font          = Color(red: 1.000, green: 1.000, blue: 1.000)  // #FFFFFF
+    #endif
+    #if os(iOS) || os(macOS) || os(tvOS)
+    static let fontQuiet = Color(token: SwiftlyDesignTokens.Palette.textSecondary)   // token text.secondary
+    #else
     static let fontQuiet     = Color(red: 0.800, green: 0.800, blue: 0.800)  // #CCCCCC
+    #endif
 
     /// **0.48 and not 0.38 - at 0.38 it was too faint to read.**
     ///
@@ -135,7 +191,11 @@ enum Theme {
     /// keep an icon its grey would be the wrong order.
     /// Neutral like the rest of the ladder - Apple's #8E8E93 carries a hint of
     /// blue, which stands out next to a background without any chroma.
+    #if os(iOS) || os(macOS) || os(tvOS)
+    static let fontVeryQuiet = Color(token: SwiftlyDesignTokens.Palette.textTertiary)   // token text.tertiary
+    #else
     static let fontVeryQuiet = Color(red: 0.596, green: 0.596, blue: 0.596)  // #989898
+    #endif
     /// **Back to 7 and 12 percent.**
     ///
     /// They were briefly 20 and 22, extrapolated from Apple's `separator`
@@ -147,12 +207,16 @@ enum Theme {
     /// lines looked far too bright and contrasts no longer matched.
     ///
     /// At 12 percent over the card #373739 results, almost exactly Apple's value.
-    /// The 7 for `linie` stay where they were.
+    /// `line` follows the token `border.hairline` (10 percent, design system decision for every row separator).
     ///
     /// As opacity and not a fixed value, because both also lie over posters - there
     /// the line should go with the picture, not stand on it as a grey stroke.
-    static let line            = Color.white.opacity(0.07)
+    static let line            = Color.white.opacity(0.10)  // token border.hairline (the tvOS/macOS targets do not compile Tokens.generated.swift)
+    #if os(iOS) || os(macOS) || os(tvOS)
+    static let margin = Color(token: SwiftlyDesignTokens.Palette.borderEdge)   // token border.edge
+    #else
     static let margin             = Color.white.opacity(0.12)
+    #endif
 
     /// **The surface of a selected or playing row: eight percent.**
     ///
@@ -173,7 +237,11 @@ enum Theme {
     /// quiet text is carried only by the **disabled** secondary button, and a
     /// disabled button gets no `isPressed`. Whoever later puts quiet text in an
     /// operable state here should have read the number.
+    #if os(iOS) || os(macOS) || os(tvOS)
+    static let pressedArea = Color(token: SwiftlyDesignTokens.Palette.surfacePressed)   // token surface.pressed
+    #else
     static let pressedArea = Color(red: 0.227, green: 0.227, blue: 0.227)  // #3A3A3A
+    #endif
 
     /// Carries only progress, selection and the Direct Play proof - never
     /// surfaces or buttons. Deliberately neither Plex orange nor Netflix red.

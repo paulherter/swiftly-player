@@ -80,6 +80,8 @@ pub struct Core {
     /// The entity cache every view model paints from first (SQLite in `Platform.cache_dir()`,
     /// in memory when the host gives no directory).
     cache: Option<swiftly_vm::ViewCache>,
+    /// Counts "the account's lists went stale" for the hosts that draw their own pages (`lists_stale_after`).
+    stale: Option<Arc<swiftly_vm::StaleLists>>,
 }
 
 impl Core {
@@ -96,6 +98,69 @@ impl Core {
 
 #[uniffi::export]
 impl Core {
+    /// Starts a "Problem melden" report on `flow` for a library item (film, series or episode; `seconds` is the
+    /// player's position): the core reads the item, finds its TMDB id (an episode: its series') and fills the
+    /// place. `false` when the title has no TMDB id or cannot be read, so the host shows nothing.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn report_start_item(
+        &self,
+        flow: Arc<crate::report_flow::ReportIssueFlow>,
+        account: AccountRef,
+        locale: String,
+        item_id: String,
+        seconds: Option<f64>,
+    ) -> Result<bool, CoreError> {
+        let transport = Arc::new(self.transport.clone());
+        let client = swiftly_vm::account_client(&transport, &self.host(&locale)?, &account)
+            .map_err(CoreError::from)?;
+        let Some(place) = swiftly_vm::place_of_item(&client, &item_id, seconds).await else {
+            return Ok(false);
+        };
+        flow.start_place(place);
+        Ok(true)
+    }
+
+    /// Prepares "Vom Server löschen" on `screen` for a library item (film, series or episode: its series): the core
+    /// reads the item, finds its TMDB id and file size and asks Seerr which versions it knows. `None` when the
+    /// item has no TMDB id, Seerr does not know it, or this account / device may not delete.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn delete_prepare_item(
+        &self,
+        screen: Arc<crate::seerr_admin_screen::SeerrAdminScreen>,
+        account: AccountRef,
+        locale: String,
+        item_id: String,
+    ) -> Result<Option<swiftly_vm::SeerrDeleteInfo>, CoreError> {
+        let transport = Arc::new(self.transport.clone());
+        let client = swiftly_vm::account_client(&transport, &self.host(&locale)?, &account)
+            .map_err(CoreError::from)?;
+        let language = locale.split(['-', '_']).next().unwrap_or("de").to_owned();
+        let Some((place, size)) =
+            swiftly_vm::delete_place_of_item(&client, &item_id, &language).await
+        else {
+            return Ok(None);
+        };
+        // The core's rule for every host: when the delete is done, the account's lists (Home's Continue Watching and
+        // Next Up among them) are stale and every open screen reloads; the title itself leaves the cache.
+        if let Some(cache) = self.cache.clone() {
+            let (account, id) = (account.clone(), item_id.clone());
+            screen.set_on_deleted(Arc::new(move || {
+                cache.apply_event(
+                    &account,
+                    &swiftly_cache::Invalidation::LibraryChanged {
+                        added: Vec::new(),
+                        updated: Vec::new(),
+                        removed: vec![id.clone()],
+                    },
+                );
+                cache.lists_changed(&account);
+            }));
+        }
+        screen
+            .delete_prepare(place.art, place.tmdb, place.title, size, None)
+            .await
+    }
+
     /// A core over the host's platform, secret store and key-value store.
     #[uniffi::constructor]
     pub fn new(
@@ -110,6 +175,7 @@ impl Core {
         swiftly_net::redact::install_panic_hook(move |line| log_sink.log(line));
         platform.log("core: created".to_owned());
         let cache = open_cache(&*platform);
+        let stale = cache.as_ref().map(swiftly_vm::StaleLists::watch);
         let runtime = match CoreRuntime::new(runtime::worker_count()) {
             Ok(r) => Some(Arc::new(r)),
             Err(e) => {
@@ -131,6 +197,7 @@ impl Core {
             transport: CoreTransport::new(http),
             pressure: Arc::new(MemoryPressure::new()),
             cache,
+            stale,
         })
     }
 
@@ -1168,6 +1235,29 @@ impl Core {
         }
     }
 
+    /// Where the count of "the account's lists went stale" stands. The core reloads its own Home and library grids when
+    /// the server socket reports a change from another device, after a link that really dropped and after a delete; a
+    /// host that draws its pages itself reads this count when its page opens and then waits with `lists_stale_after`.
+    /// `0` when the core has no cache.
+    pub fn lists_stale_version(&self, account: AccountRef) -> u64 {
+        self.stale.as_ref().map_or(0, |s| s.version(&account))
+    }
+
+    /// Resolves with the new count once the account's lists went stale after `seen` (at once if they already did;
+    /// a burst answers once). Cancelling the call ends the wait. The host then reloads its page and keeps the rows
+    /// on screen meanwhile.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn lists_stale_after(
+        &self,
+        account: AccountRef,
+        seen: u64,
+    ) -> Result<u64, CoreError> {
+        Ok(match &self.stale {
+            Some(stale) => stale.after(&account, seen).await,
+            None => std::future::pending().await,
+        })
+    }
+
     /// Deletes everything cached for the account (sign-out, removed account) and voids the
     /// answers that were still on their way.
     pub fn cache_forget(&self, account: AccountRef) {
@@ -1323,5 +1413,106 @@ mod size_tests {
         assert_eq!(super::dir_size(&d), 15);
         assert_eq!(super::dir_size(&d.join("none")), 0);
         std::fs::remove_dir_all(&d).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod stale_tests {
+    use super::*;
+    use crate::stores::{KeyValueStore, SecretStore};
+    use crate::transport::{HttpClient, HttpFailure, NetRequest, NetResponse};
+    use swiftly_jellyfin::ServerKind;
+
+    struct Quiet;
+    impl Platform for Quiet {
+        fn device_name(&self) -> String {
+            "test".to_owned()
+        }
+        fn log(&self, _line: String) {}
+        fn cache_dir(&self) -> Option<String> {
+            None
+        }
+    }
+    struct Empty;
+    impl SecretStore for Empty {
+        fn get(&self, _name: String) -> Option<String> {
+            None
+        }
+        fn set(&self, _name: String, _value: String) {}
+        fn remove(&self, _name: String) {}
+    }
+    impl KeyValueStore for Empty {
+        fn get(&self, _key: String) -> Option<Vec<u8>> {
+            None
+        }
+        fn set(&self, _key: String, _value: Vec<u8>) {}
+        fn remove(&self, _key: String) {}
+    }
+    struct Offline;
+    #[async_trait::async_trait]
+    impl HttpClient for Offline {
+        async fn send(&self, _r: NetRequest) -> Result<NetResponse, HttpFailure> {
+            Err(HttpFailure::Network { code: -1009 })
+        }
+    }
+
+    fn account(user: &str) -> AccountRef {
+        AccountRef {
+            base_url: "https://one.example".into(),
+            user_id: user.into(),
+            token: "TOKEN".into(),
+            server_kind: ServerKind::Jellyfin,
+            device_id: "d".into(),
+            plex_machine_id: None,
+            plex_account_token: None,
+        }
+    }
+
+    /// What a host that draws its own pages does: read the count, wait for more, reload. The socket's messages, the
+    /// polling fallback and the delete all reach it through the exported object, and only for their own account.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_host_hears_the_lists_of_its_account_go_stale() {
+        let core = Core::new(
+            Arc::new(Quiet),
+            Arc::new(Empty),
+            Arc::new(Empty),
+            Arc::new(Offline),
+        );
+        let (mine, other) = (account("u1"), account("u2"));
+        let seen = core.lists_stale_version(mine.clone());
+        let waiting = {
+            let (core, mine) = (Arc::clone(&core), mine.clone());
+            tokio::spawn(async move { core.lists_stale_after(mine, seen).await.unwrap() })
+        };
+        // Another account's message and a message that touches no list move nothing.
+        core.cache_event(
+            other.clone(),
+            r#"{"MessageType":"UserDataChanged","Data":{"UserDataList":[{"ItemId":"a"}]}}"#.into(),
+        );
+        core.cache_event(mine.clone(), r#"{"MessageType":"KeepAlive"}"#.into());
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(!waiting.is_finished(), "nothing of this account happened");
+        assert_eq!(core.lists_stale_version(mine.clone()), seen);
+
+        core.cache_event(
+            mine.clone(),
+            r#"{"MessageType":"UserDataChanged","Data":{"UserDataList":[{"ItemId":"a"}]}}"#.into(),
+        );
+        let now = waiting.await.unwrap();
+        assert!(now > seen);
+        // The polling fallback and the library change count as well; a wait from the newest count parks again.
+        core.cache_lists_changed(mine.clone());
+        core.cache_event(
+            mine.clone(),
+            r#"{"MessageType":"LibraryChanged","Data":{"ItemsRemoved":["b"]}}"#.into(),
+        );
+        assert!(core.lists_stale_after(mine.clone(), now).await.unwrap() > now);
+        let newest = core.lists_stale_version(mine.clone());
+        let parked = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            core.lists_stale_after(mine, newest),
+        )
+        .await;
+        assert!(parked.is_err());
     }
 }

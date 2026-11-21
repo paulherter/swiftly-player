@@ -14,7 +14,7 @@ use crate::player_host::{
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, PoisonError};
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::{color, desktop as dtok};
 use swiftly_jellyfin::{PlayMethod, ReportPlan};
 use swiftly_layout::{Align, Alignment, Axis};
 use swiftly_model::MediaStream;
@@ -672,7 +672,7 @@ fn metrics(env: &Env) -> Metrics {
             slider_top: 0.0,
             huge: 0.0,
             large: 0.0,
-            gap: 8.0,
+            gap: dtok::SPACE_SM,
             left_w: 110.0,
             right_w: 130.0,
             pill_h: 76.0,
@@ -715,7 +715,7 @@ fn metrics(env: &Env) -> Metrics {
             title_top: 44.0,
             skip_box: 48.0,
             play_box: 60.0,
-            bar_gap: 12.0,
+            bar_gap: dtok::SPACE_MD,
         },
         form => {
             let narrow = env.idiom == swiftly_ui::Idiom::Phone;
@@ -795,7 +795,7 @@ struct Ctx<'a> {
 }
 
 fn white() -> Color {
-    color(colour::FONT)
+    color(color::TEXT_PRIMARY)
 }
 
 /// A control: tappable (and focusable on tv) only while the controls are up, so a faded-out button catches nothing.
@@ -873,7 +873,7 @@ fn icon_button(c: &Ctx<'_>, glyph: &'static str, key: &str, action: &str, on: bo
     let n = g.frame(Some(m.button), Some(m.button), Alignment::CENTER);
     let n = if c.tv {
         n.background(
-            Node::rect(Color::new(1.0, 1.0, 1.0, 0.10), m.button / 2.0),
+            Node::rect(color(color::BORDER_HAIRLINE), m.button / 2.0),
             Alignment::CENTER,
         )
     } else {
@@ -949,15 +949,10 @@ fn rail_button(
             .frame(Some(m.button), Some(m.button), Alignment::CENTER);
     if on {
         n = n
-            .hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), 12.0)
+            .hover_surface(color(color::SURFACE_HOVER), dtok::RADIUS_CONTROL)
             .tooltip(tip);
     }
     act(c, n, on, key, action)
-}
-
-/// The play/pause glyph swap (`contentTransition(.symbolEffect(.replace))`; the system's timing is private, the catalogue's estimate).
-fn symbol_swap() -> Motion {
-    swiftly_ui::feel::of(swiftly_motion::catalogue::Id::SymbolReplace)
 }
 
 /// The drop-down under the speaker: a glass pill with a vertical slider (top = 100 %) and the value. It grows down from
@@ -973,10 +968,10 @@ fn vol_dropdown(c: &Ctx<'_>, on: bool) -> Node {
     // The fill runs from the bottom to the thumb's centre.
     let fill_h = VOL_INSET + inner * level as f32 / 100.0;
     let track_x = (w - 4.0) / 2.0;
-    let track = Node::rect(Color::new(1.0, 1.0, 1.0, 0.18), 2.0)
+    let track = Node::rect(color(color::RING_PROGRESS), 2.0)
         .frame(Some(4.0), Some(VOL_TRACK), Alignment::TOP_LEADING)
         .padding(ins(VOL_PAD_TOP, track_x, 0.0, 0.0));
-    let fill = Node::rect(color(colour::MARK_ACCENT), 2.0)
+    let fill = Node::rect(color(crate::look_glow::accent()), 2.0)
         .frame(Some(4.0), Some(fill_h), Alignment::TOP_LEADING)
         .padding(ins(VOL_PAD_TOP + VOL_TRACK - fill_h, track_x, 0.0, 0.0));
     let thumb = Node::rect(white(), 6.0)
@@ -987,7 +982,7 @@ fn vol_dropdown(c: &Ctx<'_>, on: bool) -> Node {
             0.0,
             0.0,
         ));
-    let pct = label(c, &format!("{level} %"), 11.0, 600, colour::FONT_QUIET)
+    let pct = label(c, &format!("{level} %"), 11.0, 600, color::TEXT_SECONDARY)
         .frame(Some(w), Some(VOL_LABEL_H), Alignment::CENTER)
         .padding(ins(VOL_PAD_TOP + VOL_TRACK + VOL_LABEL_GAP, 0.0, 0.0, 0.0));
     let pill = Node::zstack(Alignment::TOP_LEADING, vec![track, fill, thumb, pct])
@@ -1025,11 +1020,11 @@ fn bar_glass(radius: f32) -> Node {
     Node::rect(Color::new(0.0, 0.0, 0.0, 0.0), 0.0)
         .paint(Paint::Blur {
             blur: 18.0,
-            tint: Color::new(0.0, 0.0, 0.0, 0.4),
+            tint: color(color::SCRIM_BUTTON),
             radius,
         })
         .paint(Paint::Stroke {
-            color: color(colour::MARGIN),
+            color: color(color::SURFACE_FOCUS),
             width: 1.0,
             radius,
         })
@@ -1050,14 +1045,14 @@ fn capsule_half(
             .frame(Some(hw), Some(hh), Alignment::CENTER);
     if open {
         n = n.background(
-            Node::rect(Color::new(1.0, 1.0, 1.0, 0.18), hh / 2.0 - 2.0)
+            Node::rect(color(color::RING_PROGRESS), hh / 2.0 - 2.0)
                 .frame(Some(hw - 4.0), Some(hh - 4.0), Alignment::CENTER)
                 .opacity(1.0, swiftly_ui::feel::player_layer()),
             Alignment::CENTER,
         );
     }
     if on {
-        n = n.hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), hh / 2.0 - 2.0);
+        n = n.hover_surface(color(color::SURFACE_HOVER), hh / 2.0 - 2.0);
         // An empty tip: none (the speaker's tooltip would cover the volume drop-down under it).
         if !tip.is_empty() {
             n = n.tooltip(tip);
@@ -1153,7 +1148,7 @@ fn bar_x(c: &Ctx<'_>, ok: bool) -> Node {
         .frame(Some(hh), Some(hh), Alignment::CENTER)
         .background(bar_glass(hh / 2.0), Alignment::CENTER);
     let x = if ok {
-        x.hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), hh / 2.0)
+        x.hover_surface(color(color::SURFACE_HOVER), hh / 2.0)
             .tooltip("Player schließen (Esc)")
     } else {
         x
@@ -1168,27 +1163,28 @@ fn header_desktop(c: &Ctx<'_>) -> Node {
         c.p.c.visible && (c.p.c.layer.is_none() || c.p.pm.is_some()),
     );
     let scrubbing = c.p.c.scrubbing;
-    let mut col = vec![label(c, &c.p.title, m.title, 700, colour::FONT)];
+    let mut col = vec![label(c, &c.p.title, m.title, 700, color::TEXT_PRIMARY)];
     if let Some((name, with)) = c.p.group.as_ref() {
-        let people = c.g.node("users", m.meta + 1.0, color(colour::MARK_ACCENT));
+        let people =
+            c.g.node("users", m.meta + 1.0, color(crate::look_glow::accent()));
         col.push(Node::hstack(
             Align::Center,
             Some(6.0),
             vec![
                 people,
-                label(c, name, m.meta, 600, colour::MARK_ACCENT),
-                label(c, &format!("· {with}"), m.meta, 400, colour::FONT_QUIET),
+                label(c, name, m.meta, 600, crate::look_glow::accent()),
+                label(c, &format!("· {with}"), m.meta, 400, color::TEXT_SECONDARY),
             ],
         ));
     } else if !c.p.meta.is_empty() || c.p.transcode {
         let mut line = Vec::new();
         if !c.p.meta.is_empty() {
-            line.push(label(c, &c.p.meta, m.meta, 400, colour::FONT_QUIET));
+            line.push(label(c, &c.p.meta, m.meta, 400, color::TEXT_SECONDARY));
         }
         if c.p.transcode {
             // `Label(plan.method.rawValue, systemImage: "exclamationmark.triangle.fill")` in the warning colour.
-            line.push(c.g.node("warning", m.meta, color(colour::ORIGINAL_WARNING)));
-            line.push(label(c, "Transcode", m.meta, 400, colour::ORIGINAL_WARNING));
+            line.push(c.g.node("warning", m.meta, color(color::STATE_WARNING)));
+            line.push(label(c, "Transcode", m.meta, 400, color::STATE_WARNING));
         }
         col.push(Node::hstack(Align::Center, Some(6.0), line));
     }
@@ -1202,17 +1198,20 @@ fn header_desktop(c: &Ctx<'_>) -> Node {
     let rail = Node::hstack(Align::Center, Some(CAP_GAP), rail)
         .frame(None, Some(m.button), Alignment::CENTER)
         .opacity(if scrubbing { 0.0 } else { 1.0 }, Motion::Instant);
-    let rail = fill_frame(
-        rail.padding(ins(m.rail_top, 0.0, 0.0, m.edge)),
-        Alignment::TOP_TRAILING,
-    );
+    // Title block and capsules share one row: the capsules keep their width and a long title gives way (one line, an ellipsis),
+    // so it never runs under them. The Mac's header row does the same (title, spacer, icons).
+    let rail = rail
+        .padding(ins(m.rail_top, 0.0, 0.0, m.edge))
+        .layout_priority(1.0);
     let panel = vol_panel(c.env, extras_of(c.p));
     let dropdown = vol_dropdown(c, ok)
         .opacity(if scrubbing { 0.0 } else { 1.0 }, Motion::Instant)
         .padding(ins(panel.y, panel.x, 0.0, 0.0));
     let mut kids = vec![
-        fill_frame(left, Alignment::TOP_LEADING),
-        rail,
+        fill_frame(
+            Node::hstack(Align::Start, Some(0.0), vec![left, Node::spacer(), rail]),
+            Alignment::TOP_LEADING,
+        ),
         fill_frame(dropdown, Alignment::TOP_LEADING),
     ];
     if let Some(h) = &c.p.t.hint {
@@ -1230,7 +1229,7 @@ fn header_desktop(c: &Ctx<'_>) -> Node {
             c.cx,
             h,
             &swiftly_text::TextStyle::from(swiftly_design::TextStyle {
-                size: 12.0,
+                size: dtok::TEXT_CAPTION_SMALL.size,
                 weight: 400,
                 ..base()
             }),
@@ -1269,23 +1268,24 @@ fn header(c: &Ctx<'_>) -> Node {
         &c.p.title,
         m.title,
         if tv { 700 } else { 600 },
-        colour::FONT,
+        color::TEXT_PRIMARY,
     );
     let mut col = vec![title];
     if let Some((name, with)) = c.p.group.as_ref() {
         // In a group the group replaces year and runtime (`GroupsRow`): people icon, name semibold, both accent.
-        let people = c.g.node("users", m.meta + 1.0, color(colour::MARK_ACCENT));
+        let people =
+            c.g.node("users", m.meta + 1.0, color(crate::look_glow::accent()));
         col.push(Node::hstack(
             Align::Center,
             Some(6.0),
             vec![
                 people,
-                label(c, name, m.meta, 600, colour::MARK_ACCENT),
-                label(c, &format!("· {with}"), m.meta, 400, colour::FONT_QUIET),
+                label(c, name, m.meta, 600, crate::look_glow::accent()),
+                label(c, &format!("· {with}"), m.meta, 400, color::TEXT_SECONDARY),
             ],
         ));
     } else if !c.p.meta.is_empty() {
-        col.push(label(c, &c.p.meta, m.meta, 400, colour::FONT_QUIET));
+        col.push(label(c, &c.p.meta, m.meta, 400, color::TEXT_SECONDARY));
     }
     let left = Node::vstack(Align::Start, Some(if tv { 10.0 } else { 3.0 }), col);
     let scrubbing = c.p.c.scrubbing;
@@ -1314,7 +1314,8 @@ fn header(c: &Ctx<'_>) -> Node {
     ));
     let mut kids = vec![fill_frame(row, Alignment::TOP_LEADING)];
     if let Some(h) = &c.p.t.hint {
-        let hint = label(c, h, 12.0, 400, colour::FONT).padding(ins(0.0, m.edge, 0.0, m.edge));
+        let hint =
+            label(c, h, 12.0, 400, color::TEXT_PRIMARY).padding(ins(0.0, m.edge, 0.0, m.edge));
         kids.push(fill_frame(
             hint.padding(ins(m.top + m.button + 8.0, 0.0, 0.0, 0.0)),
             Alignment::TOP,
@@ -1335,9 +1336,16 @@ fn center(c: &Ctx<'_>) -> Node {
     let (back, fwd) = c.p.c.jump_seconds;
     let skip = |forward: bool, secs: i64, key: &str| {
         let g = c.g.node(skip_glyph_name(forward), m.large, white());
-        let num = label(c, &secs.to_string(), m.large * 0.28, 600, colour::FONT);
+        let num = label(
+            c,
+            &secs.to_string(),
+            m.large * 0.28,
+            600,
+            color::TEXT_PRIMARY,
+        );
         let num = if c.m.form == Form::Desktop {
-            label(c, &secs.to_string(), 12.0, 700, colour::FONT).padding(ins(2.0, 0.0, 0.0, 0.0))
+            label(c, &secs.to_string(), 12.0, 700, color::TEXT_PRIMARY)
+                .padding(ins(2.0, 0.0, 0.0, 0.0))
         } else {
             num
         };
@@ -1358,11 +1366,7 @@ fn center(c: &Ctx<'_>) -> Node {
         c.g.node(if playing { "pause" } else { "play" }, m.huge, white());
     if m.form == Form::Desktop {
         // Play and pause replace each other (`SymbolEffect.replace.offUp`): the new glyph grows in.
-        mid = mid
-            .key(if playing { "glyph-pause" } else { "glyph-play" })
-            .scaled(1.0, symbol_swap())
-            .appear_from(0.7, 0.0)
-            .opacity(1.0, symbol_swap());
+        mid = crate::glyph_swap::replace(mid, playing);
     }
     let mid = act(
         c,
@@ -1422,7 +1426,7 @@ fn time_slider(c: &Ctx<'_>, bar_w: f32) -> Node {
     let tick = |at: f64, a: f32, key: String| {
         let x = (at / dur) as f32 * bar_w - 1.0;
         let (col, tall) = if desk {
-            (color(colour::REASON), thick)
+            (color(color::SURFACE_BASE), thick)
         } else {
             (Color::new(0.04, 0.04, 0.05, a), thick + 4.0)
         };
@@ -1453,7 +1457,7 @@ fn time_slider(c: &Ctx<'_>, bar_w: f32) -> Node {
     };
     if knob > 0.0 {
         let fillc = if p.c.scrubbing {
-            color(colour::MARK_ACCENT)
+            color(crate::look_glow::accent())
         } else {
             white()
         };
@@ -1516,7 +1520,7 @@ fn chapter_track(c: &Ctx<'_>, bar_w: f32, share: f32) -> Vec<Node> {
         let under = p.c.scrubbing && handle >= cuts[i] && (handle < cuts[i + 1] || i == last);
         let h = if under { 6.0 } else { 4.0 };
         let done = (handle - x0).clamp(0.0, w);
-        let seg = Node::rect(Color::new(1.0, 1.0, 1.0, 0.18), h / 2.0)
+        let seg = Node::rect(color(color::RING_PROGRESS), h / 2.0)
             .frame(Some(w), Some(h), Alignment::CENTER)
             .background(
                 Node::rect(white(), h / 2.0).frame(Some(done), Some(h), Alignment::LEADING),
@@ -1549,13 +1553,13 @@ fn preview(c: &Ctx<'_>, bar_w: f32, share: f32, at: f64) -> Node {
         Paint::Stroke {
             color: white(),
             width: 2.0,
-            radius: 8.0,
+            radius: dtok::RADIUS_SMALL,
         }
     } else {
         Paint::Stroke {
-            color: color(colour::TILE_BORDER),
+            color: color(color::BORDER_TILE),
             width: 1.0,
-            radius: 8.0,
+            radius: dtok::RADIUS_SMALL,
         }
     };
     if let (Some(img), true) = (p.preview_img, p.c.scrubbing || desk) {
@@ -1572,19 +1576,19 @@ fn preview(c: &Ctx<'_>, bar_w: f32, share: f32, at: f64) -> Node {
                         from: [0.0, 0.0],
                         to: [1.0, 1.0],
                     },
-                    radius: 8.0,
+                    radius: dtok::RADIUS_SMALL,
                 })
                 .paint(if desk {
                     Paint::Stroke {
                         color: white(),
                         width: 2.0,
-                        radius: 8.0,
+                        radius: dtok::RADIUS_SMALL,
                     }
                 } else {
                     Paint::Stroke {
-                        color: color(colour::TILE_BORDER),
+                        color: color(color::BORDER_TILE),
                         width: 1.0,
-                        radius: 8.0,
+                        radius: dtok::RADIUS_SMALL,
                     }
                 })
                 .frame(Some(w), Some(h), Alignment::CENTER),
@@ -1593,15 +1597,21 @@ fn preview(c: &Ctx<'_>, bar_w: f32, share: f32, at: f64) -> Node {
     let size = if desk { 12.0 } else { m.time };
     let mut cap = Vec::new();
     if !name.is_empty() {
-        cap.push(label(c, &name, size, 400, colour::FONT));
+        cap.push(label(c, &name, size, 400, color::TEXT_PRIMARY));
     }
-    cap.push(time_label(c, &play_time(at), size, 600, colour::FONT));
+    cap.push(time_label(
+        c,
+        &play_time(at),
+        size,
+        600,
+        color::TEXT_PRIMARY,
+    ));
     let caption = Node::hstack(Align::Center, Some(6.0), cap);
     if desk {
         col.push(caption);
     } else {
         col.push(caption.padding(ins(3.0, 8.0, 3.0, 8.0)).background(
-            Node::rect(rgba(colour::REASON, 0.82), 20.0),
+            Node::rect(rgba(color::SURFACE_BASE, 0.82), 20.0),
             Alignment::CENTER,
         ));
     }
@@ -1637,7 +1647,7 @@ fn footer(c: &Ctx<'_>) -> Node {
         &play_time(p.t.position),
         m.time,
         if m.form == Form::Desktop { 500 } else { 400 },
-        colour::FONT,
+        color::TEXT_PRIMARY,
     )
     .frame(Some(m.left_w), None, Alignment::LEADING);
     let (right_text, right_w) = match &p.ends {
@@ -1650,9 +1660,9 @@ fn footer(c: &Ctx<'_>) -> Node {
         m.time,
         if m.form == Form::Desktop { 500 } else { 400 },
         if m.form == Form::Desktop {
-            colour::FONT_QUIET
+            color::TEXT_SECONDARY
         } else {
-            colour::FONT
+            color::TEXT_PRIMARY
         },
     )
     .frame(Some(right_w), None, Alignment::TRAILING);
@@ -1739,7 +1749,7 @@ pub const SKIP_X_COLUMN: f32 = SKIP_X_HIT + SKIP_X_PAD;
 
 fn pill(c: &Ctx<'_>) -> Node {
     let (p, m) = (c.p, &c.m);
-    let dark = color(colour::REASON);
+    let dark = color(color::SURFACE_BASE);
     let (text, sub, share, next, skip_share) = match &p.offer.view {
         OfferView::Hidden => return Node::spacer().key("offer-none"),
         // Auto-skip on: the button carries the running countdown as its fill, like the card.
@@ -1771,14 +1781,14 @@ fn pill(c: &Ctx<'_>) -> Node {
         if m.form == Form::Desktop { 16.0 } else { size },
         dark,
     );
-    let mut head = vec![glyph, label(c, &text, size, 600, colour::REASON)];
+    let mut head = vec![glyph, label(c, &text, size, 600, color::SURFACE_BASE)];
     if c.tv {
         head.insert(0, Node::spacer_min(0.0));
         head.remove(0);
     }
     let mut body = vec![Node::hstack(Align::Center, Some(8.0), head)];
     if let Some(s) = sub {
-        body.push(label(c, &s, size * 0.8, 400, colour::REASON));
+        body.push(label(c, &s, size * 0.8, 400, color::SURFACE_BASE));
     }
     // The skip button that counts down to skip by itself carries an X that stops the countdown without skipping.
     let with_x = skip_share.is_some() && !c.tv;
@@ -1882,8 +1892,10 @@ fn pill(c: &Ctx<'_>) -> Node {
     )
 }
 
-/// The next-episode card (`EpisodeCardsView.swift:22-205`): bottom right, 16:9, at most 30 % of the width, a ring, the
-/// close button top right, "F3 · in 7 s" and the name below. Position, scale and fade come from [`CardMotion`].
+/// The next-episode card (`EpisodeCardsView.swift:22-205`, `EpisodeCardParts.swift`): a 16:9 picture at the bottom right
+/// with the countdown ring and its play glyph in the middle and the close button 16 pt in from the top right corner; under
+/// it "S1 · F2" on the left and "in 4 s" on the right (12 pt, very quiet), then the title (17 pt). A soft dark gradient lies
+/// under all of it so the text reads on any credits. Position, scale and fade come from [`CardMotion`].
 fn card(c: &Ctx<'_>) -> Option<Node> {
     let (look, data) = (c.p.card, c.p.card_data.as_ref()?);
     if !look.shown || c.m.form != Form::Desktop {
@@ -1891,57 +1903,84 @@ fn card(c: &Ctx<'_>) -> Option<Node> {
     }
     let (title, share, secs, code) = data;
     let r = player_card::card_rect(c.env.size.w, c.env.size.h, c.m.edge, 76.0, &look);
-    let back = Node::rect(color(colour::RAISED), 12.0).paint(Paint::Linear {
-        gradient: LinearGradient {
-            start: color(colour::RAISED),
-            end: Color::new(0.06, 0.06, 0.07, 1.0),
-            from: [0.0, 0.0],
-            to: [1.0, 1.0],
-        },
-        radius: 12.0,
-    });
-    let ring = Node::rect(Color::CLEAR, 12.0)
-        .paint(Paint::Stroke {
-            color: Color::new(1.0, 1.0, 1.0, 0.55),
-            width: 2.0,
-            radius: 12.0,
+    let rest = 1.0 - look.zoom;
+    // The corners and the shadow only while it stands as a card (`CardsShape`: `corner * rest`).
+    let corner = player_card::CORNER * rest;
+    // The picture: black until it arrives.
+    let back = Node::flexible()
+        .paint(Paint::Shadow {
+            style: swiftly_render::ShadowStyle {
+                color: Color::new(0.0, 0.0, 0.0, 0.6 * rest),
+                dx: 0.0,
+                dy: 14.0 * rest,
+                blur: 17.0 * rest,
+                spread: 0.0,
+            },
+            radius: corner,
         })
-        .scaled(look.ring, Motion::Instant)
-        .scale_about(0.5, 0.5)
-        .opacity(look.details, Motion::Instant);
-    let still =
-        c.p.card_img
-            .map(|(img, a)| Node::image(img, r.w, r.h, 12.0).opacity(a, Motion::Instant));
-    let count = format!("{code} · in {secs} s");
-    let text = Node::vstack(
-        Align::Start,
-        Some(2.0),
+        .paint(Paint::Fill {
+            color: Color::BLACK,
+            radius: corner,
+        });
+    let still = c.p.card_img.map(|(img, a)| {
+        if look.zoom <= 0.0 {
+            return Node::image(img, r.w, r.h, corner).opacity(a, Motion::Instant);
+        }
+        // Zoomed the frame is the window's shape, not 16:9: the 16:9 picture covers it and the frame clips it.
+        let k = (r.w / 16.0).max(r.h / 9.0);
+        Node::zstack(
+            Alignment::CENTER,
+            vec![Node::image(img, k * 16.0, k * 9.0, 0.0)],
+        )
+        .frame(Some(r.w), Some(r.h), Alignment::CENTER)
+        .clipped_rounded(corner)
+        .opacity(a, Motion::Instant)
+    });
+    // The ring (`CountdownRing`): a 52 pt disc of black 50 %, a track at white 18 % and the accent arc from 12 o'clock with
+    // round caps, both strokes 3/56 of the diameter and centred on the circle inset by one stroke; the play glyph is 0.3 of it.
+    let d = player_card::RING;
+    let stroke = d * 3.0 / 56.0;
+    let accent = color(crate::look_glow::accent());
+    let arc = |colour: Color, to: f32| {
+        Node::rect(Color::CLEAR, 0.0)
+            .paint(Paint::Arc {
+                color: colour,
+                width: stroke,
+                from: 0.0,
+                to,
+            })
+            .frame(Some(d - stroke), Some(d - stroke), Alignment::CENTER)
+    };
+    let ring = Node::zstack(
+        Alignment::CENTER,
         vec![
-            label(c, &count, 13.0, 400, colour::FONT_QUIET),
-            label(c, title, 17.0, 600, colour::FONT),
+            Node::rect(color(color::SURFACE_OVERLAY), d / 2.0).frame(
+                Some(d),
+                Some(d),
+                Alignment::CENTER,
+            ),
+            arc(color(color::RING_PROGRESS), 1.0),
+            arc(accent, (*share as f32).clamp(0.0, 1.0)),
+            c.g.node("play", d * 0.3, white()),
         ],
     )
-    .padding(ins(0.0, 14.0, 12.0, 14.0));
-    let share_w = (r.w - 28.0) * (*share as f32).clamp(0.0, 1.0);
-    let bar = Node::rect(Color::new(1.0, 1.0, 1.0, 0.18), 1.5)
-        .frame(Some(r.w - 28.0), Some(3.0), Alignment::LEADING)
-        .background(
-            Node::rect(color(colour::MARK_ACCENT), 1.5).frame(
-                Some(share_w),
-                Some(3.0),
-                Alignment::LEADING,
-            ),
-            Alignment::LEADING,
-        );
+    .frame(Some(d), Some(d), Alignment::CENTER)
+    .scaled(look.ring, Motion::Instant)
+    .scale_about(0.5, 0.5)
+    .opacity(look.details, Motion::Instant);
     let x_disc = Node::zstack(
         Alignment::CENTER,
         vec![
-            Node::rect(rgba(colour::AREA, 0.85), player_card::X_SIZE / 2.0).frame(
+            Node::rect(
+                rgba(color::SURFACE_CONTROL, 0.85),
+                player_card::X_SIZE / 2.0,
+            )
+            .frame(
                 Some(player_card::X_SIZE),
                 Some(player_card::X_SIZE),
                 Alignment::CENTER,
             ),
-            c.g.node("x", 12.0, white()),
+            c.g.node("x", 11.0, white()),
         ],
     )
     .frame(
@@ -1952,52 +1991,80 @@ fn card(c: &Ctx<'_>) -> Option<Node> {
     .key("card-x")
     .a11y_label(swiftly_ui::a11y::Role::Button, "Abspann behalten");
     let x_at = player_card::x_rect(swiftly_layout::Rect::new(0.0, 0.0, r.w, r.h));
-    let body = Node::zstack(
+    let picture = Node::zstack(
         Alignment::TOP_LEADING,
         vec![
             back,
             still.unwrap_or_else(|| Node::fixed(0.0, 0.0)),
-            fill_frame(
-                bar.padding(ins(0.0, 14.0, 0.0, 14.0))
-                    .opacity(look.details, Motion::Instant),
-                Alignment::BOTTOM_LEADING,
-            ),
-            fill_frame(
-                text.opacity(look.details, Motion::Instant).padding(ins(
-                    0.0,
-                    0.0,
-                    10.0 - player_card::DETAILS_RISE
-                        * (1.0 - look.details)
-                        * f32::from(!c.env.reduce_motion),
-                    0.0,
-                )),
-                Alignment::BOTTOM_LEADING,
-            ),
+            fill_frame(ring, Alignment::CENTER),
             x_disc
                 .opacity(look.details, Motion::Instant)
                 .padding(ins(x_at.y, x_at.x, 0.0, 0.0)),
-            ring,
         ],
     )
-    .frame(Some(r.w), Some(r.h), Alignment::TOP_LEADING)
+    .frame(Some(r.w), Some(r.h), Alignment::TOP_LEADING);
+    // Under the card: "S1 · F2" left, "in 4 s" right, the title below (`details`, spacing 3), 12 pt under the picture.
+    let quiet = |s: &str| label(c, s, player_card::SMALL, 600, color::TEXT_TERTIARY);
+    let lines = Node::vstack(
+        Align::Start,
+        Some(3.0),
+        vec![
+            Node::hstack(
+                Align::Center,
+                Some(12.0),
+                vec![quiet(code), Node::spacer(), quiet(&format!("in {secs} s"))],
+            ),
+            label(c, title, player_card::TITLE, 600, color::TEXT_PRIMARY),
+        ],
+    )
+    .frame(Some(r.w), None, Alignment::TOP_LEADING)
+    .opacity(look.details, Motion::Instant);
+    let rise = player_card::DETAILS_RISE * (1.0 - look.details) * f32::from(!c.env.reduce_motion);
+    let group_h = r.h + player_card::SPACING + player_card::LINES;
+    let group = Node::zstack(
+        Alignment::TOP_LEADING,
+        vec![
+            picture,
+            lines.padding(ins(r.h + player_card::SPACING + rise, 0.0, 0.0, 0.0)),
+        ],
+    )
+    .frame(Some(r.w), Some(group_h), Alignment::TOP_LEADING)
+    // The scale grows from the middle of the picture, not of the lines (`scaleEffect(anchor: card.mid)`).
     .scaled(look.scale, Motion::Instant)
-    .scale_about(0.5, 0.5)
+    .scale_about(0.5, r.h / 2.0 / group_h)
     .opacity(look.opacity, Motion::Instant)
     .key("card");
-    Some(fill_frame(
-        body.padding(ins(r.y, r.x, 0.0, 0.0)),
+    // The gradient only fades; it does not travel with the card (`CardsScrim`).
+    let scrim = Node::flexible()
+        .paint(Paint::Radial {
+            center: [0.88, 0.92],
+            radii: [0.75, 0.75],
+            stops: vec![
+                (0.0, Color::new(0.0, 0.0, 0.0, 0.78)),
+                (0.7, Color::new(0.0, 0.0, 0.0, 0.0)),
+            ],
+        })
+        .opacity(look.details.min(look.opacity), Motion::Instant);
+    Some(Node::zstack(
         Alignment::TOP_LEADING,
+        vec![
+            scrim,
+            fill_frame(
+                group.padding(ins(r.y, r.x, 0.0, 0.0)),
+                Alignment::TOP_LEADING,
+            ),
+        ],
     ))
 }
 
 /// The key hints under the centre row (`PS:895-1869`): "←" "10 s", "Leertaste" Pause/Abspielen, "→" "30 s".
 fn key_hints(c: &Ctx<'_>) -> Node {
     let cap = |s: &str| {
-        label(c, s, 12.0, 400, colour::FONT_QUIET)
+        label(c, s, 12.0, 400, color::TEXT_SECONDARY)
             .fixed_size(true, false)
             .padding(ins(1.0, 6.0, 1.0, 6.0))
             .background(
-                Node::rect(Color::new(1.0, 1.0, 1.0, 0.12), 5.0),
+                Node::rect(color(color::SURFACE_FOCUS), 5.0),
                 Alignment::CENTER,
             )
     };
@@ -2009,7 +2076,7 @@ fn key_hints(c: &Ctx<'_>) -> Node {
             Some(6.0),
             vec![
                 cap(key),
-                label(c, &words, 12.0, 400, colour::FONT_QUIET).fixed_size(true, false),
+                label(c, &words, 12.0, 400, color::TEXT_SECONDARY).fixed_size(true, false),
             ],
         )
     };
@@ -2156,7 +2223,7 @@ fn jump_mark(c: &Ctx<'_>) -> Option<Node> {
         },
         13.0,
         500,
-        colour::FONT,
+        color::TEXT_PRIMARY,
     );
     let n = Node::vstack(Align::Center, Some(6.0), vec![g, t])
         .frame(Some(108.0), Some(108.0), Alignment::CENTER)
@@ -2193,7 +2260,7 @@ fn row(c: &Ctx<'_>, key: &str, action: &str, text: &str, selected: bool) -> Node
             text,
             size,
             if selected { 600 } else { 400 },
-            colour::FONT,
+            color::TEXT_PRIMARY,
         ),
         Node::spacer(),
     ];
@@ -2213,8 +2280,14 @@ fn row(c: &Ctx<'_>, key: &str, action: &str, text: &str, selected: bool) -> Node
 
 fn column(c: &Ctx<'_>, title: &str, rows: Vec<Node>, width: Option<f32>) -> Node {
     let mut kids = vec![
-        label(c, title, if c.tv { 36.0 } else { 20.0 }, 700, colour::FONT)
-            .padding(ins(0.0, 10.0, 8.0, 0.0)),
+        label(
+            c,
+            title,
+            if c.tv { 36.0 } else { 20.0 },
+            700,
+            color::TEXT_PRIMARY,
+        )
+        .padding(ins(0.0, 10.0, 8.0, 0.0)),
     ];
     kids.extend(rows);
     Node::vstack(Align::Start, Some(0.0), kids).frame(width, None, Alignment::TOP_LEADING)
@@ -2224,7 +2297,7 @@ fn delay_row(c: &Ctx<'_>, tag: &str, ms: i64) -> Node {
     let size = if c.tv { 24.0 } else { 14.0 };
     let step = |sign: &str, symbol: &str| {
         let key = format!("delay:{tag}:{sign}");
-        let b = label(c, symbol, size + 6.0, 600, colour::FONT).frame(
+        let b = label(c, symbol, size + 6.0, 600, color::TEXT_PRIMARY).frame(
             Some(c.m.button),
             Some(c.m.row_h),
             Alignment::CENTER,
@@ -2240,10 +2313,10 @@ fn delay_row(c: &Ctx<'_>, tag: &str, ms: i64) -> Node {
         Align::Center,
         Some(6.0),
         vec![
-            label(c, "Verzögerung", size, 400, colour::FONT_QUIET),
+            label(c, "Verzögerung", size, 400, color::TEXT_SECONDARY),
             Node::spacer(),
             step("-", "−"),
-            label(c, &format!("{ms} ms"), size, 500, colour::FONT),
+            label(c, &format!("{ms} ms"), size, 500, color::TEXT_PRIMARY),
             step("+", "+"),
         ],
     )
@@ -2284,7 +2357,7 @@ fn offset_rows(c: &Ctx<'_>, width: f32) -> Node {
     let press = |key: &str, inner: Node, w: Option<f32>, live: bool| {
         let n = inner.frame(w, Some(height), Alignment::CENTER);
         let n = if desk && live {
-            n.hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), 8.0)
+            n.hover_surface(color(color::SURFACE_HOVER), dtok::RADIUS_SMALL)
         } else {
             n
         };
@@ -2308,7 +2381,7 @@ fn offset_rows(c: &Ctx<'_>, width: f32) -> Node {
                 &swiftly_l10n::t(menu.offset_title),
                 size,
                 400,
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
             ),
             Node::spacer(),
             label(
@@ -2317,9 +2390,9 @@ fn offset_rows(c: &Ctx<'_>, width: f32) -> Node {
                 size + 1.0,
                 500,
                 if menu.can_reset {
-                    colour::FONT
+                    color::TEXT_PRIMARY
                 } else {
-                    colour::FONT_QUIET
+                    color::TEXT_SECONDARY
                 },
             ),
         ],
@@ -2334,7 +2407,7 @@ fn offset_rows(c: &Ctx<'_>, width: f32) -> Node {
             .map(|s| {
                 press(
                     &format!("offset:{}", s.step_ms),
-                    label(c, &s.label, size, 500, colour::FONT),
+                    label(c, &s.label, size, 500, color::TEXT_PRIMARY),
                     Some(step_w),
                     true,
                 )
@@ -2354,9 +2427,9 @@ fn offset_rows(c: &Ctx<'_>, width: f32) -> Node {
                     size,
                     400,
                     if menu.can_reset {
-                        colour::MARK_ACCENT
+                        crate::look_glow::accent()
                     } else {
-                        colour::FONT_VERY_QUIET
+                        color::TEXT_TERTIARY
                     },
                 )
                 .padding(ins(0.0, 10.0, 0.0, 10.0)),
@@ -2404,12 +2477,12 @@ fn row_desktop(c: &Ctx<'_>, key: &str, action: &str, text: &str, selected: bool)
         Node::fixed(13.0, 13.0)
     };
     let tone = if selected {
-        colour::FONT
+        color::TEXT_PRIMARY
     } else {
-        colour::FONT_QUIET
+        color::TEXT_SECONDARY
     };
     row_layout(check, label(c, text, 15.0, 400, tone))
-        .hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), 12.0)
+        .hover_surface(color(color::SURFACE_HOVER), dtok::RADIUS_CONTROL)
         .key(key)
         .on_tap(Action::from(action))
 }
@@ -2420,7 +2493,7 @@ fn layer_dim(c: &Ctx<'_>, flat: f32) -> Node {
     if c.m.form == Form::Desktop {
         Node::rect(Color::new(0.0, 0.0, 0.0, 0.0), 0.0).paint(Paint::Blur {
             blur: LAYER_BLUR,
-            tint: rgba(colour::REASON, 0.72),
+            tint: rgba(color::SURFACE_BASE, 0.72),
             radius: 0.0,
         })
     } else {
@@ -2443,12 +2516,12 @@ fn track_column_width(c: &Ctx<'_>) -> f32 {
 
 /// A column: its heading stays, its rows scroll (`PL:192`: `ScrollView`, 12 at the bottom, no indicator).
 fn column_desktop(c: &Ctx<'_>, title: &str, rows: Vec<Node>, width: f32) -> Node {
-    let head = label(c, title, 17.0, 600, colour::FONT).padding(ins(0.0, 10.0, 6.0, 10.0));
+    let head = label(c, title, 17.0, 600, color::TEXT_PRIMARY).padding(ins(0.0, 10.0, 6.0, 10.0));
     let head_h =
         c.cx.measure_text(
             title,
             &swiftly_text::TextStyle::from(swiftly_design::TextStyle {
-                size: 17.0,
+                size: dtok::TEXT_HEADING_CATEGORY.size,
                 weight: 600,
                 ..base()
             }),
@@ -2510,9 +2583,9 @@ fn search_rows(c: &Ctx<'_>, part: &swiftly_vm::SubtitleSearchPart) -> Vec<Node> 
         .iter()
         .map(|l| {
             let (tone, weight) = if l.selected {
-                (colour::FONT, 600)
+                (color::TEXT_PRIMARY, 600)
             } else {
-                (colour::FONT_QUIET, 400)
+                (color::TEXT_SECONDARY, 400)
             };
             // The chip keeps the width of its own text (the bold selected one was cut to "Deuts...").
             let chip = label(c, &l.label, size, weight, tone)
@@ -2524,11 +2597,11 @@ fn search_rows(c: &Ctx<'_>, part: &swiftly_vm::SubtitleSearchPart) -> Vec<Node> 
                 .padding(ins(6.0, 12.0, 6.0, 12.0));
             let chip = if l.selected {
                 chip.background(
-                    Node::rect(Color::new(1.0, 1.0, 1.0, 0.18), 14.0),
+                    Node::rect(color(color::RING_PROGRESS), 14.0),
                     Alignment::CENTER,
                 )
             } else {
-                chip.hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), 14.0)
+                chip.hover_surface(color(color::SURFACE_HOVER), dtok::RADIUS_CARD)
             };
             search_control(c, chip, &format!("search:lang:{}", l.value), &l.label)
         })
@@ -2544,23 +2617,23 @@ fn search_rows(c: &Ctx<'_>, part: &swiftly_vm::SubtitleSearchPart) -> Vec<Node> 
         Phase::Results | Phase::Downloading => {
             for r in &part.rows {
                 let mut lines = vec![
-                    label(c, &r.title, size, 400, colour::FONT),
-                    label(c, &r.source_line, small, 400, colour::FONT_QUIET),
+                    label(c, &r.title, size, 400, color::TEXT_PRIMARY),
+                    label(c, &r.source_line, small, 400, color::TEXT_SECONDARY),
                 ];
                 if !r.meta_line.is_empty() {
-                    lines.push(label(c, &r.meta_line, small, 400, colour::FONT_QUIET));
+                    lines.push(label(c, &r.meta_line, small, 400, color::TEXT_SECONDARY));
                 }
                 let mut kids = vec![Node::vstack(Align::Start, Some(2.0), lines)];
                 if r.busy {
                     kids.push(Node::spacer());
-                    kids.push(label(c, "…", size, 600, colour::FONT));
+                    kids.push(label(c, "…", size, 600, color::TEXT_PRIMARY));
                 }
                 let row = crate::browse::wide(
                     Node::hstack(Align::Center, Some(10.0), kids)
                         .padding(ins(7.0, 10.0, 7.0, 10.0)),
                     Alignment::LEADING,
                 )
-                .hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), 12.0);
+                .hover_surface(color(color::SURFACE_HOVER), dtok::RADIUS_CONTROL);
                 let name = format!("{}, {}", r.title, r.source_line);
                 rows.push(search_control(
                     c,
@@ -2573,7 +2646,8 @@ fn search_rows(c: &Ctx<'_>, part: &swiftly_vm::SubtitleSearchPart) -> Vec<Node> 
         Phase::Empty | Phase::NoProvider | Phase::Failed | Phase::Done => {
             let text = part.message.clone().unwrap_or_default();
             rows.push(
-                label(c, &text, size, 400, colour::FONT_QUIET).padding(ins(16.0, 10.0, 0.0, 10.0)),
+                label(c, &text, size, 400, color::TEXT_SECONDARY)
+                    .padding(ins(16.0, 10.0, 0.0, 10.0)),
             );
         }
     }
@@ -2585,21 +2659,21 @@ fn delay_row_desktop(c: &Ctx<'_>, tag: &str, ms: i64) -> Node {
     let step = |key: String, inner: Node| {
         inner
             .frame(Some(30.0), Some(28.0), Alignment::CENTER)
-            .hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), 8.0)
+            .hover_surface(color(color::SURFACE_HOVER), dtok::RADIUS_SMALL)
             .key(key.as_str())
             .on_tap(Action::from(key.as_str()))
     };
     let mut kids = vec![
-        label(c, "Verzögerung", 13.0, 400, colour::FONT_QUIET),
+        label(c, "Verzögerung", 13.0, 400, color::TEXT_SECONDARY),
         Node::spacer(),
         step(
             format!("delay:{tag}:-"),
-            label(c, "−", 15.0, 600, colour::FONT),
+            label(c, "−", 15.0, 600, color::TEXT_PRIMARY),
         ),
-        label(c, &delay_text(ms), 15.0, 500, colour::FONT),
+        label(c, &delay_text(ms), 15.0, 500, color::TEXT_PRIMARY),
         step(
             format!("delay:{tag}:+"),
-            label(c, "+", 15.0, 600, colour::FONT),
+            label(c, "+", 15.0, 600, color::TEXT_PRIMARY),
         ),
     ];
     if ms != 0 {
@@ -2628,9 +2702,9 @@ fn chapter_column(c: &Ctx<'_>) -> Node {
                 swiftly_l10n::t_args(part.number_title, &[swiftly_l10n::Arg::Int(r.number)])
             });
             let (tone, weight) = if r.current {
-                (colour::FONT, 600)
+                (color::TEXT_PRIMARY, 600)
             } else {
-                (colour::FONT_QUIET, 400)
+                (color::TEXT_SECONDARY, 400)
             };
             let line = Node::hstack(
                 Align::Center,
@@ -2638,11 +2712,11 @@ fn chapter_column(c: &Ctx<'_>) -> Node {
                 vec![
                     label(c, &name, 15.0, weight, tone),
                     Node::spacer(),
-                    time_label(c, &play_time(r.start), 13.0, 400, colour::FONT_QUIET),
+                    time_label(c, &play_time(r.start), 13.0, 400, color::TEXT_SECONDARY),
                 ],
             );
             row_layout(check, line)
-                .hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), 12.0)
+                .hover_surface(color(color::SURFACE_HOVER), dtok::RADIUS_CONTROL)
                 .key(format!("chapter:{}", r.index).as_str())
                 .on_tap(Action::from(format!("chapter:{}", r.index).as_str()))
         })
@@ -2878,7 +2952,7 @@ fn pm_text(c: &Ctx<'_>, s: &str, w: u16, tone: swiftly_design::Colour) -> Node {
 
 fn pm_row(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>) -> Node {
     let on = |act: usize| hl == Some(act);
-    let hover = Color::new(1.0, 1.0, 1.0, 0.08);
+    let hover = color(color::SURFACE_SELECTED);
     let wide = |n: Node| crate::browse::wide(n, Alignment::LEADING);
     let n = pm_row_node(c, it, hl, &on, hover, &wide);
     // The tv walks the box with the D-pad: every pressable row is a focus target.
@@ -2907,12 +2981,15 @@ fn pm_row_node(
                 Align::Center,
                 Some(6.0),
                 vec![
-                    pm_text(c, text, 600, colour::FONT),
-                    c.g.node("caret-right", 12.0, color(colour::FONT_VERY_QUIET)),
+                    pm_text(c, text, 600, color::TEXT_PRIMARY),
+                    c.g.node("caret-right", 12.0, color(color::TEXT_TERTIARY)),
                 ],
             )
             .padding(ins(8.0, 12.0, 8.0, 10.0))
-            .background(Node::rect(color(colour::AREA), 10.0), Alignment::CENTER)
+            .background(
+                Node::rect(color(color::SURFACE_CONTROL), 10.0),
+                Alignment::CENTER,
+            )
             .hover_surface(hover, 10.0)
             .selected(on(*act))
             .key(format!("pm:{act}").as_str())
@@ -2933,7 +3010,7 @@ fn pm_row_node(
             act,
         } => {
             let (tw, th) = (64.0, 36.0);
-            let mut pic = vec![Node::rect(color(colour::AREA), 8.0).frame(
+            let mut pic = vec![Node::rect(color(color::SURFACE_CONTROL), 8.0).frame(
                 Some(tw),
                 Some(th),
                 Alignment::CENTER,
@@ -2959,9 +3036,9 @@ fn pm_row_node(
                 .frame(Some(tw), Some(th), Alignment::CENTER)
                 .clipped_rounded(8.0);
             let tint = if *current {
-                colour::FONT
+                color::TEXT_PRIMARY
             } else {
-                colour::FONT_QUIET
+                color::TEXT_SECONDARY
             };
             let mut lines = vec![pm_text(c, title, if *current { 600 } else { 500 }, tint)];
             if let Some(sub) = sub {
@@ -2970,7 +3047,7 @@ fn pm_row_node(
                     sub,
                     if c.tv { 15.0 } else { 13.0 },
                     400,
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                 ));
             }
             let mut kids = vec![
@@ -2979,7 +3056,7 @@ fn pm_row_node(
                 Node::spacer(),
             ];
             if *watched {
-                kids.push(c.g.node("check", 12.0, color(colour::FONT_QUIET)));
+                kids.push(c.g.node("check", 12.0, color(color::TEXT_SECONDARY)));
             }
             wide(
                 Node::hstack(Align::Center, Some(12.0), kids)
@@ -3002,7 +3079,7 @@ fn pm_row_node(
 fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>) -> Node {
     use crate::player_menu_box::Item;
     let on = |act: usize| hl == Some(act);
-    let hover = Color::new(1.0, 1.0, 1.0, 0.08);
+    let hover = color(color::SURFACE_SELECTED);
     let wide = |n: Node| crate::browse::wide(n, Alignment::LEADING);
     match it {
         Item::Title { text, back } => {
@@ -3017,7 +3094,7 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
                         .on_tap(Action::from(format!("pm:{a}").as_str())),
                 );
             }
-            kids.push(pm_text(c, text, 600, colour::FONT));
+            kids.push(pm_text(c, text, 600, color::TEXT_PRIMARY));
             wide(
                 Node::hstack(Align::Center, Some(6.0), kids)
                     .padding(ins(0.0, 8.0, 0.0, 12.0))
@@ -3030,9 +3107,9 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
                 .iter()
                 .map(|(name, sel, act)| {
                     let tone = if *sel {
-                        colour::FONT
+                        color::TEXT_PRIMARY
                     } else {
-                        colour::FONT_QUIET
+                        color::TEXT_SECONDARY
                     };
                     let cell = crate::browse::wide(
                         label(c, name, if c.tv { 18.0 } else { 13.0 }, 600, tone),
@@ -3040,7 +3117,10 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
                     )
                     .frame(None, Some(it.height() - 14.0), Alignment::CENTER);
                     let cell = if *sel {
-                        cell.background(Node::rect(color(colour::RAISED), 8.0), Alignment::CENTER)
+                        cell.background(
+                            Node::rect(color(color::SURFACE_RAISED), 8.0),
+                            Alignment::CENTER,
+                        )
                     } else {
                         cell.hover_surface(hover, 8.0)
                     };
@@ -3050,7 +3130,10 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
                 .collect();
             Node::hstack(Align::Center, Some(0.0), cells)
                 .padding(ins(3.0, 3.0, 3.0, 3.0))
-                .background(Node::rect(color(colour::AREA), 10.0), Alignment::CENTER)
+                .background(
+                    Node::rect(color(color::SURFACE_CONTROL), 10.0),
+                    Alignment::CENTER,
+                )
                 .padding(ins(0.0, 2.0, 0.0, 2.0))
                 .frame(None, Some(it.height()), Alignment::LEADING)
         }
@@ -3059,10 +3142,10 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
                 Align::Center,
                 Some(8.0),
                 vec![
-                    pm_text(c, title, 600, colour::FONT).layout_priority(1.0),
+                    pm_text(c, title, 600, color::TEXT_PRIMARY).layout_priority(1.0),
                     Node::spacer(),
-                    pm_text(c, value, 400, colour::FONT_VERY_QUIET).layout_priority(1.0),
-                    c.g.node("caret-right", 12.0, color(colour::FONT_VERY_QUIET)),
+                    pm_text(c, value, 400, color::TEXT_TERTIARY).layout_priority(1.0),
+                    c.g.node("caret-right", 12.0, color(color::TEXT_TERTIARY)),
                 ],
             )
             .padding(ins(0.0, 12.0, 0.0, 12.0))
@@ -3087,7 +3170,7 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
                 check.frame(Some(18.0), None, Alignment::CENTER),
                 // The label takes what the row has: with equal priority the stack would offer it half of the free
                 // width (the spacer is the other half) and cut a long title at the middle of the row.
-                pm_text(c, text, 600, colour::FONT)
+                pm_text(c, text, 600, color::TEXT_PRIMARY)
                     .layout_priority(1.0)
                     .key(format!("pmt:{act}").as_str()),
                 Node::spacer(),
@@ -3098,7 +3181,7 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
                     d,
                     if c.tv { 18.0 } else { 13.0 },
                     400,
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                 ));
             }
             wide(
@@ -3117,7 +3200,7 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
                 Node::hstack(
                     Align::Center,
                     Some(6.0),
-                    vec![pm_text(c, title, 600, colour::FONT)],
+                    vec![pm_text(c, title, 600, color::TEXT_PRIMARY)],
                 )
                 .padding(ins(0.0, 12.0, 0.0, 12.0))
                 .frame(None, Some(it.height()), Alignment::LEADING),
@@ -3133,7 +3216,7 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
                 t,
                 if c.tv { 18.0 } else { 13.0 },
                 600,
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
             )
             .padding(ins(8.0, 12.0, 4.0, 12.0))
             .frame(None, Some(it.height()), Alignment::LEADING),
@@ -3143,14 +3226,14 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
                 .iter()
                 .map(|(text, sel, act)| {
                     let fill = if *sel {
-                        Color::new(1.0, 1.0, 1.0, 0.18)
+                        color(color::RING_PROGRESS)
                     } else {
-                        Color::new(1.0, 1.0, 1.0, 0.08)
+                        color(color::SURFACE_SELECTED)
                     };
                     let tone = if *sel {
-                        colour::FONT
+                        color::TEXT_PRIMARY
                     } else {
-                        colour::FONT_QUIET
+                        color::TEXT_SECONDARY
                     };
                     pm_text(c, text, 500, tone)
                         .padding(ins(5.0, 10.0, 5.0, 10.0))
@@ -3172,10 +3255,10 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
             later,
         } => {
             let step = |(text, act): &(String, usize)| {
-                pm_text(c, text, 500, colour::FONT)
+                pm_text(c, text, 500, color::TEXT_PRIMARY)
                     .padding(ins(6.0, 12.0, 6.0, 12.0))
                     .background(
-                        Node::rect(Color::new(1.0, 1.0, 1.0, 0.10), 10.0),
+                        Node::rect(color(color::BORDER_HAIRLINE), 10.0),
                         Alignment::CENTER,
                     )
                     .hover_surface(hover, 10.0)
@@ -3188,7 +3271,8 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
                     Some(8.0),
                     vec![
                         step(earlier),
-                        pm_text(c, value, 600, colour::FONT).padding(ins(0.0, 6.0, 0.0, 6.0)),
+                        pm_text(c, value, 600, color::TEXT_PRIMARY)
+                            .padding(ins(0.0, 6.0, 0.0, 6.0)),
                         step(later),
                     ],
                 )
@@ -3197,11 +3281,11 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
             )
         }
         Item::Note(t) => wide(
-            pm_text(c, t, 400, colour::FONT_QUIET)
+            pm_text(c, t, 400, color::TEXT_SECONDARY)
                 .padding(ins(0.0, 10.0, 0.0, 10.0))
                 .frame(None, Some(it.height()), Alignment::LEADING),
         ),
-        Item::Rule => Node::rect(color(colour::LINE), 0.0)
+        Item::Rule => Node::rect(color(color::BORDER_HAIRLINE), 0.0)
             .frame(None, Some(1.0), Alignment::CENTER)
             .padding(ins(6.0, 12.0, 6.0, 12.0)),
         Item::Season { .. } | Item::Episode { .. } => Node::spacer_min(0.0),
@@ -3287,11 +3371,11 @@ fn pm_overlay(
             radius: r,
         })
         .paint(Paint::Fill {
-            color: color(colour::GROUPS_AREA),
+            color: color(color::SURFACE_GROUP),
             radius: r,
         })
         .paint(Paint::Stroke {
-            color: color(colour::MARGIN),
+            color: color(color::SURFACE_FOCUS),
             width: 1.0,
             radius: r,
         });
@@ -3462,7 +3546,7 @@ fn layer_panel(c: &Ctx<'_>, which: PlayerLayer) -> Node {
         Align::Center,
         Some(12.0),
         vec![
-            label(c, title, m.title, 600, colour::FONT),
+            label(c, title, m.title, 600, color::TEXT_PRIMARY),
             Node::spacer(),
             icon_button(c, "x", "layer-x", "layer-close", true),
         ],
@@ -3509,8 +3593,8 @@ fn tech_badge(c: &Ctx<'_>) -> Option<Node> {
             Align::Start,
             Some(size * 0.3),
             vec![
-                label(c, name, size, 400, colour::FONT_QUIET),
-                label(c, value, size, 400, colour::FONT),
+                label(c, name, size, 400, color::TEXT_SECONDARY),
+                label(c, value, size, 400, color::TEXT_PRIMARY),
             ],
         )
     };
@@ -3521,9 +3605,9 @@ fn tech_badge(c: &Ctx<'_>) -> Option<Node> {
         size + 1.0,
         600,
         if good {
-            colour::MARK_ACCENT
+            crate::look_glow::accent()
         } else {
-            colour::ORIGINAL_WARNING
+            color::STATE_WARNING
         },
     )];
     // The reason sits directly under the word, in warning colour, two lines at most (`TechBadge.swift:105`).
@@ -3534,7 +3618,7 @@ fn tech_badge(c: &Ctx<'_>) -> Option<Node> {
             ..base()
         };
         rows.push(
-            txt(c.cx, reason, style, colour::ORIGINAL_WARNING, Some(2)).frame(
+            txt(c.cx, reason, style, color::STATE_WARNING, Some(2)).frame(
                 Some(420.0),
                 None,
                 Alignment::TOP_LEADING,
@@ -3573,7 +3657,7 @@ fn group_rows(c: &Ctx<'_>, size: f32) -> Vec<Node> {
                     Some(4.0),
                     vec![
                         Node::fixed(17.0, 13.0),
-                        label(c, who, size, 400, colour::FONT_QUIET),
+                        label(c, who, size, 400, color::TEXT_SECONDARY),
                         Node::spacer(),
                     ],
                 )
@@ -3586,13 +3670,13 @@ fn group_rows(c: &Ctx<'_>, size: f32) -> Vec<Node> {
             Align::Center,
             Some(9.0),
             vec![
-                c.g.node("x", size + 2.0, color(colour::MARK_ACCENT)),
-                label(c, "Gruppe verlassen", size, 400, colour::MARK_ACCENT),
+                c.g.node("x", size + 2.0, color(crate::look_glow::accent())),
+                label(c, "Gruppe verlassen", size, 400, crate::look_glow::accent()),
                 Node::spacer(),
             ],
         )
         .padding(ins(7.0, 10.0, 7.0, 10.0))
-        .hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), 12.0)
+        .hover_surface(color(color::SURFACE_HOVER), dtok::RADIUS_CONTROL)
         .key("group-leave")
         .on_tap(Action::from("group-leave")),
     );
@@ -3608,15 +3692,15 @@ fn group_event(c: &Ctx<'_>) -> Option<Node> {
         Align::Center,
         Some(10.0),
         vec![
-            c.g.node(e.symbol, 17.0, color(colour::MARK_ACCENT)),
-            label(c, &e.text, 15.0, 400, colour::FONT),
+            c.g.node(e.symbol, 17.0, color(crate::look_glow::accent())),
+            label(c, &e.text, 15.0, 400, color::TEXT_PRIMARY),
         ],
     )
     .padding(ins(0.0, 16.0, 0.0, 16.0))
     .frame(None, Some(40.0), Alignment::CENTER)
     .background(
-        Node::rect(color(colour::RAISED), 20.0).paint(Paint::Stroke {
-            color: color(colour::MARGIN),
+        Node::rect(color(color::SURFACE_RAISED), 20.0).paint(Paint::Stroke {
+            color: color(color::SURFACE_FOCUS),
             width: 1.0,
             radius: 20.0,
         }),
@@ -3635,12 +3719,12 @@ fn group_event(c: &Ctx<'_>) -> Option<Node> {
 fn group_error(c: &Ctx<'_>) -> Option<Node> {
     let text = c.p.group_error.as_ref()?;
     let m = &c.m;
-    let strip = label(c, text, 15.0, 400, colour::FONT)
+    let strip = label(c, text, 15.0, 400, color::TEXT_PRIMARY)
         .padding(ins(0.0, 14.0, 0.0, 14.0))
         .frame(None, Some(34.0), Alignment::CENTER)
         .background(
-            Node::rect(color(colour::RAISED), 17.0).paint(Paint::Stroke {
-                color: color(colour::MARGIN),
+            Node::rect(color(color::SURFACE_RAISED), 17.0).paint(Paint::Stroke {
+                color: color(color::SURFACE_FOCUS),
                 width: 1.0,
                 radius: 17.0,
             }),
@@ -3665,7 +3749,13 @@ fn small_hint(c: &Ctx<'_>) -> Option<Node> {
         Some(12.0),
         vec![
             c.g.node("pip", 30.0, white()),
-            label(c, "Läuft im kleinen Fenster", 15.0, 400, colour::FONT_QUIET),
+            label(
+                c,
+                "Läuft im kleinen Fenster",
+                15.0,
+                400,
+                color::TEXT_SECONDARY,
+            ),
         ],
     );
     Some(
@@ -3711,18 +3801,21 @@ fn strip_geometry(env: &Env) -> StripGeometry {
 fn failure_strip(c: &Ctx<'_>, f: &swiftly_vm::Failure) -> Node {
     let m = &c.m;
     let disc =
-        c.g.node("warning", 44.0, color(colour::FONT_QUIET))
+        c.g.node("warning", 44.0, color(color::TEXT_SECONDARY))
             .frame(Some(78.0), Some(78.0), Alignment::CENTER)
-            .background(Node::rect(color(colour::AREA), 39.0), Alignment::CENTER);
+            .background(
+                Node::rect(color(color::SURFACE_CONTROL), 39.0),
+                Alignment::CENTER,
+            );
     let text = Node::text(
         c.cx,
         f.text,
         &swiftly_text::TextStyle::from(swiftly_design::TextStyle {
-            size: 15.0,
+            size: dtok::TEXT_BODY_DEFAULT.size,
             weight: 400,
             ..base()
         }),
-        color(colour::FONT_QUIET),
+        color(color::TEXT_SECONDARY),
         Some(6),
         swiftly_text::Align::Center,
     )
@@ -3731,8 +3824,8 @@ fn failure_strip(c: &Ctx<'_>, f: &swiftly_vm::Failure) -> Node {
         Align::Center,
         Some(8.0),
         vec![
-            c.g.node("goforward", 15.0, color(colour::REASON)),
-            label(c, f.primary, 15.0, 600, colour::REASON),
+            c.g.node("goforward", 15.0, color(color::SURFACE_BASE)),
+            label(c, f.primary, 15.0, 600, color::SURFACE_BASE),
         ],
     )
     .padding(ins(0.0, 22.0, 0.0, 22.0))
@@ -3740,7 +3833,7 @@ fn failure_strip(c: &Ctx<'_>, f: &swiftly_vm::Failure) -> Node {
     .background(Node::rect(white(), 22.0), Alignment::CENTER)
     .key("retry")
     .on_tap(Action::from("retry"));
-    let quiet = label(c, f.quiet, 15.0, 500, colour::MARK_ACCENT)
+    let quiet = label(c, f.quiet, 15.0, 500, crate::look_glow::accent())
         .padding(ins(0.0, 12.0, 0.0, 12.0))
         .frame(None, Some(44.0), Alignment::CENTER)
         .key("fail-quiet")
@@ -3750,7 +3843,7 @@ fn failure_strip(c: &Ctx<'_>, f: &swiftly_vm::Failure) -> Node {
         Some(0.0),
         vec![
             disc.padding(ins(0.0, 0.0, 22.0, 0.0)),
-            label(c, f.header, 22.0, 600, colour::FONT).padding(ins(0.0, 0.0, 7.0, 0.0)),
+            label(c, f.header, 22.0, 600, color::TEXT_PRIMARY).padding(ins(0.0, 0.0, 7.0, 0.0)),
             text,
             primary.padding(ins(24.0, 0.0, 0.0, 0.0)),
             quiet.padding(ins(16.0, 0.0, 0.0, 0.0)),
@@ -3784,9 +3877,9 @@ fn failure_view(c: &Ctx<'_>) -> Option<Node> {
     let body = if tv { 28.0 } else { 15.0 };
     let btn = |key: &str, text: &str, primary: bool| {
         let (bg, fg) = if primary {
-            (white(), colour::REASON)
+            (white(), color::SURFACE_BASE)
         } else {
-            (Color::new(1.0, 1.0, 1.0, 0.10), colour::FONT)
+            (color(color::BORDER_HAIRLINE), color::TEXT_PRIMARY)
         };
         let n = label(c, text, body, 600, fg)
             .padding(ins(0.0, 22.0, 0.0, 22.0))
@@ -3808,7 +3901,7 @@ fn failure_view(c: &Ctx<'_>) -> Option<Node> {
             weight: 400,
             ..base()
         }),
-        color(colour::FONT_QUIET),
+        color(color::TEXT_SECONDARY),
         Some(4),
         swiftly_text::Align::Center,
     )
@@ -3821,7 +3914,7 @@ fn failure_view(c: &Ctx<'_>) -> Option<Node> {
         Align::Center,
         Some(14.0),
         vec![
-            label(c, f.header, big, 700, colour::FONT),
+            label(c, f.header, big, 700, color::TEXT_PRIMARY),
             text,
             Node::hstack(
                 Align::Center,
@@ -3855,7 +3948,7 @@ const LOADER_TURN_SECONDS: f64 = 0.7;
 /// centre of the circle at every angle (a raster glyph centred on the bounding box of the arc turned around the wrong point).
 fn loader(turn: f32) -> Node {
     let (size, stroke) = (34.0_f32, 3.0_f32);
-    let accent = color(colour::MARK_ACCENT);
+    let accent = color(crate::look_glow::accent());
     let track = Color::new(accent.r, accent.g, accent.b, 0.18);
     // `Paint::Arc` counts turns from 12 o'clock; the Mac's trim starts at 3 o'clock.
     let from = (0.25 + turn).rem_euclid(1.0);
@@ -3885,6 +3978,23 @@ fn loader(turn: f32) -> Node {
     }
     // The stroke is centred on the circle's edge on the Mac, `Paint::Arc` draws it inside the square: grow the square by it.
     n.frame(Some(size + stroke), Some(size + stroke), Alignment::CENTER)
+}
+
+/// The start veil: opaque black with the loader in the centre, under the controls (the top bar stays visible over it).
+fn loading_veil(c: &Ctx<'_>) -> Node {
+    let spin = if c.m.form == Form::Desktop {
+        loader(c.p.turn)
+    } else {
+        c.g.spinner(c.p.spin, if c.tv { 72.0 } else { 36.0 }, white())
+    };
+    Node::zstack(
+        Alignment::CENTER,
+        vec![
+            Node::rect(Color::new(0.0, 0.0, 0.0, 1.0), 0.0),
+            fill_frame(spin, Alignment::CENTER),
+        ],
+    )
+    .key("loading")
 }
 
 fn view(p: &Params, env: &Env, cx: &Cx, g: &Glyphs, surface: &dyn VideoSurface) -> Node {
@@ -3924,9 +4034,22 @@ fn view(p: &Params, env: &Env, cx: &Cx, g: &Glyphs, surface: &dyn VideoSurface) 
     } else {
         swiftly_ui::feel::controls_out()
     };
+    // The start veil (black, loader in the centre) lies UNDER the controls: the top bar (title, capsule, close) is up from
+    // the first frame and does not change when the picture arrives; only the centre and the timeline wait for it
+    // (`TransportPart::veil_up`, `ControlsPart::middle_up`).
+    let veil = p.t.veil_up();
+    if veil {
+        kids.push(loading_veil(&c));
+    }
     let mut ui_kids = vec![scrim(&c), header(&c)];
-    // With a menu box open the bar stays and the middle and the timeline recede to 0.3.
-    let recede = if p.pm.is_some() { 0.3 } else { 1.0 };
+    // With a menu box open the bar stays and the middle and the timeline recede to 0.3; under the veil they are away.
+    let recede = if veil {
+        0.0
+    } else if p.pm.is_some() {
+        0.3
+    } else {
+        1.0
+    };
     let recede_motion = swiftly_ui::feel::player_layer();
     if !tv {
         ui_kids.push(center(&c).opacity(recede, recede_motion));
@@ -3982,23 +4105,6 @@ fn view(p: &Params, env: &Env, cx: &Cx, g: &Glyphs, surface: &dyn VideoSurface) 
     kids.extend(group_error(&c));
     kids.extend(p.menu_c.overlay(cx, env));
     kids.extend(small_hint(&c));
-    if !p.t.picture_shown && p.t.failure.is_none() {
-        let spin = if c.m.form == Form::Desktop {
-            loader(p.turn)
-        } else {
-            c.g.spinner(p.spin, if tv { 72.0 } else { 36.0 }, white())
-        };
-        kids.push(
-            Node::zstack(
-                Alignment::CENTER,
-                vec![
-                    Node::rect(Color::new(0.0, 0.0, 0.0, 1.0), 0.0),
-                    fill_frame(spin, Alignment::CENTER),
-                ],
-            )
-            .key("loading"),
-        );
-    }
     if let Some(f) = failure_view(&c) {
         kids.push(f);
     }
@@ -4059,6 +4165,8 @@ pub struct PlayerScreen {
     last_video_log: f64,
     /// The skip button's countdown fill, run on the render clock between the core's reports.
     skip_fill: crate::skip_fill::SkipFill,
+    /// The card's ring, run the same way over the card's 7 seconds.
+    card_fill: crate::skip_fill::SkipFill,
     /// Title and second line of the header.
     head: (String, String),
     env: Env,
@@ -4294,6 +4402,11 @@ pub fn prefs_from_store(
     }
 }
 
+/// Setting `technikschild` (`@AppStorage("technikschild")` on the Mac): the technical overlay on the picture.
+pub fn tech_badge_from_store(store: &JsonFileStore) -> bool {
+    matches!(store.get("technikschild"), Some(Value::Bool(true)))
+}
+
 /// Setting `endzeitImPlayer`: "Endet um" instead of the remaining time.
 pub fn end_time_from_store(store: &JsonFileStore) -> bool {
     matches!(store.get("endzeitImPlayer"), Some(Value::Bool(true)))
@@ -4423,6 +4536,7 @@ impl PlayerScreen {
             wake_driven: false,
             last_video_log: 0.0,
             skip_fill: crate::skip_fill::SkipFill::default(),
+            card_fill: crate::skip_fill::SkipFill::over(crate::skip_fill::CARD_SECONDS),
             head,
             env,
             glyphs,
@@ -4655,6 +4769,14 @@ impl PlayerScreen {
     /// Forwards an event of a real engine to the view model.
     pub fn engine_event(&mut self, event: EngineEvent, now: f64) {
         self.vm.engine_event(event, now / 1000.0);
+    }
+
+    /// The Technikschild switched by the user: shown now and kept in the settings, as the Mac's `technikschild` key does.
+    fn set_tech_kept(&mut self, on: bool) {
+        self.tech = on;
+        if let Some(store) = &self.store {
+            crate::store::set_logged(store.as_ref(), "technikschild", Value::Bool(on));
+        }
     }
 
     /// The Technikschild on or off (the settings layer's column does the same by tap).
@@ -5211,10 +5333,16 @@ impl PlayerScreen {
         } = self.vm.offer().view
         {
             let code = self.next_code.clone().unwrap_or_else(|| title.clone());
+            // The ring runs with the render clock between the core's reports, like the Mac's `FillClock`.
+            let share = self
+                .card_fill
+                .share(Some(share), self.is_playing(), self.cur_s)
+                .unwrap_or(share);
             self.card_data = Some((title, share, seconds_left, code));
             let desk = self.desk();
             self.card_motion.update(desk, self.cur_s, reduce);
         } else {
+            let _ = self.card_fill.share(None, false, self.cur_s);
             // Zoomed by a click that started the next episode: the card stays over the switch (as on the Mac).
             let hold = self.desk() && self.card_motion.zoomed() && self.switch.busy();
             self.card_motion.update(hold, self.cur_s, reduce);
@@ -5505,6 +5633,9 @@ impl PlayerScreen {
         if self.skip_fill.moving(self.is_playing()) {
             return Some("skip-fill");
         }
+        if self.card_fill.moving(self.is_playing()) {
+            return Some("card-fill");
+        }
         // An engine that wakes the host on every new frame and event drives the redraws itself: playing alone
         // then asks for nothing (a 24 fps film drew the UI at the display's rate before).
         if self.live.is_some() && !self.wake_driven {
@@ -5740,6 +5871,7 @@ impl PlayerScreen {
         }
         self.prefs = prefs_from_store(&store, &self.prefs, self.account_next);
         self.vm.set_prefs(self.prefs.clone());
+        self.tech = tech_badge_from_store(&store);
         self.set_end_time(
             end_time_from_store(&store),
             crate::local_clock::day_seconds(),
@@ -6252,7 +6384,7 @@ impl PlayerScreen {
         } else if is("group-leave") {
             self.leave_group(now);
         } else if is("tech:0") || is("tech:1") {
-            self.tech = is("tech:1");
+            self.set_tech_kept(is("tech:1"));
         } else if is("fill") || is("fill:0") || is("fill:1") {
             let on = if is("fill") { !self.fill } else { is("fill:1") };
             self.set_fill(on, now);
@@ -6668,12 +6800,18 @@ impl PlayerScreen {
                 }
                 self.follow_subtitle_look(now * 1000.0 + 1_000_000.0);
             }
-            MenuAction::TechBadge(on) => self.tech = on,
+            MenuAction::TechBadge(on) => self.set_tech_kept(on),
             MenuAction::LeaveGroup => {
                 self.leave_group(now);
                 self.send(PlayerIntent::Layer(None), now);
             }
             MenuAction::SearchSubtitles => self.open_search(),
+            MenuAction::ReportProblem => {
+                // The sheet is the suite's (it needs the Seerr session); the player's box goes first.
+                let at = self.vm.transport().position.max(0.0);
+                crate::desk::request_report(&self.vm.spec().item_id.clone(), Some(at));
+                self.send(PlayerIntent::Layer(None), now);
+            }
             MenuAction::Handoff(id) => {
                 if let Some(i) = self.p_targets().iter().position(|(t, _)| *t == id) {
                     self.send(PlayerIntent::Layer(None), now);
@@ -7135,7 +7273,7 @@ pub fn offer_visible(o: &OfferPart) -> bool {
 
 fn base() -> swiftly_design::TextStyle {
     swiftly_design::TextStyle {
-        size: 15.0,
+        size: dtok::TEXT_BODY_DEFAULT.size,
         weight: 400,
         tracking: 0.0,
         uppercase: false,
@@ -7166,7 +7304,7 @@ mod layer_row_tests {
                 swiftly_layout::Proposal::NIL,
             )
             .w;
-        let text = txt(&cx, "Unbegrenzt", style, colour::FONT_QUIET, Some(1));
+        let text = txt(&cx, "Unbegrenzt", style, color::TEXT_SECONDARY, Some(1));
         let row = row_layout(Node::fixed(13.0, 13.0), text).frame(
             Some(200.0),
             None,

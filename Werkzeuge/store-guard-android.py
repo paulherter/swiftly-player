@@ -16,7 +16,9 @@ the **built** artifact: every DEX file, the resource table, the manifest, every 
 native library (`.so`, including the Swift core), as UTF-8 and as UTF-16.
 
 Forbidden in the Play build: `pay.paulherter`, `swiftlyplayer.com/supporter`, `Stripe`,
-`supporter key` (any case), `SupporterKey`. A hit is an error.
+`supporter key` (any case), `Unterstützer-Schlüssel`, `SupporterKey`. A hit is an error.
+(The shared text catalogue of the Rust core lists the direct-only texts in `crates/swiftly-l10n/direct-only.txt` and
+emits them only with its `supporter-key` feature, which the Play core is built without; this guard is the last proof.)
 
 The direct APK is checked the other way round: no `com.android.vending.BILLING` permission and
 no `com.android.billingclient` classes (Google's policy applies to Play, but the direct build
@@ -34,7 +36,7 @@ outputs = root / "Android/phone/build/outputs"
 sdk = Path(os.environ.get("ANDROID_HOME") or Path.home() / "Library/Android/sdk")
 
 WORDS = [("pay.paulherter", False), ("swiftlyplayer.com/supporter", False), ("Stripe", False),
-         ("supporter key", True), ("SupporterKey", False)]
+         ("supporter key", True), ("Unterstützer-Schlüssel", False), ("SupporterKey", False)]
 
 def tool(name):
     found = sorted(sdk.glob(f"build-tools/*/{name}"), key=lambda p: [int(x) for x in re.findall(r"\d+", p.parent.name)])

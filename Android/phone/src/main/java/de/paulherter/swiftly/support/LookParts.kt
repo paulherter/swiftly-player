@@ -34,7 +34,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -78,9 +77,10 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
+import de.paulherter.swiftly.Region
 import de.paulherter.swiftly.shared.Theme
-import de.paulherter.swiftly.shared.Wordmark
 import de.paulherter.swiftly.shared.motionReduced
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import de.paulherter.swiftly.tapOn
 import kotlin.math.max
@@ -158,7 +158,7 @@ fun LookGlowLayer(color: Color, tint: Color?, strength: Float, modifier: Modifie
 /** The look's icon as a tile, rounded like an app icon (`LookTile`): corner 22.5 %, a faint edge. */
 @Composable
 fun LookTileView(icon: AppIcons.Icon, size: Dp, modifier: Modifier = Modifier, corner: Dp = size * 0.225f) {
-    val shape = RoundedCornerShape(corner)
+    val shape = smoothRoundedShape(corner)
     Box(modifier.size(size).clip(shape).border(1.dp, Color.White.copy(alpha = 0.08f), shape)) {
         // The adaptive layers are 108 wide, the launcher shows the middle 72: the same crop here.
         Image(painterResource(icon.background), null, Modifier.fillMaxSize().graphicsLayer { scaleX = 1.5f; scaleY = 1.5f })
@@ -174,7 +174,7 @@ fun GiftButton(text: String, primary: Boolean, modifier: Modifier = Modifier, ac
     val mass by animateFloatAsState(if (pressed) 0.97f else 1f, tween(150, easing = Motion.outro), label = "druck")
     val ground = if (primary) Color.White.copy(alpha = if (pressed) 0.75f else 1f) else Theme.raised.copy(alpha = if (pressed) 0.7f else 1f)
     Box(modifier.fillMaxWidth().height(50.dp).graphicsLayer { scaleX = mass; scaleY = mass }
-            .background(ground, RoundedCornerShape(10.dp))
+            .background(ground, smoothRoundedShape(10.dp))
             .clickable(source, null, onClick = action).semantics { role = Role.Button },
         contentAlignment = Alignment.Center) {
         Text(text, style = giftFont(17f, FontWeight.SemiBold), color = if (primary) Color.Black else Theme.font, maxLines = 1)
@@ -220,8 +220,8 @@ fun Segments(options: List<Pair<String, String>>, value: String, choose: (String
     val index = options.indexOfFirst { it.first == value }.coerceAtLeast(0)
     val x by animateDpAsState(2.dp + (part + 2.dp) * index, Motion.select(), label = "segment")
     Box(Modifier.heightIn(min = 44.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.width(width).height(32.dp).background(Theme.area, RoundedCornerShape(8.dp))) {
-            Box(Modifier.offset(x = x, y = 2.dp).size(part, 28.dp).background(Color(0xFF4A4A4A), RoundedCornerShape(6.dp)))
+        Box(Modifier.width(width).height(32.dp).background(Theme.area, smoothRoundedShape(8.dp))) {
+            Box(Modifier.offset(x = x, y = 2.dp).size(part, 28.dp).background(Color(0xFF4A4A4A), smoothRoundedShape(6.dp)))
             Row(Modifier.padding(2.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 options.forEach { (id, label) ->
                     val on = id == value
@@ -285,7 +285,7 @@ private fun bob(distance: Float, seconds: Float, delay: Float): () -> Float {
 fun LookMiniPhone(palette: Looks.Palette, delay: Float, modifier: Modifier = Modifier) {
     val up = bob(-6f, 2f, delay)
     val accent = palette.accent.main
-    val shape = RoundedCornerShape(14.dp)
+    val shape = smoothRoundedShape(14.dp)
     Box(modifier.graphicsLayer { translationY = up() * density }
             .size(104.dp, 208.dp).clip(shape).background(Theme.reason)
             .border(1.dp, Theme.font.copy(alpha = 0.1f), shape)) {
@@ -293,10 +293,9 @@ fun LookMiniPhone(palette: Looks.Palette, delay: Float, modifier: Modifier = Mod
             ellipseGradient(Offset(size.width / 2, 0f), size.width * 0.75f, size.height * 0.75f,
                 0f to accent.copy(alpha = 0.34f), 1f to accent.copy(alpha = 0f))
         })
-        Box(Modifier.offset(9.dp, 16.dp)) {
-            Wordmark(height = 11.6.dp, accent = palette.logoGradient.firstOrNull() ?: accent,
-                     gradient = palette.logoGradient.takeIf { it.size > 1 })
-        }
+        // The title the Start page has instead of a logo, at the scale of this picture.
+        Text(translated(Region.Start.title), style = giftFont(11f, FontWeight.Bold), color = Theme.font, maxLines = 1,
+             modifier = Modifier.offset(9.dp, 14.dp))
         Symbol(Glyph.HeartFilled, 10.dp, color = Theme.font, modifier = Modifier.align(Alignment.TopEnd).padding(end = 9.dp).offset(y = 16.dp))
         Text(translated("Weiterschauen"), style = giftFont(7.5f, FontWeight.SemiBold), color = Theme.font, maxLines = 1,
              modifier = Modifier.offset(9.dp, 34.dp))
@@ -308,7 +307,7 @@ fun LookMiniPhone(palette: Looks.Palette, delay: Float, modifier: Modifier = Mod
                 drawRect(Theme.line, size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx()))
             }, horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             repeat(4) { i ->
-                Box(Modifier.size(8.dp).background(if (i == 0) accent else Color(0xFF555555), RoundedCornerShape(2.5.dp)))
+                Box(Modifier.size(8.dp).background(if (i == 0) accent else Color(0xFF555555), smoothRoundedShape(2.5.dp)))
             }
         }
     }
@@ -316,7 +315,7 @@ fun LookMiniPhone(palette: Looks.Palette, delay: Float, modifier: Modifier = Mod
 
 @Composable
 private fun MiniPoster(width: Dp, height: Dp, corner: Dp, modifier: Modifier, progress: Float? = null, accent: Color = Color.Transparent) {
-    Box(modifier.size(width, height).clip(RoundedCornerShape(corner))
+    Box(modifier.size(width, height).clip(smoothRoundedShape(corner))
             .background(Brush.verticalGradient(listOf(Theme.raised, Theme.area)))) {
         if (progress != null) {
             Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(2.5.dp).background(Theme.font.copy(alpha = 0.3f))) {
@@ -409,7 +408,7 @@ private fun BoxScope.PickRing(size: Dp) {
         }))
     }
     Box(Modifier.align(Alignment.Center).requiredSize(size + 8.dp).graphicsLayer { alpha = value.value }
-            .border(2.dp, Theme.font, RoundedCornerShape(18.dp)))
+            .border(2.dp, Theme.font, smoothRoundedShape(18.dp)))
 }
 
 /**
@@ -418,7 +417,7 @@ private fun BoxScope.PickRing(size: Dp) {
  */
 @Composable
 fun SupportLooksCard(app: SwiftlyApplication) {
-    val shape = RoundedCornerShape(Theme.cornerArea)
+    val shape = smoothRoundedShape(Theme.cornerArea)
     Column(Modifier.fillMaxWidth().tapOn { openLooksOnHome(app) }
             .background(Brush.verticalGradient(listOf(Color(0xFF1A1A1A).copy(alpha = 0.62f), Color(0xFF121212).copy(alpha = 0.9f))), shape)
             .border(1.dp, Brush.verticalGradient(listOf(Theme.font.copy(alpha = 0.14f), Theme.font.copy(alpha = 0.04f))), shape)
@@ -439,7 +438,7 @@ fun CurrentLookCard(app: SwiftlyApplication) {
     val looks = app.looks
     val look = looks.info(looks.palette.value.look)
     Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).tapOn { openLooksOnHome(app) }
-            .background(Theme.groupsArea, RoundedCornerShape(Theme.cornerArea)).padding(horizontal = 16.dp, vertical = 14.dp)
+            .background(Theme.groupsArea, smoothRoundedShape(Theme.cornerArea)).padding(horizontal = 16.dp, vertical = 14.dp)
             .semantics(mergeDescendants = true) { role = Role.Button },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         LookTileView(looks.tileIcon(look), 44.dp)
@@ -474,7 +473,7 @@ fun SupportStatusCard(app: SwiftlyApplication) {
         }
         else -> translated("Seit %@. Nichts verlängert sich, deine Extras bleiben.", format(since, "dMMMMyyyy"))
     }
-    val shape = RoundedCornerShape(Theme.cornerArea)
+    val shape = smoothRoundedShape(Theme.cornerArea)
     Row(Modifier.fillMaxWidth().clip(shape).background(Theme.groupsArea)
             .drawBehind {
                 drawRect(Brush.radialGradient(listOf(accent.copy(alpha = 0.16f), accent.copy(alpha = 0f)), center = Offset.Zero,

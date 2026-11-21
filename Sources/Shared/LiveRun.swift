@@ -633,6 +633,7 @@ extension LiveRun {
         case "timing": await scenarioTiming(model, open: open, close: close)
         case "menu": await scenarioMenu(model, open: open, close: close)
         case "menus": await scenarioMenus(model, open: open, close: close)
+        case "skipintro": await scenarioSkipIntro(model, open: open, close: close)
         case "menu-motion": await scenarioMenuMotion(model, open: open, close: close)
         case "player-bar": await scenarioPlayerBar(model, open: open, close: close)
         case "chapters": await scenarioChapters(model, open: open, close: close)
@@ -648,6 +649,7 @@ extension LiveRun {
         case "language": await scenarioLanguage(model, open: open, close: close)
         case "switchfail": await scenarioSwitchFail(model, open: open, close: close)
         case "endcard": await scenarioEndCard(model, open: open, close: close)
+        case "endseek": await scenarioEndCard(model, open: open, close: close, seekToEnd: true)
         case "menus-countdown": await scenarioMenusCountdown(model, open: open, close: close)
         case "filter": await scenarioFilter()
         case "tabs": await scenarioTabs(model)
@@ -861,7 +863,8 @@ extension LiveRun {
     /// The end of an episode no outro reaches the end of (`bm-ep1` of the `swiftly-live-media-b6a` fixture: 330 s, resumed at 315 s, no
     /// marker, a next episode; the server runs with `SWIFTLY_FIXTURE_NO_MARKERS=1`): the core's card must open with the last seven seconds
     /// (not 30 s before the end), fill, and the next episode must start. Samples every 250 ms: position, left to the end, the core's offer.
-    private static func scenarioEndCard(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+    private static func scenarioEndCard(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void,
+                                        seekToEnd: Bool = false) async {
         let id = titles.first ?? "bm-ep1"
         guard let first = await openTitle(model, id, open: open) else { return }
         NotificationCenter.default.post(name: hideControls, object: nil)
@@ -874,11 +877,18 @@ extension LiveRun {
         let began = Date()
         var cardAt: Double?, leftAtCard: Double?, shotCard = false, switchedAt: Double?
         var samples: [[String: Any]] = []
-        for _ in 0..<200 {
-            try? await Task.sleep(for: .milliseconds(250))
+        var sought = false
+        for _ in 0..<(seekToEnd ? 1000 : 200) {
+            try? await Task.sleep(for: .milliseconds(seekToEnd ? 50 : 250))
             guard let now = current() else { continue }
             let t = (Date().timeIntervalSince(began) * 100).rounded() / 100
             let same = ObjectIdentifier(now.avEngine as AnyObject) == engine
+            // `endseek`: once the episode plays, jump to the last 0.02 s, past the card's window, so the end of the file comes with no card.
+            if seekToEnd, !sought, same, now.isPlaying, now.durationSeconds > 20, now.positionSeconds > 3 {
+                sought = true
+                event(["kind": "endseek", "from": now.positionSeconds, "to": now.durationSeconds - 0.02])
+                now.seek(toSeconds: now.durationSeconds - 0.02)
+            }
             let offer = (now.avEngine as? CorePlaybackBackend)?.offerNow
             var kind = "none", share = -1.0
             if let offer {
@@ -1331,6 +1341,12 @@ extension LiveRun {
             let names = folder.flatMap { try? FileManager.default.contentsOfDirectory(atPath: $0.path) } ?? []
             event(["kind": "downloaded", "title": f.id, "file": file != nil, "subtitleFiles": names.sorted()])
         }
+        #if os(macOS)
+        // The sidebar's Downloads page with the files just stored (the menu bar's shortcut), before the server goes away.
+        CommandPost.dispatch(.downloads)
+        try? await Task.sleep(for: .seconds(2.5))
+        await shot("downloads-page", ["title": items.first?.id ?? "-", "track": "downloads-page"])
+        #endif
         event(["kind": "kill-server"])
         let gate = dir.appendingPathComponent("offline-go")
         _ = await waitFor(60) { FileManager.default.fileExists(atPath: gate.path) }
@@ -1508,6 +1524,23 @@ extension LiveRun {
             await step("none", "menus-closed-4", wait: 0.6)
         }
         NotificationCenter.default.post(name: openLayer, object: "none")
+        close()
+    }
+
+    /// **Skip intro** (Mac): the fixture's intro runs 2 s to 5 s; with the offer showing, its press must land the position at the end of it.
+    private static func scenarioSkipIntro(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-tracks45"
+        guard let view = await openTitle(model, id, open: open) else { return }
+        try? await Task.sleep(for: .seconds(2))
+        view.seek(toSeconds: 2.6)
+        try? await Task.sleep(for: .seconds(1))
+        let before = view.positionSeconds
+        await shot("skip-intro-offer", ["title": id, "track": "skip-intro-offer", "position": before])
+        NotificationCenter.default.post(name: openLayer, object: "offer")
+        try? await Task.sleep(for: .seconds(1.5))
+        let after = view.positionSeconds
+        event(["kind": "skip-intro", "title": id, "before": before, "after": after, "ok": before < 5 && after >= 5])
+        await shot("skip-intro-after", ["title": id, "track": "skip-intro-after", "position": after])
         close()
     }
 

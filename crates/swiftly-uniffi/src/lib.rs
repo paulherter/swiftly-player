@@ -11,6 +11,7 @@ mod detail;
 mod diagnostics;
 mod downloads;
 mod error;
+mod gift_flow;
 mod hello;
 mod home;
 mod images;
@@ -60,6 +61,7 @@ pub use state_more::{
     SettingsSyncPhaseState,
 };
 mod forwarder;
+mod report_flow;
 mod seerr_admin_screen;
 mod seerr_lists_screen;
 mod seerr_remote;
@@ -94,6 +96,9 @@ pub use downloads::{
     DownloadHost, DownloadRequest, DownloadsIntent, DownloadsVm, RunningTransferInfo,
 };
 pub use error::CoreError;
+pub use gift_flow::{
+    GiftEvalInput, GiftEvaluationInfo, GiftFlowModel, GiftOutcomeInfo, GiftStageInfo, gift_claim_ms,
+};
 pub use hello::{HelloChange, HelloIntent, HelloState, HelloVm};
 pub use home::HomeVm;
 pub use images::{ImageDevice, ImageLoader, ImagePixels, ImagePriority, ImageSlot, ImageStats};

@@ -53,8 +53,8 @@ pub fn reduce(s: &UpdateState, e: UpdateEvent) -> UpdateState {
 }
 
 /// Turns the answer of the releases request into an event (pure, tested).
-pub fn outcome(status: u16, body: &[u8], here_version: &str) -> UpdateEvent {
-    match logic::parse_latest(status, body, here_version, 0, cfg!(windows)) {
+pub fn outcome(status: u16, body: &[u8], here_version: &str, here_build: i64) -> UpdateEvent {
+    match logic::parse_latest(status, body, here_version, here_build, cfg!(windows)) {
         Ok(found) => UpdateEvent::Found(found.map(|r| {
             let headline = logic::notes_headline(&r.notes);
             (r.version, headline)
@@ -116,7 +116,12 @@ fn fetch(version: &str) -> UpdateEvent {
         }
         req.timeout = Some(std::time::Duration::from_secs(logic::CHECK_TIMEOUT_SECS));
         let answer = rt.block_on(transport.send(req)).ok()?;
-        Some(outcome(answer.status, &answer.body, version))
+        Some(outcome(
+            answer.status,
+            &answer.body,
+            version,
+            crate::build_info::build_number(),
+        ))
     };
     run().unwrap_or(UpdateEvent::Broke)
 }
@@ -159,14 +164,14 @@ mod tests {
 
     #[test]
     fn answers_become_events() {
-        assert_eq!(outcome(500, b"", "1.0.0"), Broke);
-        assert_eq!(outcome(200, b"nonsense", "1.0.0"), Broke);
+        assert_eq!(outcome(500, b"", "1.0.0", 0), Broke);
+        assert_eq!(outcome(200, b"nonsense", "1.0.0", 0), Broke);
         let body = br#"{"tag_name":"v99.0.0","body":"Build 5\nNeu: alles","assets":[{"name":"Swiftly-99.0.0-setup.exe","browser_download_url":"https://x/y","size":5}]}"#;
-        assert!(matches!(outcome(200, body, "1.0.0"), Found(Some((v, _))) if v == "99.0.0"));
+        assert!(matches!(outcome(200, body, "1.0.0", 0), Found(Some((v, _))) if v == "99.0.0"));
         // Windows: a newer release without its installer yet counts as current.
         let bare = br#"{"tag_name":"v99.0.0","body":"x","assets":[]}"#;
         assert_eq!(
-            outcome(200, bare, "1.0.0"),
+            outcome(200, bare, "1.0.0", 0),
             if cfg!(windows) {
                 Found(None)
             } else {
@@ -174,6 +179,6 @@ mod tests {
             }
         );
         let old = br#"{"tag_name":"v0.0.1","body":"x","assets":[]}"#;
-        assert_eq!(outcome(200, old, "1.0.0"), Found(None));
+        assert_eq!(outcome(200, old, "1.0.0", 0), Found(None));
     }
 }

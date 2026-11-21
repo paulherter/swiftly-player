@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -71,6 +70,7 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Symbol
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -340,7 +340,7 @@ private fun FooterButton(modifier: Modifier, perform: () -> Unit) {
 @Composable
 private fun ArrivalCard(a: SeerrArrival, pending: Boolean, tv: Boolean, live: Boolean, depth: Int, lifted: Boolean, badge: Int?,
                         tap: () -> Unit, play: () -> Unit, close: () -> Unit) {
-    val shape = RoundedCornerShape(Theme.corner)
+    val shape = smoothRoundedShape(Theme.corner)
     val scope = rememberCoroutineScope()
     val travel = remember { Animatable(0f) }
     var width by remember { mutableIntStateOf(1) }
@@ -376,7 +376,7 @@ private fun ArrivalCard(a: SeerrArrival, pending: Boolean, tv: Boolean, live: Bo
         // Skeleton bars of the exact final shape; they stay until the card is opaque.
         Row(Modifier.fillMaxSize().alpha(1f - content).padding(start = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(40.dp, 60.dp).clip(RoundedCornerShape(6.dp)).background(Color.White.copy(alpha = 0.07f)))
+            Box(Modifier.size(40.dp, 60.dp).clip(smoothRoundedShape(6.dp)).background(Color.White.copy(alpha = 0.07f)))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.width(150.dp).height(14.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.07f)))
                 Box(Modifier.width(84.dp).height(11.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.07f)))
@@ -387,7 +387,7 @@ private fun ArrivalCard(a: SeerrArrival, pending: Boolean, tv: Boolean, live: Bo
         Row(Modifier.fillMaxSize().alpha(content).padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             AsyncImage(model = tmdbImage(a.poster, 185), contentDescription = a.title, contentScale = ContentScale.Crop,
-                       modifier = Modifier.size(40.dp, 60.dp).clip(RoundedCornerShape(6.dp)).background(Theme.raised))
+                       modifier = Modifier.size(40.dp, 60.dp).clip(smoothRoundedShape(6.dp)).background(Theme.raised))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(a.line, style = Theme.listTitle, color = Theme.font, maxLines = 2, modifier = Modifier.weight(1f, fill = false))

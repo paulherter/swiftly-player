@@ -103,10 +103,24 @@ struct PlayerScreen: View {
     /// when the picture arrives: no fade out and in, no move. Only the centre (loader, then play/pause) and the footer
     /// wait for the picture (`controlsPresent`). While the rotation to landscape is still running it waits too, the
     /// same rule the veil's X had, so it never sits at the portrait position first.
+    ///
+    /// The rule itself (the bar is up whenever the controls are wanted, the veil included) is the core's
+    /// (`playerTopBarUp`, `playerVeilUp`); what stays here is this screen's own state: small window, AirPlay, an open
+    /// layer, the episode switch card and the rotation.
     private var topBarPresent: Bool {
-        guard controlsVisible, !smallWindow, airplayPlan == nil, !layerOpen else { return false }
-        return imageFree || (cardsSwitch == nil && (!rotationWaits || rotationReady))
+        guard playerTopBarUp(controlsWanted: controlsVisible), !smallWindow, airplayPlan == nil, !layerOpen else {
+            return false
+        }
+        let veilOnScreen = playerVeilUp(pictureShown: imageFree, failed: false) && cardsSwitch == nil
+        return imageFree || (veilOnScreen && (!rotationWaits || rotationReady))
     }
+
+    /// The start veil is up: the controls' idle timer does not run (the core's rule, `playerVeilUp`).
+    private var veilHoldsControls: Bool { playerVeilUp(pictureShown: imageFree, failed: false) }
+
+    /// Restarts the idle task of the controls: on every mark, and when the picture becomes free (the four seconds
+    /// start from the picture, not from the open).
+    private var fadeOutKey: Int { fadeOutMark * 2 + (imageFree ? 1 : 0) }
 
     /// One of the three layers: audio & subtitles, episodes, settings.
     private var layerOpen: Bool { openLayer != nil }
@@ -168,7 +182,8 @@ struct PlayerScreen: View {
     /// everything below anyway. Header, footer and center controls still yield, since
     /// they would shine through the sheet (see below).
     private var scrimPresent: Bool {
-        controlsVisible && imageFree && !smallWindow && airplayPlan == nil
+        playerMiddleUp(controlsWanted: controlsVisible, veilUp: playerVeilUp(pictureShown: imageFree, failed: false))
+            && !smallWindow && airplayPlan == nil
     }
 
     /// **The picture is free once it is still and correctly oriented.**
@@ -783,9 +798,11 @@ struct PlayerScreen: View {
     var body: some View {
         reasonArea
         .overlay { SeerrTitleMenuSheets(menu: seerrMenu, model: model, deleted: {}) }
-        .task(id: fadeOutMark) {
+        .task(id: fadeOutKey) {
             // Remove nothing while standing: whoever paused is not looking at the picture but wants to see the controls.
-            guard controlsVisible, running, !voiceOverAn, !toggleAn else { return }
+            // Nor under the start veil: the top bar stays up while the stream is still answering (the core's rule,
+            // `playerVeilUp`), the four seconds start when the picture is free (see the `imageFree` change below).
+            guard controlsVisible, running, !voiceOverAn, !toggleAn, !veilHoldsControls else { return }
             try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled, !atPush, !layerOpen, !menu.isOpen else { return }
             controlsVisible = false

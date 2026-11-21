@@ -791,8 +791,8 @@ struct EpisodesRow: View {
                                     .font(.app(size: 12))
                                     .foregroundStyle(Theme.fontVeryQuiet)
                                     .lineLimit(1)
-                            } else if look == nil, let seconds = episode.runtimeSeconds {
-                                Text(verbatim: (watched ? nil : episode.remainingTimeText) ?? runtime(seconds))
+                            } else if look == nil, let line = (watched ? nil : episode.remainingTimeText) ?? runtimeLine(episode.runtimeSeconds) {
+                                Text(verbatim: line)
                                     .font(.app(size: 12))
                                     .foregroundStyle(Theme.fontVeryQuiet)
                                     .lineLimit(1)

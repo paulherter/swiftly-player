@@ -12,7 +12,6 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use swiftly_net::HttpTransport;
 use swiftly_seerr::issues::{Issue, IssueFilter, IssueKind, IssueQuery, IssueSpec};
 use swiftly_seerr::requests::{RequestFilter, RequestQuery};
-use swiftly_seerr::types::RequestRow;
 use swiftly_seerr::{AskError, CookieJar, SeerrClient};
 
 use crate::seerr_admin::{
@@ -36,6 +35,33 @@ pub struct SeerrRequestCard {
     pub row: SeerrRequestRow,
     /// "Angefragt von", "Fassung", "Qualität", "Ordner".
     pub rows: Vec<SeerrDetailRow>,
+}
+
+/// Reads request `id` as a card: the row on top as `scope` lists it (the account's own list can withdraw, the queue
+/// decides) and the detail lines under it. `None` when Seerr cannot be asked or does not know the request.
+pub(crate) async fn read_card<T: HttpTransport, J: CookieJar>(
+    hub: &Arc<SeerrHub<T, J>>,
+    scope: RequestScope,
+    id: i64,
+) -> Option<SeerrRequestCard> {
+    let c = hub.client()?;
+    let req = c.request_by_id(id).await.ok()?;
+    hub.resolve_requests(std::slice::from_ref(&req)).await;
+    let service = match (&req.media_type, req.server_id) {
+        (Some(art), Some(server)) if lock(&hub.vm).perms().can_choose_advanced() => {
+            c.service_detail(art, server).await.ok()
+        }
+        _ => None,
+    };
+    let rows = request_detail_rows(&hub.locale_of(), &req, service.as_ref());
+    let cache = lock(&hub.titles).clone();
+    let mut vm = {
+        let v = lock(&hub.vm);
+        SeerrRequestsVm::new(hub.locale_of(), &today_utc(), scope, v.user_id(), v.perms())
+    };
+    vm.loaded(Ok(vec![req]));
+    let row = vm.info(&cache).rows.into_iter().next()?;
+    Some(SeerrRequestCard { row, rows })
 }
 
 type IssueFuture<'a> = Pin<Box<dyn Future<Output = Result<Issue, AskError>> + Send + 'a>>;
@@ -124,13 +150,6 @@ impl<T: HttpTransport, J: CookieJar> SeerrAdminScreen<T, J> {
         }
         let _ = self.hub.refresh_counts().await;
         self.requests()
-    }
-
-    fn row_of(&self, req: &RequestRow) -> Option<SeerrRequestRow> {
-        let cache = lock(&self.hub.titles).clone();
-        let mut vm = self.new_queue_vm();
-        vm.loaded(Ok(vec![req.clone()]));
-        vm.info(&cache).rows.into_iter().next()
     }
 
     async fn issue_action<F>(&self, call: F) -> Option<SeerrIssueDetail>
@@ -299,19 +318,9 @@ impl<T: HttpTransport, J: CookieJar> SeerrAdminScreen<T, J> {
         self.verdict(id, Verdict::Withdraw).await
     }
 
-    /// The detail card of one request.
+    /// The detail card of one request, as the queue lists it (the verbs of a manager, no "Zurückziehen").
     pub async fn request_detail(&self, id: i64) -> Option<SeerrRequestCard> {
-        let c = self.hub.client()?;
-        let req = c.request_by_id(id).await.ok()?;
-        self.hub.resolve_requests(std::slice::from_ref(&req)).await;
-        let service = match (&req.media_type, req.server_id) {
-            (Some(art), Some(server)) if lock(&self.hub.vm).perms().can_choose_advanced() => {
-                c.service_detail(art, server).await.ok()
-            }
-            _ => None,
-        };
-        let rows = request_detail_rows(&self.hub.locale_of(), &req, service.as_ref());
-        self.row_of(&req).map(|row| SeerrRequestCard { row, rows })
+        read_card(&self.hub, RequestScope::Queue, id).await
     }
 
     // ---- issues

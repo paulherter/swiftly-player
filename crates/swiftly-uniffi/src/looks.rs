@@ -374,6 +374,22 @@ pub struct LookModel {
 }
 
 impl LookModel {
+    /// The gifts picked up and the offers already made, for the gift flow's evaluation.
+    pub(crate) fn gift_facts(
+        &self,
+    ) -> (
+        std::collections::BTreeSet<String>,
+        std::collections::BTreeSet<String>,
+    ) {
+        let store = lock(&self.inner);
+        (store.state().owned().clone(), store.offered())
+    }
+
+    /// Remembers the offer of a gift for this season (the flow's evaluation decided it).
+    pub(crate) fn remember_offer(&self, look: &Look, now: f64, utc_offset: i64) {
+        let _ = lock(&self.inner).mark_offered(look, now, Calendar::fixed(utc_offset));
+    }
+
     pub(crate) fn build(kv: Arc<dyn KeyValueStore>) -> Arc<Self> {
         Arc::new(Self {
             inner: Mutex::new(LookStore::load(TypedStore::new(kv))),
@@ -1072,6 +1088,59 @@ mod tests {
         m.mark_offered(due, day, 0).unwrap();
         assert!(m.gift_due(day, true, false, false, 10.0, 0).is_none());
         assert!(!m.free_looks(day, 0).is_empty());
+    }
+
+    #[test]
+    fn the_gift_flow_offers_once_and_remembers_it_in_the_looks() {
+        use crate::gift_flow::{GiftEvalInput, GiftFlowModel, GiftOutcomeInfo, GiftStageInfo};
+        let looks = LookModel::build(kv());
+        let flow = GiftFlowModel::new();
+        let day = Calendar::UTC.timestamp(2026, 10, 31, 12, 0);
+        let input = GiftEvalInput {
+            now: day,
+            utc_offset: 0,
+            home_ready: true,
+            blocked: false,
+            seconds_on_home: 10.0,
+            last_seen: Some("1.0.0".into()),
+            used_before: true,
+            current: "1.0.0".into(),
+            entry_json: None,
+        };
+        let first = flow.evaluate(Arc::clone(&looks), input.clone());
+        let GiftOutcomeInfo::Offer { look_id } = first.outcome else {
+            panic!("the gift is due");
+        };
+        assert!(matches!(flow.stage(), Some(GiftStageInfo::Offer { .. })));
+        // The sheet is open: nothing else comes on top of it.
+        assert_eq!(
+            flow.evaluate(Arc::clone(&looks), input.clone()).outcome,
+            GiftOutcomeInfo::Nothing
+        );
+        flow.reset();
+        // The offer is stored in the looks: not again this season.
+        assert_eq!(
+            flow.evaluate(Arc::clone(&looks), input.clone()).outcome,
+            GiftOutcomeInfo::Nothing
+        );
+        // Picked up: the look is owned.
+        assert_eq!(
+            flow.grab(look_id.clone(), false).as_deref(),
+            Some(look_id.as_str())
+        );
+        looks.claim(look_id.clone()).unwrap();
+        assert!(looks.owned().contains(&look_id));
+        // Blocked by another sheet or the player: nothing.
+        flow.reset();
+        let fresh = LookModel::build(kv());
+        let blocked = GiftEvalInput {
+            blocked: true,
+            ..input
+        };
+        assert_eq!(
+            flow.evaluate(fresh, blocked).outcome,
+            GiftOutcomeInfo::Nothing
+        );
     }
 
     #[test]

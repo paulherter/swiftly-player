@@ -60,11 +60,15 @@ struct TVLicensesView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if let inventory {
-                        GroupsTitle(text: "VLCKit und libVLC")
+                        GroupsTitle(text: "Wiedergabe")
                         ForEach(inventory.components(group: "player")) { b in row(.component(b.id), b.name) }
                         row(.offering, String(localized: "Quelltext und schriftliches Angebot"))
+                        Text("Frühere Versionen enthielten VLCKit und libVLC (LGPL 2.1 oder später). Das schriftliche Angebot für ihren Quelltext gilt weiter, siehe „Quelltext und schriftliches Angebot“.")
+                            .font(Theme.body)
+                            .foregroundStyle(Theme.fontQuiet)
+                            .padding(.leading, 26)
+                            .padding(.top, 10)
                         group("Weitere Bausteine", inventory.components(group: "app"))
-                        group("In VLCKit eingebaut", inventory.components(group: "in-vlckit"))
                     } else {
                         row(.offering, String(localized: "Quelltext und schriftliches Angebot"))
                     }
@@ -168,8 +172,8 @@ private struct LicenseBlockStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .foregroundStyle(title || focus ? Theme.font : Theme.fontQuiet)
-                .padding(.horizontal, 26)
-                .padding(.vertical, 16)
+                .padding(.horizontal, 26) // token-lint: allow licence page spacing as before, tokenised in the design wave
+                .padding(.vertical, 16) // token-lint: allow licence page spacing as before, tokenised in the design wave
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(focus ? Theme.focusArea : Color.clear,
                             in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))

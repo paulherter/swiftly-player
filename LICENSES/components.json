@@ -304,6 +304,22 @@
    "gruppe": "app"
   },
   {
+   "id": "figma-squircle",
+   "name": "figma-squircle (corner smoothing, ported to Kotlin)",
+   "version": "the corner maths of figma-squircle, ported to Compose (SmoothCornerShape)",
+   "spdx": "MIT",
+   "urheber": "Tien Pham",
+   "quelle": "https://github.com/phamfoo/figma-squircle",
+   "plattformen": [
+    "android",
+    "androidtv"
+   ],
+   "texte": [
+    "MIT-figma-squircle.txt"
+   ],
+   "gruppe": "app"
+  },
+  {
    "id": "figtree",
    "name": "Figtree (typeface of the website)",
    "version": "Webfont, see Website/schrift/",

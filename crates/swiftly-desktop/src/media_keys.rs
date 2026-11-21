@@ -65,6 +65,8 @@ pub enum MediaEvent {
     Previous,
     /// Skip by the player's jump distance: `true` forward, `false` back.
     Skip(bool),
+    /// The system asks to jump by this many seconds from where the player is (MPRIS `Seek(offset)`): `true` forward.
+    SeekBy(bool, f64),
     /// Stop.
     Stop,
     /// The system asks for this position (seconds).
@@ -81,6 +83,12 @@ pub trait SystemMedia {
     fn set_playback(&mut self, state: PlaybackState, position_s: f64);
     /// The playback speed (1.0 is normal): MPRIS `Rate`, SMTC `PlaybackRate`.
     fn set_rate(&mut self, rate: f64);
+    /// Whether a position the system was told goes stale while playing: MPRIS answers `Position` with the last value
+    /// it got (clients such as `playerctl` and the desktop widgets read it on demand), so it must be sent again as the
+    /// film plays; SMTC and the Mac's now-playing extrapolate from position and rate themselves.
+    fn position_goes_stale(&self) -> bool {
+        false
+    }
     /// Which of the system's "next" and "previous" buttons work (MPRIS `CanGoNext`/`CanGoPrevious`, SMTC
     /// `IsNextEnabled`/`IsPreviousEnabled`), like the Mac's `nextTrackCommand.isEnabled`.
     fn set_navigation(&mut self, next: bool, previous: bool);
@@ -115,6 +123,10 @@ pub struct MediaSync<M: SystemMedia> {
     told_rate: Option<f64>,
     /// The "next" button state the system was last told.
     told_next: Option<bool>,
+    /// Where the player was at the last update (a relative seek from the system starts here).
+    position_s: f64,
+    /// How long the film is, when known (a relative seek stops at the end).
+    duration_s: Option<f64>,
 }
 
 /// What the system shows for the player's phase: `Some(true)` playing, `Some(false)` paused, `None` no card. The end of a
@@ -133,6 +145,9 @@ pub fn playing_in(phase: swiftly_vm::Phase) -> Option<bool> {
 /// A drift (s) between where the system thinks we are and where we are, past which the position is sent again.
 const DRIFT_S: f64 = 2.0;
 
+/// How often (ms) the position is sent again while playing, for a back end whose `Position` goes stale.
+const REFRESH_MS: f64 = 1000.0;
+
 impl<M: SystemMedia> MediaSync<M> {
     /// Wraps a back end.
     pub fn new(media: M) -> MediaSync<M> {
@@ -143,6 +158,8 @@ impl<M: SystemMedia> MediaSync<M> {
             told: None,
             told_rate: None,
             told_next: None,
+            position_s: 0.0,
+            duration_s: None,
         }
     }
 
@@ -163,6 +180,8 @@ impl<M: SystemMedia> MediaSync<M> {
             return;
         };
         self.has_next = n.has_next;
+        self.position_s = n.position_s;
+        self.duration_s = n.meta.duration_s;
         // "Next" works only with a queued next episode; there is no "previous" (the Mac's remote command centre has none).
         if self.told_next != Some(n.has_next) {
             self.media.set_navigation(n.has_next, false);
@@ -197,8 +216,12 @@ impl<M: SystemMedia> MediaSync<M> {
             };
             (expected - n.position_s).abs() > DRIFT_S
         });
+        // A back end that does not extrapolate gets the position again every second while playing.
+        let stale = state == PlaybackState::Playing
+            && self.media.position_goes_stale()
+            && self.told.is_some_and(|(_, at)| clock_ms - at >= REFRESH_MS);
         // A new speed re-anchors the position: the system extrapolates from the last one it got.
-        if changed_card || changed_state || changed_rate || drifted {
+        if changed_card || changed_state || changed_rate || drifted || stale {
             self.media.set_playback(state, n.position_s);
             self.told = Some((n.position_s, clock_ms));
         }
@@ -214,10 +237,19 @@ impl<M: SystemMedia> MediaSync<M> {
             .as_ref()
             .is_some_and(|(_, s)| *s == PlaybackState::Playing);
         let has_next = self.has_next;
+        let (from, end) = (self.position_s, self.duration_s);
         self.media
             .poll_events()
             .into_iter()
-            .filter_map(|e| intent_for(e, playing, has_next))
+            .filter_map(|e| match e {
+                // The offset the system asked for, not the player's own jump distance.
+                MediaEvent::SeekBy(forward, secs) if secs.is_finite() && secs > 0.0 => {
+                    let to = if forward { from + secs } else { from - secs };
+                    let to = end.map_or(to, |d| to.min(d));
+                    Some(PlayerIntent::SeekTo(to.max(0.0)))
+                }
+                e => intent_for(e, playing, has_next),
+            })
             .collect()
     }
 }
@@ -369,6 +401,8 @@ pub struct MemoryMedia {
     pub navigation: Option<(bool, bool)>,
     /// The last rate set and how many times it was set.
     pub rate: Option<(f64, u32)>,
+    /// Whether this back end lets the position go stale (see [`SystemMedia::position_goes_stale`]).
+    pub stale_position: bool,
     /// How many times each setter was called: metadata, playback, clear.
     pub calls: (u32, u32, u32),
     queued: Vec<MediaEvent>,
@@ -392,6 +426,9 @@ impl SystemMedia for MemoryMedia {
     }
     fn set_rate(&mut self, rate: f64) {
         self.rate = Some((rate, self.rate.map_or(0, |(_, n)| n) + 1));
+    }
+    fn position_goes_stale(&self) -> bool {
+        self.stale_position
     }
     fn set_navigation(&mut self, next: bool, previous: bool) {
         self.navigation = Some((next, previous));
@@ -559,6 +596,51 @@ mod tests {
         s.update(None, 2400.0);
         assert_eq!(s.media().calls, (1, 3, 1));
         assert_eq!(s.media().metadata, None);
+    }
+
+    #[test]
+    fn a_position_that_goes_stale_is_sent_again_every_second_of_play() {
+        // MPRIS answers `Position` with the last value it got (measured: 0 at 15 s into a film).
+        let mut s = MediaSync::new(MemoryMedia {
+            stale_position: true,
+            ..MemoryMedia::default()
+        });
+        s.update(Some(&now(true, 0.0)), 0.0);
+        assert_eq!(s.media().calls, (1, 1, 0));
+        s.update(Some(&now(true, 0.5)), 500.0);
+        assert_eq!(s.media().calls, (1, 1, 0));
+        s.update(Some(&now(true, 1.0)), 1000.0);
+        assert_eq!(s.media().playback, Some((PlaybackState::Playing, 1.0)));
+        s.update(Some(&now(true, 2.0)), 2000.0);
+        assert_eq!(s.media().playback, Some((PlaybackState::Playing, 2.0)));
+        assert_eq!(s.media().calls, (1, 3, 0));
+        // Paused: the position stands still, nothing to send.
+        s.update(Some(&now(false, 2.0)), 2100.0);
+        s.update(Some(&now(false, 2.0)), 5000.0);
+        assert_eq!(s.media().calls, (1, 4, 0));
+    }
+
+    #[test]
+    fn a_relative_seek_from_the_system_keeps_its_offset() {
+        let mut s = MediaSync::new(MemoryMedia::default());
+        s.update(Some(&now(true, 100.0)), 0.0);
+        for e in [
+            MediaEvent::SeekBy(true, 10.0),
+            MediaEvent::SeekBy(false, 400.0),
+            MediaEvent::SeekBy(true, 9999.0),
+            MediaEvent::SeekBy(true, f64::NAN),
+        ] {
+            s.media.press(e);
+        }
+        // Forward 10 s from 100 s; back past the start stops at 0; forward past the end stops at the length.
+        assert_eq!(
+            s.intents(),
+            vec![
+                PlayerIntent::SeekTo(110.0),
+                PlayerIntent::SeekTo(0.0),
+                PlayerIntent::SeekTo(2600.0)
+            ]
+        );
     }
 
     #[test]

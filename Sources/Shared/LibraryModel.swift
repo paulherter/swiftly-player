@@ -24,6 +24,8 @@ final class LibraryModel {
     #if canImport(SwiftlyCore)
     /// The core's grid for the list shown, when `AppModel.coreServes` feeds this page (see `loadRust`).
     @ObservationIgnored private var rustShelf: (key: String, shelf: RustShelf)?
+    /// Follows the loads the core starts by itself for the list shown (see `loadRust`).
+    @ObservationIgnored private var listWatch: NoticeWatch?
     private var rustMore = false
     private var rustActive = false
     /// What the core says for each tile of this list (title, line, picture), by title id; this list's own,
@@ -215,11 +217,16 @@ final class LibraryModel {
         guard alphabetFor != key else { return }
         let asked = sorting
         #if canImport(SwiftlyCore)
-        // The core builds the strip from the full titles (sort names, dates), whole list fetched once.
-        if rustActive, let shelf = rustShelf?.shelf {
+        // The core builds the strip from the full titles (sort names, dates), whole list fetched once. Where the core
+        // serves the list it is the only source: the page task usually asks before the core's first page is in (no
+        // shelf yet), and a strip built here from a second fetch would never be the one the core's jumps and keys
+        // read. So it waits for the page (`loadRust` asks again when the page is in) and never falls through.
+        if model.coreServes {
+            guard rustActive, loadedFor == "\(source.key)|\(identifier)|\(forAccount)", let shelf = rustShelf?.shelf
+            else { return }
             let fresh = await shelf.alphabet()
             guard sorting == asked, rustActive else { return }
-            alphabet = fresh
+            if alphabet != fresh { alphabet = fresh }  // the stored strip stays when it was right: no redraw
             alphabetFor = key
             return
         }
@@ -259,7 +266,9 @@ final class LibraryModel {
         #if canImport(SwiftlyCore)
         if rustActive, let shelf = rustShelf?.shelf { return shelf.jumpTargetID(letter) }
         #endif
-        return alphabet.target(for: letter, in: items).map { items[$0].id }
+        // The Swift list's tiles carry no sort name either: the strip's own position is the target.
+        let start = alphabet.entries.first { $0.letter == letter }?.first ?? 0
+        return items.indices.contains(start) ? items[start].id : nil
     }
 
     /// **The title to scroll to for a letter**, loading until it is there. Loads in steps
@@ -271,14 +280,13 @@ final class LibraryModel {
         // an older one finishes loading later.
         jumpAsked += 1
         let asked = jumpAsked
-        // **The title is the strip's own position, not a key search over the loaded tiles.** The tiles are stand-ins
-        // without a sort name, so their keys differ from the strip's (made from the full titles): every letter found
-        // no tile and the jump ended on the last one loaded, whatever letter was pressed (measured: one target for
-        // F, G, H, I, K, P, N). `first` is where the letter starts in the whole ordered list, which the grid follows.
+        // **The title is the strip's own position, not a key search over the loaded tiles** (they carry no sort name,
+        // so their keys differ from the strip's). The core answers with where the letter starts in the whole ordered
+        // list, which the grid follows; while that lies past the loaded tiles it answers nil: load more, ask again.
         let start = alphabet.entries.first { $0.letter == letter }?.first ?? 0
         for _ in 0..<20 {
-            if items.indices.contains(start) {
-                return asked == jumpAsked ? items[start].id : nil
+            if let id = target(of: letter, in: alphabet) {
+                return asked == jumpAsked ? id : nil
             }
             guard stillMorePresent else { break }
             // A page being appended right now blocks `loadMore`; wait for it instead of
@@ -356,7 +364,11 @@ final class LibraryModel {
         #if canImport(SwiftlyCore)
         if model.coreServes {
             await loadRust(model, from: source, run: myOwn)
-            if myOwn == run { loads = false }
+            if myOwn == run {
+                loads = false
+                // The strip follows the page it belongs to (the page's own task may have asked too early).
+                if model.alphabetShown { await loadAlphabet(model, from: source) }
+            }
             return
         }
         rustActive = false
@@ -532,9 +544,23 @@ extension LibraryModel {
             return
         }
         adoptRust(page, model)
+        // The strip stored with the cached page comes in the same update as the tiles; `loadAlphabet` refreshes it.
+        if model.alphabetShown, alphabetFor != "\(source.key)|\(identifier)|\(model.accountSwitch)",
+           let known = shelf.alphabetNow(), known.sorting == sorting { alphabet = known }
         loadedFor = "\(source.key)|\(identifier)|\(forAccount)"
         disrupted = page.offline && items.isEmpty
         trouble = disrupted ? page.trouble : .unreachable
+        // **A load the core starts by itself is taken over too** (a delete from the server, another device, the socket
+        // marking the lists stale): the tiles followed only this page's own loads before, so a deleted series stayed in
+        // the list. While a load or a next page of this page runs, that one adopts.
+        let loaded = loadedFor
+        listWatch = NoticeWatch(Task { [weak self, weak model] in
+            await shelf.follow { page in
+                guard let self, let model, !self.loads, !self.loadsPost, self.loadedFor == loaded,
+                      !page.signedOut, !page.offline else { return }
+                self.adoptRust(page, model)
+            }
+        })
     }
 
     fileprivate func adoptRust(_ page: RustShelf.Page, _ model: AppModel) {

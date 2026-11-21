@@ -83,6 +83,8 @@ fn request() -> StartRequest {
         flavour: Flavour::Mpv,
         hardware_av1: false,
         no_dolby_vision_decoder: false,
+        video_decoders: swiftly_playback::video_decoders::VideoDecoders::default(),
+        decoder_refused: false,
         ask_versions: false,
         downloaded: None,
         ordered: None,

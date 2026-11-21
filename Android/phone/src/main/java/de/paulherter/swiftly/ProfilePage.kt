@@ -5,7 +5,6 @@ import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
@@ -24,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -179,7 +179,7 @@ fun QuickConnectPage(app: SwiftlyApplication, back: () -> Unit) {
             BasicTextField(value = code, onValueChange = { code = it.filter(Char::isDigit).take(6) }, singleLine = true,
                 textStyle = digits.copy(color = Theme.font), cursorBrush = SolidColor(Theme.accent),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                modifier = Modifier.fillMaxWidth().padding(top = 26.dp).clip(RoundedCornerShape(Theme.cornerField)).background(Theme.area)
+                modifier = Modifier.fillMaxWidth().padding(top = 26.dp).clip(smoothRoundedShape(Theme.cornerField)).background(Theme.area)
                     .padding(vertical = 16.dp),
                 decorationBox = { inputField ->
                     Box(contentAlignment = Alignment.Center) {
@@ -404,6 +404,10 @@ fun PresentationPage(app: SwiftlyApplication, open: (Destination) -> Unit, back:
             SeparatorLine()
             ChoiceRow(Glyph.TextOutline, translated("Titel als Logo"), translated("Wenn dein Server eins hat"),
                       e.titleAsLogo) { e.titleAsLogo = it }
+            SeparatorLine()
+            // Device switch the core applies to every list (library, Home, search); same row as `AppearanceView.lists` on iOS.
+            ChoiceRow(Glyph.Rectangles, translated("Leere Serien ausblenden"), translated("Serien ohne Folgen bleiben weg"),
+                      e.hideEmptySeries) { e.hideEmptySeries = it; e.coreSwitchesChanged?.invoke() }
             // Only where the plugin was found on this server.
             if (e.watchersPlugin == "1") {
                 SeparatorLine()

@@ -17,6 +17,8 @@ object CoreWords {
     object Ergebnis {
         const val GROUP = "playback.ergebnis"
         const val SWITCHED = "gewechselt"
+        const val LOCKED = "gesperrt"
+        const val CANCELLED = "abgebrochen"
         const val FAILED = "gescheitert"
     }
 

@@ -88,6 +88,9 @@ struct TVSupportGrowView: View {
                         plans.padding(.top, 26)
                         tips.padding(.top, 16)
                     }
+                    if support.supportedThroughStore {
+                        TVSupportKeyCard().padding(.top, 36)
+                    }
                 }
                 .frame(width: column)
                 .padding(.top, Theme.edgeTop - 24)
@@ -493,10 +496,8 @@ private struct TVMiniScreen: View {
             EllipticalGradient(colors: [accent.opacity(0.32), accent.opacity(0)],
                                center: UnitPoint(x: 0.62, y: 0.3),
                                startRadiusFraction: 0, endRadiusFraction: 0.6)
-            // Head: wordmark, four tabs (the first one current), heart and avatar.
+            // Head: four tabs from the left edge (the first one current) and avatar.
             HStack(spacing: 7) {
-                Wordmark(height: 7, logo: palette.logoStyle)
-                    .padding(.trailing, 3)
                 ForEach(0..<4, id: \.self) { index in
                     Capsule()
                         .fill(index == 0 ? Theme.font : Theme.font.opacity(0.35))
@@ -584,5 +585,68 @@ struct TVSupportStatusRow: View {
         case .lifetime: "Für immer"
         default: "Einfach Danke ☕"
         }
+    }
+}
+
+// MARK: - Key for the direct apps
+
+/// **The key for Windows, Linux and Android, big enough to read from the couch.** There is
+/// no clipboard on the TV: the key stands on the screen to type in on the other device.
+/// Nothing is kept; the page asks again each time.
+struct TVSupportKeyCard: View {
+    private var model: SupportKeyModel { .shared }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            switch model.state {
+            case .idle:
+                Button { model.fetch() } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(SupportKeyText.title)
+                            .font(.app(size: 32, weight: .medium))
+                            .foregroundStyle(Theme.font)
+                        Text(SupportKeyText.detail)
+                            .font(.app(size: 26))
+                            .foregroundStyle(Theme.fontQuiet)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(ThemedButtonStyle())
+            case .loading:
+                HStack(spacing: 18) {
+                    ProgressView()
+                    Text(SupportKeyText.loading)
+                        .font(.app(size: 30))
+                        .foregroundStyle(Theme.fontQuiet)
+                }
+            case let .key(key, plan, expires):
+                Text(key)
+                    .font(.app(size: 40, weight: .medium))
+                    .foregroundStyle(Theme.font)
+                    .minimumScaleFactor(0.5)
+                    .focusable()
+                    .padding(28)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+                Text(SupportKeyText.validity(plan: plan, expires: expires))
+                    .font(.app(size: 26))
+                    .foregroundStyle(Theme.fontQuiet)
+                Text(SupportKeyText.paste)
+                    .font(.app(size: 26))
+                    .foregroundStyle(Theme.fontVeryQuiet)
+            case let .failed(reason):
+                Text(SupportKeyText.failure(reason))
+                    .font(.app(size: 30))
+                    .foregroundStyle(Theme.font)
+                    .focusable()
+                if reason != .sandbox && reason != .revoked && reason != .noPurchase {
+                    Button { model.fetch() } label: { Text(SupportKeyText.retry) }
+                        .buttonStyle(ThemedButtonStyle())
+                }
+            }
+        }
+        .focusSection()
+        .animation(Theme.reveal, value: model.state)
+        .onDisappear { model.reset() }
     }
 }

@@ -93,7 +93,7 @@ public final class SeriesModel {
         let buttonBit = partSeriesButton()
         let moreBit = partSeriesMore()
         let vm = vm
-        await observeChanges(from: seen, changed: { try await vm.changed(seen: $0) }) { change in
+        await observePageChanges(from: seen, changed: { try await vm.changed(seen: $0) }) { [self] change in
             if change.parts & seasonsBit != 0 { seasons = vm.seasons() }
             if change.parts & episodesBit != 0 { episodes = vm.episodes() }
             if change.parts & buttonBit != 0 { button = vm.button() }

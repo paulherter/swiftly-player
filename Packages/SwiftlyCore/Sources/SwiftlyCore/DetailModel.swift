@@ -86,7 +86,7 @@ public final class DetailModel {
         let actionsBit = partDetailActions()
         let bottomBit = partDetailBottom()
         let vm = vm
-        await observeChanges(from: seen, changed: { try await vm.changed(seen: $0) }) { change in
+        await observePageChanges(from: seen, changed: { try await vm.changed(seen: $0) }) { [self] change in
             if change.parts & heroBit != 0 { hero = vm.hero() }
             if change.parts & actionsBit != 0 { actions = vm.actions() }
             if change.parts & bottomBit != 0 { bottom = vm.bottom() }

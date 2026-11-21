@@ -168,3 +168,12 @@ pub fn legacy_default_page_sorting() -> String {
         .raw_value()
         .to_owned()
 }
+
+/// The order a collection page starts on (premiere year, raw value): one rule for every host.
+#[uniffi::export]
+pub fn legacy_collection_page_sorting() -> String {
+    use swiftly_library::SortingExt;
+    swiftly_library::LibraryState::COLLECTION_PAGE_SORTING
+        .raw_value()
+        .to_owned()
+}

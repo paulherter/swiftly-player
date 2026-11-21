@@ -8,7 +8,7 @@ Localisation for the Swiftly Rust rebuild. **German wording is the key**, like S
 
 | Source | Keys per language (de / en / ru) |
 |---|---|
-| `Sources/Shared/Localizable.xcstrings` | 996 / 996 / 996 (20 keys with plural variations) |
+| `Sources/Shared/Localizable.xcstrings` | 1304 / 1304 / 1304 (20 keys with plural variations) |
 | `Sources/Shared/InfoPlist.xcstrings` | 3 / 3 / 3 (kept apart: `Catalog::info_plist`) |
 | JellyfinKit `*.lproj/Localizable.strings` | 139 / 139 / 139 |
 | JellyfinKit `*.lproj/Localizable.stringsdict` | 4 / 4 / 5 |

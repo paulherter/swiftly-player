@@ -2,6 +2,7 @@
 //! arrive (command line, second launch, drag and drop), the scripted wheel run and the input-to-present timer.
 //! `app.rs` holds one [`Extras`] and calls it at a few well-defined points, so this logic stays out of the loop.
 
+use crate::app_icon::icon_rgba;
 use crate::cli::Options;
 use crate::deep_link::{self, Launch};
 use crate::latency::{self, InputLatency};
@@ -20,32 +21,6 @@ pub const APP_ID: &str = "de.paulherter.swiftly.player";
 
 /// The product's name in the window title, taskbar, process description and installer. The logo itself says only "Swiftly".
 pub const PRODUCT_NAME: &str = "Swiftly Player";
-
-const ICON_256: &[u8] = include_bytes!("../assets/app-icon-256.png");
-const ICON_64: &[u8] = include_bytes!("../assets/app-icon-64.png");
-
-/// The embedded logo picture (`small`: 64 px, otherwise 256 px) as straight-alpha RGBA with its size; `None` when it
-/// cannot be decoded.
-fn icon_rgba(small: bool) -> Option<(Vec<u8>, u32, u32)> {
-    let mut reader =
-        png::Decoder::new(std::io::Cursor::new(if small { ICON_64 } else { ICON_256 }))
-            .read_info()
-            .ok()?;
-    let mut buf = vec![0; reader.output_buffer_size()?];
-    let info = reader.next_frame(&mut buf).ok()?;
-    buf.truncate(info.buffer_size());
-    let rgba = match info.color_type {
-        png::ColorType::Rgba => buf,
-        png::ColorType::Rgb => buf
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .flat_map(|p| [p[0], p[1], p[2], 255])
-            .collect(),
-        _ => return None,
-    };
-    Some((rgba, info.width, info.height))
-}
 
 /// The Swiftly logo as a window icon (`small`: the 64 px picture for the title bar and taskbar corner; otherwise the large
 /// one). `None` when the embedded picture cannot be decoded.

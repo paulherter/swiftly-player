@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import SwiftlyCore
 
 /// Entry point of the Mac version.
 ///
@@ -24,11 +25,15 @@ struct SwiftlyApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var delegateObj
 
     init() {
+        // Page models of the core write their state through the slide gate (`InTravel`).
+        PageLanding.gate = { InTravel.land($0) }
         // The first line of the file log (container `Documents/swiftly.log`): which build wrote it.
         let info = Bundle.main.infoDictionary
         AppLog.writeOut("[App] macOS \(info?["CFBundleShortVersionString"] as? String ?? "?") "
             + "(\(info?["CFBundleVersion"] as? String ?? "?")) gestartet · Log \(AppLog.path.path)")
         #if DEBUG
+        // One-off clean-up of fixture accounts, then the process ends; see `PruneFixtureAccounts`.
+        MainActor.assumeIsolated { PruneFixtureAccounts.runIfRequested() }
         // A look at the app's own work, see `WindowOffPull`. Development builds only, and
         // only a tick that watches one file.
         WindowOffPull.eavesdrop()

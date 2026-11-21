@@ -1,5 +1,6 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.support.SupporterAvatarHeart
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.draw.alpha
@@ -18,7 +19,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -82,7 +82,7 @@ fun SecondaryButton(symbol: Glyph, text: String, accent: Boolean = true, perform
     val mass = de.paulherter.swiftly.shared.pressMass(pressed)
     Row(Modifier.fillMaxWidth().heightIn(min = Theme.buttonHeight)
             .graphicsLayer { scaleX = mass; scaleY = mass }
-            .clip(RoundedCornerShape(Theme.corner))
+            .clip(smoothRoundedShape(Theme.corner))
             .background(if (pressed) Theme.pressedArea else Theme.area)
             .clickable(source, null, onClick = perform),
         horizontalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
@@ -191,7 +191,7 @@ fun QuickConnectLogin(app: SwiftlyApplication, newServer: Boolean, back: () -> U
                             if (c.length % 2 == 0 && i == c.length / 2) Spacer(Modifier.width(6.dp))
                             // **No border**: a field is a filled surface.
                             // 28 is the page title step: here the code *is* the page.
-                            Box(Modifier.size(46.dp, 60.dp).clip(RoundedCornerShape(Theme.cornerField)).background(Theme.area),
+                            Box(Modifier.size(46.dp, 60.dp).clip(smoothRoundedShape(Theme.cornerField)).background(Theme.area),
                                 contentAlignment = Alignment.Center) {
                                 Text(symbolText.toString(), style = Theme.titleLarge.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp, fontFeatureSettings = "tnum"),
                                      color = Theme.font)
@@ -452,7 +452,7 @@ private fun CardContent(app: SwiftlyApplication, card: ServerCard, multiple: Boo
         // A field on `area`, not a dashed circle; the field stays 40, the hit area becomes 44.
         // The row is 40 high with the others and 44 here, as on iPhone the row keeps its height.
         Box(Modifier.size(44.dp).tapOn(add), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(40.dp).background(Theme.area, RoundedCornerShape(Theme.corner)), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(40.dp).background(Theme.area, smoothRoundedShape(Theme.corner)), contentAlignment = Alignment.Center) {
                 Symbol(Glyph.Plus, 15.dp, color = Theme.font, strength = Strength.Semibold, description = translated("Weiteres Konto hinzufügen"))
             }
         }

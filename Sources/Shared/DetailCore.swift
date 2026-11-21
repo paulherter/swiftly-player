@@ -80,10 +80,20 @@ final class DetailCore {
         model.setDownloaded(app.downloads.file(for: listItem.id) != nil)
     }
 
-    /// Loads, then keeps the parts current until the calling task is cancelled.
+    /// Set once the load has been started, by `DetailWarm` ahead of the page or by `run`.
+    @ObservationIgnored private var loadStarted = false
+
+    /// Starts the load now (a film tile that rests under focus), so the rows are there when the page opens.
+    func startLoad() {
+        guard !loadStarted else { return }
+        loadStarted = true
+        model.load()
+    }
+
+    /// Loads (unless it already started), then keeps the parts current until the calling task is cancelled.
     func run(app: AppModel) async {
         send(options: app)
-        model.load()
+        startLoad()
         await model.observe()
     }
 
@@ -101,6 +111,29 @@ final class DetailCore {
     func resolve(pick: String? = nil) async -> PlayAction {
         _ = await model.refreshSettled()
         return model.play(pick: pick)
+    }
+}
+
+/// **Detail pages loaded ahead of the click** (Apple TV): a film tile that rests under focus starts its page's load, and the
+/// page, when it opens, takes that core instead of making a cold one: header, chips and rows stand in the first frame.
+/// The last few only, and none older than `maxAge` (the data would be stale).
+@MainActor
+enum DetailWarm {
+    private static var cores: [(id: String, at: Date, core: DetailCore)] = []
+    private static let maxAge: TimeInterval = 60
+
+    static func prepare(_ item: Item, app: AppModel) {
+        cores.removeAll { Date().timeIntervalSince($0.at) > maxAge }
+        guard !cores.contains(where: { $0.id == item.id }), let core = DetailCore(app: app, item: item) else { return }
+        core.startLoad()
+        cores.append((item.id, Date(), core))
+        if cores.count > 3 { cores.removeFirst() }
+    }
+
+    static func take(_ id: String) -> DetailCore? {
+        guard let i = cores.firstIndex(where: { $0.id == id }) else { return nil }
+        let hit = cores.remove(at: i)
+        return Date().timeIntervalSince(hit.at) <= maxAge ? hit.core : nil
     }
 }
 

@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import Security
+import SwiftlyCore
 
 /// Minimal Keychain access for the access token.
 /// Deliberately not UserDefaults: the token is a full server credential.
@@ -23,7 +24,9 @@ import Security
 /// why it would have survived any check done on a new machine.
 enum Keychain {
     private static let log = Logger(subsystem: "de.paulherter.swiftly", category: "keychain")
-    private static let service = "de.paulherter.swiftly"
+    /// A DEBUG proof or fixture launch uses its own service (`ProofIsolation`), so it can never write accounts into the
+    /// Keychain items of the real app; a Release build always has the real one.
+    private static let service = ProofIsolation.keychainService()
 
     enum Failure: Error, CustomStringConvertible {
         case write(OSStatus)

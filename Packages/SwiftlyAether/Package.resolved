@@ -1,5 +1,5 @@
 {
-  "originHash" : "fd306bd76d48f086cad2fd5271b51a738f8a819de09a06341ebebb413e458cfc",
+  "originHash" : "aa66ef99cf1a0f70970a0c49f6dd46d3af26acdf967f2f3a72d7160b6078d2c0",
   "pins" : [
     {
       "identity" : "aetherengine",
@@ -35,15 +35,6 @@
       "state" : {
         "revision" : "12b26e487a2ade918e53380d47f5727883fedafc",
         "version" : "3.2.0"
-      }
-    },
-    {
-      "identity" : "lottie-ios",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/airbnb/lottie-ios",
-      "state" : {
-        "revision" : "f4db77d7feacba0c2360b84a40c38a6ce8ff399d",
-        "version" : "4.6.1"
       }
     },
     {

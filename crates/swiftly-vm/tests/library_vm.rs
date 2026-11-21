@@ -767,6 +767,46 @@ fn only_the_name_order_has_a_strip() {
     }
 }
 
+/// The host asks for keys and jumps before it ever asked for the strip (a page puts its tiles up first): the core
+/// builds the strip itself, so every letter still lands on its own first title; a switch of the order rebuilds it.
+#[test]
+fn keys_and_jumps_do_not_need_the_strip_to_be_asked_for_first() {
+    let net = server();
+    let vm = vm(&net, &Arc::new(MemoryKeyValue::new()), spec(None, None));
+    vm.send(LibraryIntent::Load);
+    wait_for("ready", || ready(&vm));
+    vm.send(LibraryIntent::SetSorting {
+        sorting: Sorting::Name,
+    });
+    wait_for("sorted", || {
+        ready(&vm) && vm.status().sorting == Sorting::Name
+    });
+    futures_executor::block_on(vm.load_alphabet());
+    let mut held = None;
+    vm.keep_strip(&mut held);
+    let strip = held.clone().expect("the strip is built on demand");
+    assert_eq!(strip.count, N);
+    assert!(!strip.entries.is_empty());
+    for e in &strip.entries {
+        assert_eq!(
+            vm.jump_target(&e.letter, held.as_ref().expect("held")),
+            Some(e.first),
+            "{}",
+            e.letter
+        );
+    }
+    assert!(vm.key_of("m0", held.as_ref().expect("held")).is_some());
+    // Another order: the held strip is replaced, not reused.
+    vm.send(LibraryIntent::SetSorting {
+        sorting: Sorting::Latest,
+    });
+    wait_for("sorted", || {
+        ready(&vm) && vm.status().sorting == Sorting::Latest
+    });
+    vm.keep_strip(&mut held);
+    assert_eq!(held.as_ref().map(|s| s.sorting), Some(Sorting::Latest));
+}
+
 /// The page starts from the bare section (as the desktop builds it) and learns its libraries afterwards: "All" must
 /// then read from those libraries, each work once, like the Mac's `LibraryView.source`. Without it every title that
 /// lives in two libraries is listed twice, and what sits in libraries of other kinds shows up as movies.

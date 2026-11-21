@@ -1,6 +1,7 @@
 package de.paulherter.swiftly
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import de.paulherter.swiftly.rustcore.IssuePill
@@ -8,6 +9,7 @@ import de.paulherter.swiftly.rustcore.RequestPill
 import de.paulherter.swiftly.rustcore.SeerrAdminScreen
 import de.paulherter.swiftly.rustcore.SeerrIssueDetail
 import de.paulherter.swiftly.rustcore.SeerrIssuesInfo
+import de.paulherter.swiftly.rustcore.SeerrRequestDetail
 import de.paulherter.swiftly.rustcore.SeerrRequestsInfo
 import de.paulherter.swiftly.rustcore.ServerAdminAsk
 import de.paulherter.swiftly.rustcore.ServerAdminIntent
@@ -66,6 +68,48 @@ class AdminQueueModel(private val app: SwiftlyApplication, private val scope: Co
     fun approve(id: Long) = act(id) { it.approve(id) }
     fun decline(id: Long) = act(id) { it.decline(id) }
     fun retry(id: Long) = act(id) { it.retry(id) }
+}
+
+/**
+ * **One request opened** (iPhone `RequestDetailView` + `SeerrAdminFlow.detail`): the core's card (row on top, label/value rows) and the
+ * verbs it allows this account. A verb runs on the core's admin screen, reads the card again and bumps [RequestsChanged], so the
+ * list that opened this reads again when it is back on screen.
+ */
+class RequestDetailModel(private val app: SwiftlyApplication, private val scope: CoroutineScope, private val id: Long) {
+    var detail by mutableStateOf<SeerrRequestDetail?>(null)
+    var settled by mutableStateOf(false)
+    private var screen: SeerrAdminScreen? = null
+
+    private suspend fun screen(): SeerrAdminScreen? = screen ?: io { adminScreen(app) }?.also { screen = it }
+
+    fun load() { scope.launch { val s = screen(); detail = s?.let { io { it.requestDetail(id) } }; settled = true } }
+
+    private fun act(then: () -> Unit = {}, call: suspend (SeerrAdminScreen) -> SeerrRequestsInfo) {
+        scope.launch {
+            val s = screen() ?: return@launch
+            io { call(s) }
+            detail = io { s.requestDetail(id) } ?: detail
+            RequestsChanged.version.intValue++
+            then()
+        }
+    }
+    fun approve() = act { it.approve(id) }
+    fun decline() = act { it.decline(id) }
+    fun retry() = act { it.retry(id) }
+    fun withdraw(then: () -> Unit) = act(then) { it.withdraw(id) }
+}
+
+/** A verb on a request changed what the lists show: "Meine Anfragen" and the queue read again when this moves. */
+object RequestsChanged { val version = mutableIntStateOf(0) }
+
+/** The reason a season of a Seerr title page may be approved/declined here: the core's rule (`SeasonAdmin` on Apple). */
+object SeasonAdmin {
+    fun waitingRequest(app: SwiftlyApplication, waiting: Long?): Long? = if (app.seerr.hub().info().canManageRequests) waiting else null
+
+    /** Approves or declines, off the main thread; the caller reads the page again afterwards. */
+    suspend fun decide(app: SwiftlyApplication, request: Long, approve: Boolean) {
+        io { val s = adminScreen(app); if (approve) s.approve(request) else s.decline(request) }
+    }
 }
 
 /** The issue list and the open thread. */

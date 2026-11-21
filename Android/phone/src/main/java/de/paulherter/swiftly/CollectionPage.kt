@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +25,7 @@ import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Glyph
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -93,7 +93,7 @@ fun CollectionMosaic(app: SwiftlyApplication, id: String, art: String?, height: 
         posters.size > 2 -> listOf(posters.take(2), posters.drop(2).take(2))
         else -> listOf(posters)
     }
-    Column(modifier.clip(RoundedCornerShape(corner)), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(modifier.clip(smoothRoundedShape(corner)), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         rails.forEach { stack ->
             Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 stack.forEach { address ->
@@ -121,7 +121,7 @@ fun CollectionTileView(app: SwiftlyApplication, s: CollectionTile, art: String, 
         verticalArrangement = Arrangement.spacedBy(7.dp)) {
         val inputField = Modifier.fillMaxWidth().aspectRatio(2f / 3f)
         if (s.poster == null) CollectionMosaic(app, s.id, art, 260, inputField)
-        else Box(inputField.clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
+        else Box(inputField.clip(smoothRoundedShape(Theme.cornerTile)).background(Theme.area)) {
             var missing by remember(s.poster) { mutableStateOf(false) }
             if (missing) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Symbol(Glyph.Film, 22.dp, color = Theme.fontVeryQuiet)
@@ -146,7 +146,7 @@ class CollectionState(val id: String, val art: String?) {
     var total by mutableIntStateOf(0); private set
     var loads by mutableStateOf(true); private set
     var disrupted by mutableStateOf(false); private set
-    var sorting by mutableStateOf("erscheinung")
+    var sorting by mutableStateOf(KernRules.collectionPageSorting())
     var filter by mutableStateOf("alle")
     /** The index strip of the list; empty while there is none. */
     var letters by mutableStateOf<List<LetterEntry>>(emptyList()); private set

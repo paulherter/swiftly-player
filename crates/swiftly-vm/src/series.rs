@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use futures_util::FutureExt;
 use futures_util::future::join3;
 use swiftly_images::ImageSelection;
 use swiftly_jellyfin::Watcher;
@@ -122,7 +123,7 @@ pub struct EpisodeRow {
     pub code: Option<String>,
     /// The description.
     pub overview: Option<String>,
-    /// "52 Min." when the runtime is positive.
+    /// "52 Min." when the runtime is a minute or more.
     pub runtime: Option<String>,
     /// "Noch 12 Min." for a started one.
     pub remaining: Option<String>,
@@ -362,6 +363,20 @@ pub(crate) struct Shape {
 /// The kind the shape is stored under.
 pub(crate) const SHAPE: &str = "series-shape";
 
+/// The plan request of the state episode of one load. It starts as soon as the state answers (not after the
+/// episode list), so a slow server adds one answer time to the badge, not the sum of three. The answer waits here
+/// until the page can show it.
+#[derive(Default)]
+struct PlanFlight {
+    /// Tells the load apart from a later one.
+    token: u64,
+    /// The episode the request was sent for.
+    episode: Option<String>,
+    bitrate: i64,
+    /// The answer (`Some(None)`: answered without a plan).
+    ready: Option<Option<Arc<PlaybackPlan>>>,
+}
+
 struct Live<T: HttpTransport + 'static> {
     switch: u64,
     client: Option<Arc<Client<T>>>,
@@ -398,6 +413,8 @@ struct Live<T: HttpTransport + 'static> {
     /// The playback plan of the state episode (the proof row's, and the host's start).
     plan: Option<Arc<PlaybackPlan>>,
     plan_present: bool,
+    /// The plan request that starts with the state answer, side by side with the seasons and the episodes.
+    flight: PlanFlight,
     /// The proof line's answer of an earlier visit for the state episode, shown until the fresh plan answers.
     mark: Option<crate::proof_mark::ProofMark>,
     /// The series' own answer arrived (or failed): until then the head picture is only one the seed names.
@@ -501,6 +518,7 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
             next_item: None,
             plan: None,
             plan_present: false,
+            flight: PlanFlight::default(),
             mark: None,
             item_answered: false,
             options: SeriesOptions::default(),
@@ -764,10 +782,8 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
     pub fn item_json(&self, id: Option<&str>) -> Option<String> {
         let live = self.inner.live();
         let item = match id {
-            None => live.fresh.as_ref().unwrap_or(&self.inner.series),
-            Some(id) if id == self.inner.series.id => {
-                live.fresh.as_ref().unwrap_or(&self.inner.series)
-            }
+            None => return self.series_json(&live),
+            Some(id) if id == self.inner.series.id => return self.series_json(&live),
             Some(id) => {
                 let all = live
                     .episodes
@@ -786,49 +802,33 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
         serde_json::to_string(item).ok()
     }
 
+    /// The series as the host reads it: the fresh answer, completed by the seed (the entry and the stored copy of an
+    /// earlier visit) where the answer is silent, so a field the page already shows never drops while it reloads.
+    fn series_json(&self, live: &Live<T>) -> Option<String> {
+        let item = match live.fresh.as_ref() {
+            Some(fresh) => crate::seed::seeded(fresh.clone(), Some(self.inner.series.clone())),
+            None => self.inner.series.clone(),
+        };
+        serde_json::to_string(&item).ok()
+    }
+
     /// The entries of the More panel (`moreActions`, `TitleActions.forSeries`).
     pub fn more_menu(&self) -> Vec<MenuEntry> {
         let live = self.inner.live();
-        let text = &self.inner.text;
-        let push = |list: &mut Vec<MenuEntry>, kind: MenuKind, key: &str| {
-            list.push(MenuEntry {
-                kind,
-                text: text.key(key),
-            });
-        };
-        let mut list = Vec::new();
-        if live.options.download_button {
-            push(&mut list, MenuKind::Trailer, "Trailer");
-        }
-        if live.state.is_some() {
-            for (id, name) in &live.options.play_on {
-                list.push(MenuEntry {
-                    kind: MenuKind::PlayOn {
-                        id: id.clone(),
-                        name: name.clone(),
-                    },
-                    text: text.with("Abspielen auf „%@“", &[Arg::Str(name.clone())]),
-                });
-            }
-            push(
-                &mut list,
-                MenuKind::PlayEpisodeFromStart,
-                "Folge von vorn abspielen",
-            );
-            if live.options.together {
-                push(&mut list, MenuKind::Together, "Gemeinsam schauen");
-            } else {
-                push(&mut list, MenuKind::NextEpisode, "Nächste Folge abspielen");
-            }
-        }
-        push(&mut list, MenuKind::Shuffle, "Zufällig abspielen");
-        // No "<season> als gesehen" row: the Watched button on top of the page already does it.
-        push(
-            &mut list,
-            MenuKind::RefreshMetadata,
-            "Metadaten neu einlesen",
-        );
-        list
+        crate::detail_more::more_entries(
+            &self.inner.text,
+            &crate::detail_more::MoreFacts {
+                series: true,
+                plan_known: live.state.is_some(),
+                begun: false,
+                cx: crate::detail_more::MenuContext {
+                    download_button: live.options.download_button,
+                    together: live.options.together,
+                    play_on: live.options.play_on.clone(),
+                    ..Default::default()
+                },
+            },
+        )
     }
 
     /// What a tap on an episode row does.
@@ -909,7 +909,20 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
     pub fn send(&self, intent: SeriesIntent) {
         let inner = &self.inner;
         match intent {
-            SeriesIntent::Load => Inner::start_load(inner, false),
+            SeriesIntent::Load => {
+                // A page that already holds a complete, undisturbed load is entered again (the host's page
+                // appeared once more): it refreshes in place (state, series, shown season) and keeps every part
+                // it shows; only a page that never finished, or failed somewhere, loads from the start.
+                let loaded = {
+                    let live = inner.live();
+                    !live.loads
+                        && live.item_answered
+                        && !live.seasons.is_empty()
+                        && !live.seasons_disturbed
+                        && !live.episodes_disturbed
+                };
+                Inner::start_load(inner, loaded);
+            }
             SeriesIntent::Refresh => Inner::start_load(inner, true),
             SeriesIntent::SelectSeason { id } => Inner::select_season(inner, &id),
             SeriesIntent::MoreEpisodes => {
@@ -946,6 +959,44 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
 }
 
 impl<T: HttpTransport + 'static> Inner<T> {
+    /// The plan of the state episode: shown, and the proof line's answer kept for the next visit.
+    fn set_plan(
+        &self,
+        live: &mut Live<T>,
+        episode: &str,
+        bitrate: i64,
+        planned: Option<Arc<PlaybackPlan>>,
+    ) {
+        live.plan = planned;
+        live.plan_present = true;
+        if let (Some((cache, scope)), Some(plan)) = (
+            self.host.cache.as_ref().zip(live.scope.as_ref()),
+            live.plan.as_deref(),
+        ) {
+            let ticket = cache.ticket(scope);
+            crate::proof_mark::write(cache, &ticket, episode, bitrate, plan, String::new());
+        }
+    }
+
+    /// Takes the answer of the early plan request into the page unless the page still shows another episode's state.
+    /// `true`: the page changed (the caller publishes).
+    fn take_flight(&self, live: &mut Live<T>) -> bool {
+        let Some(episode) = live.flight.episode.clone() else {
+            return false;
+        };
+        // A page without a state yet (nothing stored) takes the answer at once; one that stands on a stored state
+        // of another episode waits until the load swaps the fresh state in.
+        if live.state.as_ref().is_some_and(|s| s.id != episode) {
+            return false;
+        }
+        let Some(planned) = live.flight.ready.take() else {
+            return false;
+        };
+        let bitrate = live.flight.bitrate;
+        self.set_plan(live, &episode, bitrate, planned);
+        true
+    }
+
     fn live(&self) -> MutexGuard<'_, Live<T>> {
         self.live.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -1020,10 +1071,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
             title: episode.name.clone(),
             code: episode.episode_code_with(&self.words),
             overview: episode.overview.clone().filter(|o| !o.is_empty()),
-            runtime: episode
-                .runtime_seconds()
-                .filter(|s| *s > 0.0)
-                .map(|s| self.text.runtime(s)),
+            runtime: self.text.runtime_line(episode.runtime_seconds()),
             remaining: self.text.remaining(episode),
             progress: progress(episode),
             watched: episode.is_watched(),
@@ -1272,6 +1320,11 @@ impl<T: HttpTransport + 'static> Inner<T> {
             return;
         };
         let switch = live.switch;
+        live.flight = PlanFlight {
+            token: live.flight.token + 1,
+            ..PlanFlight::default()
+        };
+        let token = live.flight.token;
         // The facts of the series (rating, overview, year) paint from the stored copy of an
         // earlier visit; seasons, state and episodes still come from the server only.
         let remembered = self
@@ -1300,10 +1353,46 @@ impl<T: HttpTransport + 'static> Inner<T> {
         drop(live);
         let inner = Arc::clone(self);
         let c = client.clone();
+        // One state request, read by the page's load and by the plan request that follows it at once.
+        let state_answer = {
+            let c = c.clone();
+            let id = self.series.id.clone();
+            async move { c.state_in_series_checked(&id).await.map_err(|_| ()) }
+                .boxed()
+                .shared()
+        };
+        {
+            let inner = Arc::clone(self);
+            let c = c.clone();
+            let state_answer = state_answer.clone();
+            self.host.spawner.spawn(Box::pin(async move {
+                let Ok(Some(episode)) = state_answer.await else {
+                    return;
+                };
+                let bitrate = {
+                    let mut live = inner.live();
+                    if live.switch != switch || live.flight.token != token {
+                        return;
+                    }
+                    live.flight.episode = Some(episode.id.clone());
+                    live.flight.bitrate = live.options.max_bitrate;
+                    live.flight.bitrate
+                };
+                let planned = c.plan(&episode.id, bitrate, None).await.ok().flatten();
+                let mut live = inner.live();
+                if live.switch != switch || live.flight.token != token {
+                    return;
+                }
+                live.flight.ready = Some(planned.map(Arc::new));
+                if inner.take_flight(&mut live) {
+                    inner.publish(&mut live, false);
+                }
+            }));
+        }
         self.host.spawner.spawn(Box::pin(async move {
             let id = inner.series.id.clone();
             let (state, seasons, fresh) = join3(
-                c.state_in_series_checked(&id),
+                state_answer,
                 async {
                     if post {
                         None
@@ -1397,16 +1486,22 @@ impl<T: HttpTransport + 'static> Inner<T> {
                         cache.write_title(ticket, &item);
                     }
                     live.fresh = Some(item.clone());
-                    live.fresh_year = item.production_year;
+                    // An answer that is silent on a fact keeps the one the page shows (stored copy of an earlier visit).
+                    let kept = live.fresh_facts.take().unwrap_or_default();
+                    live.fresh_year = item.production_year.or(live.fresh_year);
                     live.fresh_facts = Some((
-                        item.community_rating,
-                        item.official_rating.clone().filter(|r| !r.is_empty()),
-                        item.overview.clone().filter(|o| !o.is_empty()),
+                        item.community_rating.or(kept.0),
+                        item.official_rating
+                            .clone()
+                            .filter(|r| !r.is_empty())
+                            .or(kept.1),
+                        item.overview.clone().filter(|o| !o.is_empty()).or(kept.2),
                     ));
                     let data = item.user_data;
                     live.favorite = data.as_ref().and_then(|d| d.is_favorite).unwrap_or(false);
                     live.watched = data.as_ref().and_then(|d| d.played).unwrap_or(false);
                 }
+                inner.take_flight(&mut live);
                 inner.publish(&mut live, false);
                 // A failed state answer is never stored: the next visit's first frame must not be built from it.
                 if let Some((cache, _, ticket)) = &remembered
@@ -1416,8 +1511,10 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 }
                 // The plan of the state episode runs after the page is shown (`fetchPlan`); the row
                 // fades in once it answered, with or without a result.
+                // The plan request of the state answer is under way (or done): nothing to start here.
                 live.state
                     .as_ref()
+                    .filter(|s| live.flight.episode.as_deref() != Some(s.id.as_str()))
                     .map(|s| (s.id.clone(), live.options.max_bitrate))
             };
             let Some((episode, bitrate)) = wanted else {
@@ -1428,15 +1525,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
             if live.switch != switch || live.state.as_ref().map(|s| &s.id) != Some(&episode) {
                 return;
             }
-            live.plan = planned.map(Arc::new);
-            live.plan_present = true;
-            if let (Some((cache, scope)), Some(plan)) = (
-                inner.host.cache.as_ref().zip(live.scope.as_ref()),
-                live.plan.as_deref(),
-            ) {
-                let ticket = cache.ticket(scope);
-                crate::proof_mark::write(cache, &ticket, &episode, bitrate, plan, String::new());
-            }
+            inner.set_plan(&mut live, &episode, bitrate, planned.map(Arc::new));
             inner.publish(&mut live, false);
         }));
         if !post {

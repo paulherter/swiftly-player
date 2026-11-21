@@ -319,7 +319,8 @@ fn alphabet_part(index: &Strip, sorting: Sorting) -> AlphabetPart {
 #[derive(uniffi::Object)]
 pub struct LibraryVm {
     vm: swiftly_vm::LibraryVm<CoreTransport>,
-    /// The strip last handed out; `key_of` and `jump_target` read against it (the host keeps one strip too).
+    /// The strip last handed out; `key_of` and `jump_target` read against it. When none was handed out yet (or it
+    /// belongs to another order) they build it first (`LibraryVm::keep_strip`).
     strip: std::sync::Mutex<Option<Strip>>,
 }
 
@@ -390,6 +391,15 @@ impl LibraryVm {
         part
     }
 
+    /// The strip when it is known without a fetch (the whole list's or the one remembered from the last visit);
+    /// `None` while only the loaded titles could build it. Remembered for `key_of` and `jump_target`.
+    pub fn alphabet_known(&self) -> Option<AlphabetPart> {
+        let index = self.vm.alphabet_known()?;
+        let part = alphabet_part(&index, self.vm.status().sorting);
+        *self.strip() = Some(index);
+        Some(part)
+    }
+
     /// Fetches the whole list of the order on screen (once), so `alphabet` covers every title.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn load_alphabet(&self) -> Result<(), CoreError> {
@@ -400,14 +410,16 @@ impl LibraryVm {
     /// The strip key of a loaded title (the letter, year or rating the strip lights), against the strip last
     /// handed out by `alphabet`.
     pub fn key_of(&self, id: String) -> Option<String> {
-        let strip = self.strip();
+        let mut strip = self.strip();
+        self.vm.keep_strip(&mut strip);
         self.vm.key_of(&id, strip.as_ref()?)
     }
 
     /// Position in the list of the first title under `key` (the strip's own position, so it may lie past the
     /// loaded tiles: load more, ask again); a letter without titles gives the next one that has some.
     pub fn jump_target(&self, key: String) -> Option<u64> {
-        let strip = self.strip();
+        let mut strip = self.strip();
+        self.vm.keep_strip(&mut strip);
         self.vm.jump_target(&key, strip.as_ref()?).map(|i| i as u64)
     }
 

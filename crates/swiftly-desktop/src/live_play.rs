@@ -503,6 +503,8 @@ async fn prepare_plex(
         flavour: flavour(),
         hardware_av1: false,
         no_dolby_vision_decoder: false,
+        video_decoders: swiftly_playback::video_decoders::VideoDecoders::default(),
+        decoder_refused: false,
         // No pick: the plan takes the default version; the other versions are the Play button's menu.
         ask_versions: false,
         downloaded: None,
@@ -1373,6 +1375,8 @@ impl MpvFeed {
 static PROBE_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// (white share, ink share) of the last frame.
 static PROBE_LAST: Mutex<Option<(f32, f32)>> = Mutex::new(None);
+/// The bottom band of the last frame as coloured cells ([`band_cells`]): what the cue judge compares frame by frame.
+static PROBE_CELLS: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
 /// Switches the subtitle probe on or off (tests that measure a cue on the live player's frames).
 #[doc(hidden)]
@@ -1432,9 +1436,55 @@ fn ink_band_share(rgba: &[u8], w: u32, h: u32) -> f32 {
     }
 }
 
+/// The bottom 40 % of an RGBA frame as the mean colour (RGB) of every 16 x 16 px cell, row by row. A cue of any colour
+/// changes cells; the judge compares them with the same frame of the subtitle-off pass.
+#[cfg_attr(not(feature = "mpv"), allow(dead_code))]
+fn band_cells(rgba: &[u8], w: u32, h: u32) -> Vec<u8> {
+    const CELL: usize = 16;
+    let (w, h) = (w as usize, h as usize);
+    let from = h - h * 2 / 5;
+    if rgba.len() < w * h * 4 {
+        return Vec::new();
+    }
+    let (cols, rows) = (w / CELL, (h - from) / CELL);
+    let mut out = Vec::with_capacity(cols * rows * 3);
+    for r in 0..rows {
+        for c in 0..cols {
+            let mut sum = [0u32; 3];
+            for y in 0..CELL {
+                let at = ((from + r * CELL + y) * w + c * CELL) * 4;
+                for px in rgba[at..at + CELL * 4].as_chunks::<4>().0 {
+                    for (acc, v) in sum.iter_mut().zip(px) {
+                        *acc += u32::from(*v);
+                    }
+                }
+            }
+            out.extend(sum.map(|v| (v / (CELL * CELL) as u32) as u8));
+        }
+    }
+    out
+}
+
+/// Share of cells whose colour differs by at least 24 in some channel between two frames; `None` when the frames
+/// are not the same size.
+fn changed_cells(a: &[u8], b: &[u8]) -> Option<f32> {
+    if a.is_empty() || a.len() != b.len() {
+        return None;
+    }
+    let changed = a
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .zip(b.as_chunks::<3>().0)
+        .filter(|(x, y)| x.iter().zip(y.iter()).any(|(p, q)| p.abs_diff(*q) >= 24))
+        .count();
+    Some(changed as f32 / (a.len() / 3) as f32)
+}
+
 #[cfg_attr(not(feature = "mpv"), allow(dead_code))]
 fn probe(w: u32, h: u32, rgba: &[u8]) {
     if PROBE_ON.load(std::sync::atomic::Ordering::Relaxed) {
+        *PROBE_CELLS.lock().unwrap_or_else(PoisonError::into_inner) = Some(band_cells(rgba, w, h));
         *PROBE_LAST.lock().unwrap_or_else(PoisonError::into_inner) =
             Some((white_band_share(rgba, w, h), ink_band_share(rgba, w, h)));
     }
@@ -1796,15 +1846,34 @@ fn judge_cues(
     base: &[(f64, f32)],
     windows: &[(f64, f64)],
 ) -> Result<String, String> {
+    judge_by(samples, base, windows, |a, b| Some((a - b).abs()))
+}
+
+/// The same verdict from whole frames: the change of a frame is the share of cells that differ from the closest
+/// frame of the subtitle-off pass (the very same picture is among them, so only the cue is left). Any colour counts.
+fn judge_frames(
+    samples: &[(f64, Vec<u8>)],
+    base: &[(f64, Vec<u8>)],
+    windows: &[(f64, f64)],
+) -> Result<String, String> {
+    judge_by(samples, base, windows, |a, b| changed_cells(a, b))
+}
+
+fn judge_by<T>(
+    samples: &[(f64, T)],
+    base: &[(f64, T)],
+    windows: &[(f64, f64)],
+    distance: impl Fn(&T, &T) -> Option<f32>,
+) -> Result<String, String> {
     const EDGE: f64 = 0.5;
     // The position of a frame is only known to about half a second, so a frame is compared with every baseline frame
     // within that reach and gets the closest one (a frame on a bar's edge then still finds its own partner; a cue can only
     // shrink by this, never appear).
     const NEAR: f64 = 0.75;
-    let delta = |(t, w): &(f64, f32)| -> Option<f32> {
+    let delta = |(t, w): &(f64, T)| -> Option<f32> {
         base.iter()
             .filter(|b| (b.0 - t).abs() <= NEAR)
-            .map(|b| (w - b.1).abs())
+            .filter_map(|b| distance(w, &b.1))
             .min_by(f32::total_cmp)
     };
     let mut inside: Vec<f32> = samples
@@ -1850,17 +1919,19 @@ fn judge_cues(
     }
 }
 
-/// White text over saturated colour bars adds white but takes coloured pixels away, so the combined ink share can cancel
-/// out; a styled cue has no white. A cue counts when the white share OR the ink share changed against the subtitle-off pass.
+/// A cue counts when the white share of the band OR the picture itself changed against the subtitle-off pass. The
+/// white share alone misses a styled cue (yellow fill, red outline: no white pixel); a colour threshold (the earlier
+/// "ink share") misses it over saturated bars, where the cue's colours are already everywhere. The frame comparison
+/// has no assumption about the cue's colour.
 fn judge_cues_either(
     white: &[(f64, f32)],
     white_base: &[(f64, f32)],
-    ink: &[(f64, f32)],
-    ink_base: &[(f64, f32)],
+    frames: &[(f64, Vec<u8>)],
+    frames_base: &[(f64, Vec<u8>)],
     windows: &[(f64, f64)],
 ) -> Result<String, String> {
     judge_cues(white, white_base, windows).or_else(|w| {
-        judge_cues(ink, ink_base, windows).map_err(|i| format!("{w}\n(ink share: {i})"))
+        judge_frames(frames, frames_base, windows).map_err(|f| format!("{w}\n(frames: {f})"))
     })
 }
 
@@ -2169,7 +2240,7 @@ pub fn smoke_play_on(
     PROBE_ON.store(!cues.is_empty(), std::sync::atomic::Ordering::Relaxed);
     let first_id = screen.vm().spec().item_id.clone();
     let mut samples: Vec<(f64, f32)> = Vec::new();
-    let mut ink_samples: Vec<(f64, f32)> = Vec::new();
+    let mut frame_samples: Vec<(f64, Vec<u8>)> = Vec::new();
     let mut chosen = want_subtitle.is_none();
     // `SWIFTLY_SMOKE_EXPECT_START=<text|off>`: what the start rule must have selected before any hand pick (a forced track,
     // a remembered one); `SWIFTLY_SMOKE_REOPEN=1`: after the run the title is opened again through the planner path and
@@ -2196,7 +2267,7 @@ pub fn smoke_play_on(
             (cues, want_subtitle) = (second_cues.clone(), second_subtitle.clone());
             chosen = want_subtitle.is_none();
             samples.clear();
-            ink_samples.clear();
+            frame_samples.clear();
             PROBE_ON.store(!cues.is_empty(), std::sync::atomic::Ordering::Relaxed);
             first_frames = screen.video_frames();
         }
@@ -2275,13 +2346,19 @@ pub fn smoke_play_on(
             .take()
         {
             samples.push((screen.vm().transport().position, w.0));
-            ink_samples.push((screen.vm().transport().position, w.1));
+            if let Some(cells) = PROBE_CELLS
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take()
+            {
+                frame_samples.push((screen.vm().transport().position, cells));
+            }
         }
         std::thread::sleep(Duration::from_millis(16));
     }
     // The baseline: the same positions with the subtitle off, so a bitmap burned into the picture cancels out.
     let mut base: Vec<(f64, f32)> = Vec::new();
-    let mut ink_base: Vec<(f64, f32)> = Vec::new();
+    let mut frame_base: Vec<(f64, Vec<u8>)> = Vec::new();
     if !cues.is_empty() && !native_video {
         let from = (cues.iter().map(|w| w.0).fold(f64::MAX, f64::min) - 1.0).max(0.0);
         let to = cues.iter().map(|w| w.1).fold(0.0, f64::max) + 1.0;
@@ -2303,7 +2380,13 @@ pub fn smoke_play_on(
                 && landed
             {
                 base.push((pos, w.0));
-                ink_base.push((pos, w.1));
+                if let Some(cells) = PROBE_CELLS
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .take()
+                {
+                    frame_base.push((pos, cells));
+                }
             }
             if landed && pos > to {
                 break;
@@ -2364,7 +2447,7 @@ pub fn smoke_play_on(
         ));
     }
     let cue_verdict = (!cues.is_empty() && !native_video).then(|| {
-        match judge_cues_either(&samples, &base, &ink_samples, &ink_base, &cues) {
+        match judge_cues_either(&samples, &base, &frame_samples, &frame_base, &cues) {
             // No usable baseline (the position did not advance after the seek back): the plain judge, which a burned-in bitmap can fool.
             Err(e) if e.starts_with("too few") => {
                 out.push(format!("{e}; falling back to the judge without a baseline"));
@@ -2622,8 +2705,8 @@ mod next_episode_id_tests {
 #[cfg(test)]
 mod cue_tests {
     use super::{
-        ink_band_share, judge_cues, judge_cues_either, judge_cues_plain, parse_cues,
-        white_band_share,
+        band_cells, ink_band_share, judge_cues, judge_cues_either, judge_cues_plain, judge_frames,
+        parse_cues, white_band_share,
     };
 
     #[test]
@@ -2798,8 +2881,64 @@ mod cue_tests {
             judge_cues(&flat, &flat, &windows).is_err(),
             "ink alone sees nothing"
         );
-        assert!(judge_cues_either(&white_on, &flat, &flat, &flat, &windows).is_ok());
-        assert!(judge_cues_either(&flat, &flat, &flat, &flat, &windows).is_err());
+        assert!(judge_cues_either(&white_on, &flat, &[], &[], &windows).is_ok());
+        assert!(judge_cues_either(&flat, &flat, &[], &[], &windows).is_err());
+    }
+
+    /// A styled cue over colour bars that already hold yellow and red: no colour threshold can see it, the same frame
+    /// without the subtitle shows it. A run without any subtitle (identical frames) must still fail.
+    #[test]
+    fn a_styled_cue_over_colour_bars_is_found_against_the_frame_without_it() {
+        let (w, h) = (128u32, 128u32);
+        let mut bars = vec![0u8; (w * h * 4) as usize];
+        for (i, p) in bars.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let column = (i % w as usize) / 32;
+            p.copy_from_slice(
+                &[
+                    [255, 220, 20, 255],
+                    [200, 20, 20, 255],
+                    [20, 20, 200, 255],
+                    [20, 200, 20, 255],
+                ][column],
+            );
+        }
+        let mut cue = bars.clone();
+        // The cue: a block of the picture's own yellow and red, in the band, over the blue bar.
+        for y in 100..116usize {
+            for x in 64..96usize {
+                let at = (y * w as usize + x) * 4;
+                cue[at..at + 4].copy_from_slice(if x % 2 == 0 {
+                    &[255, 220, 20, 255]
+                } else {
+                    &[200, 20, 20, 255]
+                });
+            }
+        }
+        let (plain, styled) = (band_cells(&bars, w, h), band_cells(&cue, w, h));
+        let windows = [(1.0, 5.0)];
+        let at = |i: i32| f64::from(i) / 12.0;
+        let on: Vec<(f64, Vec<u8>)> = (0..60)
+            .map(|i| {
+                (
+                    at(i),
+                    if (1.0..=5.0).contains(&at(i)) {
+                        styled.clone()
+                    } else {
+                        plain.clone()
+                    },
+                )
+            })
+            .collect();
+        let off: Vec<(f64, Vec<u8>)> = (0..60).map(|i| (at(i), plain.clone())).collect();
+        assert!(
+            judge_frames(&on, &off, &windows).is_ok(),
+            "the cue must be found"
+        );
+        assert!(
+            judge_frames(&off, &off, &windows).is_err(),
+            "no subtitle: no cue"
+        );
+        assert!(judge_cues_either(&[], &[], &on, &off, &windows).is_ok());
     }
 
     #[test]

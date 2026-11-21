@@ -20,20 +20,11 @@ import SwiftUI
 
 /// **The heart in the header.** White like the bookmark next to it: it is a
 /// destination, not a state, and the accent belongs to state.
-private struct HeartSlot: ViewModifier {
-    let compact: Bool
-    func body(content: Content) -> some View {
-        if compact { content.headerSlot(width: 22) }
-        else { content.frame(width: 44, height: 44).contentShape(Rectangle()) }
-    }
-}
-
 struct SupportHeart: View {
     /// Counts the heartbeats; each change plays two beats.
     @State private var beats = 0
     /// The heart beats once per launch, a second after the home page first appears.
     @MainActor private static var hasBeaten = false
-    @Environment(\.compactHeaderRow) private var compact
 
     var body: some View {
         // Supporters have said thank you already; the heart goes away for them.
@@ -47,7 +38,7 @@ struct SupportHeart: View {
             symbol
                 .font(.app(size: Theme.actionSymbol))
                 .foregroundStyle(Theme.font)
-                .modifier(HeartSlot(compact: compact))
+                .headerSlot(width: 22)
         }
         .buttonStyle(Theme.PressButton())
         .accessibilityLabel(Text(SupportCopy.supportSwiftly.localized))
@@ -232,6 +223,10 @@ private struct SupportPresentation: ViewModifier {
             .onChange(of: phase) { _, new in
                 if new == .active { ask(sheet: true) }
             }
+            // A page lies over Start: the sheet waits (`GiftFlow.pagesAboveStart`) and asks again when Start is bare.
+            .onChange(of: GiftFlow.shared.pagesAboveStart) { _, depth in
+                if depth == 0 { ask(sheet: true) }
+            }
     }
 
     /// The support sheet from the root: over the page, and over the looks panel when a
@@ -248,7 +243,8 @@ private struct SupportPresentation: ViewModifier {
         SupportModel.shared.evaluate(
             isPlaying: model.playerOpen,
             sheetAllowed: sheet && !model.ratingDue && !model.discordHintDue && !gift.bigAskShown
-                && gift.stage == nil && Date.now.timeIntervalSince(playerClosedAt) > 10)
+                && gift.stage == nil && gift.pagesAboveStart == 0
+                && Date.now.timeIntervalSince(playerClosedAt) > 10)
         if SupportModel.shared.presented { gift.noteBigAsk() }
     }
 }
@@ -284,10 +280,10 @@ struct SupportDebugRows: View {
                      }
                  })
         ValueRow(symbol: "gift", title: Text(verbatim: "Show the gift pop-up now"),
-                 action: { GiftFlow.shared.stage = .offer(.halloween) })
+                 action: { GiftFlow.shared.show(.offer(.halloween)) })
         ValueRow(symbol: "sparkles", title: Text(verbatim: "Show What's New now"),
                  action: {
-                     if let entry = WhatsNewPage.bundled(for: "1.0.8") { GiftFlow.shared.stage = .whatsNew(entry) }
+                     if let entry = WhatsNewPage.bundled(for: "1.0.8") { GiftFlow.shared.show(.whatsNew(entry)) }
                  })
         ValueRow(symbol: "arrow.counterclockwise", title: Text(verbatim: "Reset support state"),
                  action: {

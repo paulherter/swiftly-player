@@ -135,7 +135,16 @@ final class RustShelf {
 
     /// The letter strip of the list on screen, over the whole list (fetched once by the core).
     func alphabet() async -> AlphabetIndex {
-        let part = await core.alphabetSettled()
+        index(of: await core.alphabetSettled())
+    }
+
+    /// The strip without a fetch: the whole list's or the one stored with the cached first page; `nil` when the
+    /// core has neither yet. Put up together with the first tiles; `alphabet()` then replaces it.
+    func alphabetNow() -> AlphabetIndex? {
+        core.alphabetKnown().map(index(of:))
+    }
+
+    private func index(of part: SwiftlyCore.AlphabetPart) -> AlphabetIndex {
         let sorting: JellyfinKit.Sorting =
             switch part.sorting {
             case .name: .name
@@ -158,6 +167,10 @@ final class RustShelf {
     func openSheet() { core.loadFilterOptions() }
     var version: UInt64 { core.version }
     func changed(after seen: UInt64) async { await core.waitForChange(after: seen) }
+    /// Every settled load of the grid as a page, also the ones the core starts by itself; returns when cancelled.
+    func follow(_ changed: @MainActor (Page) -> Void) async {
+        await core.followSettledChanges { changed(page()) }
+    }
     /// A row of the sheet (status, years or language): the core maps it to its intent, narrows and reloads itself.
     func pick(_ pick: SwiftlyCore.FilterPick) { core.pick(pick) }
     /// What the filter pill shows, as the core words it ("Ungesehen · 2010–2019 · Deutsch").
@@ -329,6 +342,12 @@ extension RustTileLook {
 func coreDefaultPageSorting() -> JellyfinKit.Sorting {
     JellyfinKit.Sorting(rawValue: legacyDefaultPageSorting()) ?? .latest
 }
+
+/// The core's start order of a collection page (`legacy_collection_page_sorting`, premiere year).
+func coreCollectionPageSorting() -> JellyfinKit.Sorting {
+    JellyfinKit.Sorting(rawValue: legacyCollectionPageSorting()) ?? .erscheinung
+}
 #else
 func coreDefaultPageSorting() -> JellyfinKit.Sorting { .latest }
+func coreCollectionPageSorting() -> JellyfinKit.Sorting { .erscheinung }
 #endif

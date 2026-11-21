@@ -12,7 +12,7 @@ use crate::home_data::Scenario;
 use std::rc::Rc;
 
 pub(crate) mod seerr_views;
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::color;
 use swiftly_l10n::Locale;
 use swiftly_layout::{Align, Alignment, Axis, Point, Rect};
 use swiftly_library::library_filter::Sorting;
@@ -162,7 +162,11 @@ enum Body {
     /// The Seerr title page, and the season chip picked for its episode list.
     Title(Box<swiftly_vm::SeerrTitleInfo>, Option<i64>),
     /// "Meine Anfragen" and the management page's tab row over it (empty for a single section).
-    Requests(Box<swiftly_vm::SeerrRequestsInfo>, Vec<seerr_views::HubTab>),
+    Requests(
+        Box<swiftly_vm::SeerrRequestsInfo>,
+        Vec<seerr_views::HubTab>,
+        Box<(seerr_views::AdminPane, seerr_views::CardState)>,
+    ),
     Admin(Box<seerr_views::AdminBody>),
 }
 
@@ -197,7 +201,7 @@ fn header(k: &Kit, title: &str, right: Option<Node>) -> Node {
         k.cx,
         title,
         weight(k.lk.rail, 30.0, 700),
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(1),
     );
     let mut row = vec![t];
@@ -244,7 +248,7 @@ fn placeholders(k: &Kit) -> Node {
             Some(16.0),
             (0..6)
                 .map(|_| {
-                    Node::rect(color(colour::AREA), 10.0).frame(
+                    Node::rect(color(color::SURFACE_CONTROL), 10.0).frame(
                         Some(k.lk.poster.w),
                         Some(k.lk.poster.h),
                         Alignment::CENTER,
@@ -267,17 +271,26 @@ pub(crate) fn empty_state(
 ) -> Node {
     let disc = k
         .icons
-        .node(icon, 44.0, true, color(colour::FONT_QUIET))
+        .node(icon, 44.0, true, color(color::TEXT_SECONDARY))
         .frame(Some(78.0), Some(78.0), Alignment::CENTER)
-        .background(Node::rect(color(colour::AREA), 39.0), Alignment::CENTER);
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 39.0),
+            Alignment::CENTER,
+        );
     let mut kids = vec![
         disc,
-        txt_center(k.cx, title, weight(k.lk.rail, 17.0, 600), colour::FONT, 2),
+        txt_center(
+            k.cx,
+            title,
+            weight(k.lk.rail, 17.0, 600),
+            color::TEXT_PRIMARY,
+            2,
+        ),
         txt_center(
             k.cx,
             text,
             weight(k.lk.body, 15.0, 400),
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             3,
         )
         .frame(Some(262.0), None, Alignment::CENTER),
@@ -288,7 +301,7 @@ pub(crate) fn empty_state(
                 k.cx,
                 label,
                 weight(k.lk.body, 15.0, 500),
-                colour::MARK_ACCENT,
+                crate::look_glow::accent(),
                 1,
             )
             .frame(None, Some(44.0), Alignment::CENTER)
@@ -305,9 +318,9 @@ pub(crate) fn empty_state(
 
 fn primary(k: &Kit, label: &str, icon: Option<&str>, w: f32, key: &str, on: bool) -> Node {
     let (fg, bg) = if on {
-        (colour::REASON, colour::FONT)
+        (color::SURFACE_BASE, color::TEXT_PRIMARY)
     } else {
-        (colour::FONT_VERY_QUIET, colour::AREA)
+        (color::TEXT_TERTIARY, color::SURFACE_CONTROL)
     };
     let mut kids = Vec::new();
     if let Some(i) = icon {
@@ -320,7 +333,7 @@ fn primary(k: &Kit, label: &str, icon: Option<&str>, w: f32, key: &str, on: bool
         .key(key);
     if on {
         n.on_tap(Action::from(key))
-            .hover_surface(rgba(colour::REASON, 0.12), 10.0)
+            .hover_surface(rgba(color::SURFACE_BASE, 0.12), 10.0)
             .press_style(PressStyle::Button)
     } else {
         n
@@ -344,7 +357,7 @@ fn backdrop(
             let v = crate::detail_screen::curve_at(&crate::detail_screen::BACKDROP_V, ym / h);
             let stops = crate::detail_screen::BACKDROP_H
                 .iter()
-                .map(|&(x, a)| (x, rgba(colour::REASON, 1.0 - a * v)))
+                .map(|&(x, a)| (x, rgba(color::SURFACE_BASE, 1.0 - a * v)))
                 .collect();
             Node::rect(Color::CLEAR, 0.0)
                 .paint(Paint::Stops {
@@ -387,7 +400,7 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
                 tracking: -0.5, // `Theme.lockTitle` on the Mac
                 ..swiftly_text::TextStyle::from(weight(k.lk.rail, 30.0, 700))
             },
-            color(colour::FONT),
+            color(color::TEXT_PRIMARY),
             Some(1),
             swiftly_text::Align::Start,
         )
@@ -402,7 +415,7 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
                     k.cx,
                     l,
                     weight(k.lk.small, 12.0, 400),
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(1),
                 ),
                 None => Node::fixed(0.0, 0.0),
@@ -422,7 +435,7 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
     // fades into is the page's own ground, the banner's tone running into the plain ground (see the page background below).
     let tones = k.art.tones_for(art.banner.as_ref(), first);
     let top = crate::detail_screen::mood_sampler(&tones, 260.0)(0.5, 0.0);
-    let ground = color(colour::REASON);
+    let ground = color(color::SURFACE_BASE);
     let sample = move |_x: f32, y: f32| {
         let t = (y / PERSON_TONE_HEIGHT).clamp(0.0, 1.0);
         let mix = |a: f32, b: f32| a + (b - a) * t;
@@ -465,7 +478,7 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
             k.cx,
             r,
             weight(k.lk.body, 13.0, 500),
-            colour::MARK_ACCENT,
+            crate::look_glow::accent(),
             Some(1),
         ));
     }
@@ -491,7 +504,7 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
             k.cx,
             bio,
             &bio_style,
-            color(colour::FONT_QUIET),
+            color(color::TEXT_SECONDARY),
             lines,
             swiftly_text::Align::Start,
         )
@@ -512,7 +525,7 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
             k.cx,
             toggle,
             weight(k.lk.body, 15.0, 500),
-            colour::MARK_ACCENT,
+            crate::look_glow::accent(),
             Some(1),
         )
         .key("bio-toggle")
@@ -574,7 +587,7 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
                 k.cx,
                 e,
                 weight(k.lk.body, 15.0, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(2),
             )
             .padding(ins(0.0, edge, 0.0, edge)),
@@ -607,7 +620,7 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
             [0.5, 0.0],
             [0.5, 1.0],
             top,
-            color(colour::REASON),
+            color(color::SURFACE_BASE),
             w,
             PERSON_TONE_HEIGHT,
         )
@@ -622,7 +635,7 @@ fn playlist_page(k: &Kit, p: &PlaylistPart) -> Node {
             k.cx,
             &n.to_string(),
             weight(k.lk.small, 13.0, 500),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(1),
         )
         .a11y_label(swiftly_ui::a11y::Role::Text, format!("{n} Titel"))
@@ -686,23 +699,26 @@ fn grid_page(
         let pill = |label: &str, key: &str, icon: Option<&str>| {
             let mut row = Vec::new();
             if let Some(icon) = icon {
-                row.push(k.icons.node(icon, 14.0, true, color(colour::FONT_QUIET)));
+                row.push(k.icons.node(icon, 14.0, true, color(color::TEXT_SECONDARY)));
             }
             row.extend(vec![
                 txt(
                     k.cx,
                     label,
                     weight(k.lk.body, 14.0, 500),
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(1),
                 ),
                 k.icons
-                    .node("caret-down", 11.0, true, color(colour::FONT_QUIET)),
+                    .node("caret-down", 11.0, true, color(color::TEXT_SECONDARY)),
             ]);
             Node::hstack(Align::Center, Some(6.0), row)
                 .padding(ins(0.0, 14.0, 0.0, 12.0))
                 .frame(None, Some(34.0), Alignment::CENTER)
-                .background(Node::rect(color(colour::AREA), 10.0), Alignment::CENTER)
+                .background(
+                    Node::rect(color(color::SURFACE_CONTROL), 10.0),
+                    Alignment::CENTER,
+                )
                 .key(key)
                 .on_tap(Action::from(key))
         };
@@ -797,10 +813,10 @@ pub(crate) fn seerr_grid(k: &Kit, tiles: &[SeerrTile], per: usize, prefix: &str)
 
 fn state_colour(s: SeerrState) -> swiftly_design::Colour {
     match s {
-        SeerrState::WaitsSharing => colour::ORIGINAL_WARNING,
-        SeerrState::Loads | SeerrState::PartWayPresent => colour::MARK_ACCENT,
-        SeerrState::Present => colour::FONT,
-        _ => colour::FONT_QUIET,
+        SeerrState::WaitsSharing => color::STATE_WARNING,
+        SeerrState::Loads | SeerrState::PartWayPresent => crate::look_glow::accent(),
+        SeerrState::Present => color::TEXT_PRIMARY,
+        _ => color::TEXT_SECONDARY,
     }
 }
 
@@ -829,7 +845,7 @@ pub(crate) fn seerr_tile(k: &Kit, t: &SeerrTile, key: &str) -> Node {
             Align::Center,
             Some(4.0),
             vec![
-                k.icons.node(icon, 10.0, false, color(colour::REASON)),
+                k.icons.node(icon, 10.0, false, color(color::SURFACE_BASE)),
                 txt(
                     k.cx,
                     &word.to_uppercase(),
@@ -839,7 +855,7 @@ pub(crate) fn seerr_tile(k: &Kit, t: &SeerrTile, key: &str) -> Node {
                         tracking: 1.0,
                         ..k.lk.small
                     },
-                    colour::REASON,
+                    color::SURFACE_BASE,
                     Some(1),
                 ),
             ],
@@ -867,7 +883,7 @@ pub(crate) fn seerr_tile(k: &Kit, t: &SeerrTile, key: &str) -> Node {
                         k.cx,
                         &t.hit.title,
                         weight(k.lk.tile, 13.0, 500),
-                        colour::FONT_QUIET,
+                        color::TEXT_SECONDARY,
                         Some(1),
                     )
                     .frame(Some(w), None, Alignment::LEADING),
@@ -875,7 +891,7 @@ pub(crate) fn seerr_tile(k: &Kit, t: &SeerrTile, key: &str) -> Node {
                         k.cx,
                         &sub,
                         weight(k.lk.small, 12.0, 400),
-                        colour::FONT_VERY_QUIET,
+                        color::TEXT_TERTIARY,
                         Some(1),
                     )
                     .frame(Some(w), None, Alignment::LEADING),
@@ -898,7 +914,7 @@ fn discover_page(k: &Kit, d: &DiscoverPart) -> Node {
         k.cx,
         &d.tiles.len().to_string(),
         weight(k.lk.small, 13.0, 500),
-        colour::FONT_VERY_QUIET,
+        color::TEXT_TERTIARY,
         Some(1),
     );
     let per = (((k.env.size.w - 2.0 * k.lk.edge + 16.0) / 166.0).floor() as usize).max(1);
@@ -924,16 +940,16 @@ fn season_panel(k: &Kit, p: &SeerrPart) -> Node {
             let key = format!("season:{}", r.number);
             let on = r.selected;
             let fg = if r.requestable {
-                colour::FONT
+                color::TEXT_PRIMARY
             } else {
-                colour::FONT_VERY_QUIET
+                color::TEXT_TERTIARY
             };
             let (glyph, tint) = if !r.requestable {
-                ("check-circle", colour::FONT_VERY_QUIET)
+                ("check-circle", color::TEXT_TERTIARY)
             } else if on {
-                ("check-square.fill", colour::MARK_ACCENT)
+                ("check-square.fill", crate::look_glow::accent())
             } else {
-                ("square", colour::FONT_VERY_QUIET)
+                ("square", color::TEXT_TERTIARY)
             };
             let mut kids = vec![
                 k.icons
@@ -946,7 +962,7 @@ fn season_panel(k: &Kit, p: &SeerrPart) -> Node {
                     k.cx,
                     &format!("\u{b7} {e}"),
                     weight(k.lk.small, 12.0, 400),
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     Some(1),
                 ));
             }
@@ -956,7 +972,7 @@ fn season_panel(k: &Kit, p: &SeerrPart) -> Node {
                 .key(key.as_str());
             if r.requestable {
                 n.on_tap(Action::from(key.as_str()))
-                    .hover_surface(rgba(colour::FONT, 0.08), 8.0)
+                    .hover_surface(rgba(color::TEXT_PRIMARY, 0.08), 8.0)
             } else {
                 n
             }
@@ -969,11 +985,11 @@ fn season_panel(k: &Kit, p: &SeerrPart) -> Node {
         .background(
             Node::flexible()
                 .paint(Paint::Fill {
-                    color: color(colour::RAISED),
+                    color: color(color::SURFACE_RAISED),
                     radius: 12.0,
                 })
                 .paint(Paint::Stroke {
-                    color: color(colour::MARGIN),
+                    color: color(color::SURFACE_FOCUS),
                     width: 1.0,
                     radius: 12.0,
                 }),
@@ -1027,7 +1043,7 @@ fn seerr_page(k: &Kit, p: &SeerrPart, address: &str) -> Node {
         k.cx,
         &p.secondary_line,
         weight(k.lk.small, 12.0, 400),
-        colour::FONT_QUIET,
+        color::TEXT_SECONDARY,
         Some(1),
     )];
     if let Some(r) = p.rating {
@@ -1035,12 +1051,13 @@ fn seerr_page(k: &Kit, p: &SeerrPart, address: &str) -> Node {
             Align::Center,
             Some(4.0),
             vec![
-                k.icons.node("star.fill", 11.0, false, color(colour::FONT)),
+                k.icons
+                    .node("star.fill", 11.0, false, color(color::TEXT_PRIMARY)),
                 txt(
                     k.cx,
                     &format!("{r:.1}"),
                     weight(k.lk.small, 13.0, 500),
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(1),
                 ),
             ],
@@ -1071,7 +1088,7 @@ fn seerr_page(k: &Kit, p: &SeerrPart, address: &str) -> Node {
                 k.cx,
                 e,
                 weight(k.lk.small, 12.0, 400),
-                colour::ORIGINAL_WARNING,
+                color::STATE_WARNING,
                 Some(2),
             )
             .frame(Some(240.0), None, Alignment::LEADING),
@@ -1085,7 +1102,7 @@ fn seerr_page(k: &Kit, p: &SeerrPart, address: &str) -> Node {
                 k.cx,
                 &p.hit.title,
                 weight(k.lk.rail, 30.0, 700),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
             )
             .frame(Some(640.0), Some(42.0), Alignment::LEADING),
@@ -1096,7 +1113,7 @@ fn seerr_page(k: &Kit, p: &SeerrPart, address: &str) -> Node {
                 k.cx,
                 &desc,
                 weight(k.lk.body, 15.0, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(3),
             )
             .frame(Some(640.0), Some(66.0), Alignment::TOP_LEADING)
@@ -1133,12 +1150,15 @@ fn seerr_page(k: &Kit, p: &SeerrPart, address: &str) -> Node {
                 k.cx,
                 n,
                 weight(k.lk.body, 15.0, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(3),
             )
             .padding(ins(13.0, 14.0, 13.0, 14.0))
             .frame(Some(420.0), None, Alignment::LEADING)
-            .background(Node::rect(color(colour::AREA), 16.0), Alignment::CENTER)
+            .background(
+                Node::rect(color(color::SURFACE_CONTROL), 16.0),
+                Alignment::CENTER,
+            )
             .padding(ins(16.0, edge, 0.0, 0.0)),
         );
     }
@@ -1231,10 +1251,11 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
             sheet = sheet_node;
             (n, i.title.clone())
         }
-        Body::Requests(i, tabs) => (
-            seerr_views::requests_page(&k, i, tabs),
-            "Meine Anfragen".to_owned(),
-        ),
+        Body::Requests(i, tabs, over) => {
+            let (n, sheet_node) = seerr_views::requests_page(&k, i, tabs, over);
+            sheet = sheet_node;
+            (n, "Meine Anfragen".to_owned())
+        }
         Body::Admin(b) => {
             let (n, sheet_node) = seerr_views::admin_page(&k, b);
             sheet = sheet_node;
@@ -1645,7 +1666,7 @@ impl PageScreen {
         ) {
             Ok(vm) => {
                 vm.send(LibraryIntent::SetSorting {
-                    sorting: Sorting::Erscheinung,
+                    sorting: swiftly_library::LibraryState::COLLECTION_PAGE_SORTING,
                 });
                 s.shelf = Some(Shelf {
                     vm,
@@ -2024,14 +2045,16 @@ impl PageScreen {
         self.poll_flow();
         self.poll_grid();
         self.poll_shelf();
-        // `InTravel` (the library page's hold, `detail_screen.rs`): a Seerr title's answer lands only when the push has
+        // `InTravel` (the library page's hold, `detail_screen.rs`): a Seerr title's or a collection's answer lands only when the push has
         // settled, so the page is not rebuilt in the middle of the slide. `seen` stays behind, which keeps the page busy
         // until the answer is drawn.
         if self.host.depth() > 1 && self.host.covers() {
             self.settled_once = true;
         }
-        let in_travel = matches!(self.kind, Kind::SeerrTitle | Kind::SeerrDetail)
-            && self.host.depth() > 1
+        let in_travel = matches!(
+            self.kind,
+            Kind::SeerrTitle | Kind::SeerrDetail | Kind::Collection
+        ) && self.host.depth() > 1
             && !self.host.covers()
             && !self.settled_once;
         if in_travel {
@@ -2134,6 +2157,13 @@ impl PageScreen {
             && t.info().sheet.phase != swiftly_vm::SheetPhase::Closed
         {
             let _ = t.close_sheet();
+            return true;
+        }
+        if self.wants_text() {
+            // Esc first takes the keyboard from the reply field.
+            if let Some(side) = self.side.as_ref() {
+                side.admin.blur();
+            }
             return true;
         }
         if self.host.sx.menu.is_open() || sheet {
@@ -2466,12 +2496,16 @@ impl PageScreen {
 
     /// One frame at `now` ms.
     pub fn frame(&mut self, now: f64) -> (DrawList, bool) {
+        if let Some(side) = self.side.as_ref() {
+            side.admin.set_now(now);
+        }
         self.refresh();
         let r = self.host.frame_list(now);
         self.drain(now);
         (
             r.0,
             r.1 || self.loading()
+                || self.wants_text()
                 || self.flow.as_ref().is_some_and(|f| f.busy())
                 || self.side_busy(),
         )
@@ -2479,7 +2513,45 @@ impl PageScreen {
 
     /// An animation needs another frame.
     pub fn wants_frame(&self) -> bool {
-        self.host.wants_frame() || self.flow.as_ref().is_some_and(|f| f.busy()) || self.side_busy()
+        self.host.wants_frame()
+            || self.wants_text()
+            || self.flow.as_ref().is_some_and(|f| f.busy())
+            || self.side_busy()
+    }
+
+    /// Whether typed text goes into a field of this page (the reply under an open problem).
+    pub fn wants_text(&self) -> bool {
+        self.kind == Kind::SeerrAdmin && self.side.as_ref().is_some_and(|s| s.admin.wants_text())
+    }
+
+    /// One text-input event for the page's field (typing, caret keys, clipboard, undo, composition; Return sends).
+    pub fn text_event(&mut self, ev: &swiftly_text::TextInputEvent) -> bool {
+        let Some(side) = self.side.as_ref() else {
+            return false;
+        };
+        let took = side.admin.edit(&side.desk, ev);
+        if took {
+            self.refresh();
+        }
+        took
+    }
+
+    /// What the input method needs over the page's field: open while it has the keyboard (no caret rectangle yet, the
+    /// candidate window sits at the window's default place).
+    pub fn ime_state(&self) -> crate::ime::ImeState {
+        crate::ime::ImeState {
+            allowed: self.wants_text(),
+            password: false,
+            area: None,
+        }
+    }
+
+    /// The text written in the page's field (tests).
+    pub fn field_text(&self) -> String {
+        self.side
+            .as_ref()
+            .map(|s| s.admin.reply_text())
+            .unwrap_or_default()
     }
 
     /// A new window size or scale.

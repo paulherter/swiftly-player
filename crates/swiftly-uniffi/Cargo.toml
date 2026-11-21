@@ -11,8 +11,9 @@ publish.workspace = true
 crate-type = ["staticlib", "lib"]
 
 [features]
-# Direct builds only: the offline supporter-key check. The Play build leaves it off.
-supporter-key = ["swiftly-support/supporter-key"]
+# Direct builds only: the offline supporter-key check and the texts around it (`swiftly-l10n/direct-only.txt`). The Play
+# build leaves it off and carries neither.
+supporter-key = ["swiftly-support/supporter-key", "swiftly-l10n/supporter-key"]
 
 [dependencies]
 # `tokio` makes UniFFI run exported async fns through `async-compat` (see RUNTIME in README.md).

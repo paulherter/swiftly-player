@@ -23,7 +23,21 @@ public extension URLSession {
     /// `timeoutIntervalForResource` limits the whole operation to 20 seconds. Checking a
     /// typed address does not use this session but ``Adresspruefung`` with a shorter
     /// timeout, so a typo does not take this long to fail.
+    ///
+    /// **The wait ends after ``waitGrace``.** The system's "waiting for connection" state also holds a refused
+    /// connection (server down) and an unknown host until the resource timeout: measured on a Mac with this
+    /// configuration, 20.9 s for a closed port against 0.0 s without `waitsForConnectivity`. The Start page
+    /// waited for the old views request that long, once more for every retry. The prompt needs seconds, not
+    /// twenty; a call still waiting after the grace is cancelled.
+    #if canImport(Darwin)
+    static let localNetworkCapable: URLSession = URLSession(
+        configuration: localNetworkConfiguration(), delegate: WaitGrace(), delegateQueue: nil)
+    #else
     static let localNetworkCapable: URLSession = URLSession(configuration: localNetworkConfiguration())
+    #endif
+
+    /// How long a call may wait for a connection before it is cancelled.
+    static let waitGrace: Duration = .milliseconds(1500)
 
     /// The configuration behind ``localNetworkCapable``, for sessions that need a delegate
     /// on top of the same behavior.
@@ -44,3 +58,16 @@ public extension URLSession {
         return k
     }
 }
+
+#if canImport(Darwin)
+/// Session delegate that cancels a call still "waiting for connectivity" after ``URLSession/waitGrace``.
+final class WaitGrace: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, taskIsWaitingForConnectivity task: URLSessionTask) {
+        Task {
+            try? await Task.sleep(for: URLSession.waitGrace)
+            guard task.state == .running, task.response == nil else { return }
+            task.cancel()
+        }
+    }
+}
+#endif

@@ -60,6 +60,10 @@ pub fn generate(p: &Parsed) -> String {
     );
     out.push_str("static ENTRIES: &[Entry] = &[\n");
     for (key, e) in &p.merged {
+        // The direct distribution's texts (`direct-only.txt`) exist only in a build with the feature.
+        if p.direct_only.contains(key) {
+            out.push_str("    #[cfg(feature = \"supporter-key\")]\n");
+        }
         entry(&mut out, key, e.origin, &e.langs);
     }
     out.push_str("];\n\nstatic INFO_PLIST: &[Entry] = &[\n");

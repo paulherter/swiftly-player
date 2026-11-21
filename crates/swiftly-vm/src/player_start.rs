@@ -99,6 +99,11 @@ pub struct StartRequest {
     pub hardware_av1: bool,
     /// The device has no Dolby Vision decoder: profile 5 (no HDR10 base layer) is then transcoded by the server.
     pub no_dolby_vision_decoder: bool,
+    /// The video decoders of the device (Android: `MediaCodecList`): a title none of them decodes is transcoded by the
+    /// server instead of delivered untouched. Default: the host does not know, nothing is restricted.
+    pub video_decoders: swiftly_playback::video_decoders::VideoDecoders,
+    /// The device's decoder refused this very title at the start: the server transcodes it whatever the source says.
+    pub decoder_refused: bool,
     /// The caller can ask for a version: several versions end in [`StartAnswer::Choose`].
     pub ask_versions: bool,
     /// A copy on the device wins over the server.
@@ -111,6 +116,18 @@ pub struct StartRequest {
     pub settings: StartSettings,
     /// Where the next episode comes from.
     pub next: NextSource,
+}
+
+impl StartRequest {
+    /// What the host reports about its decoders, as the plan reads it.
+    fn host_decoders(&self) -> HostDecoders {
+        HostDecoders {
+            hardware_av1: self.hardware_av1,
+            no_dolby_vision: self.no_dolby_vision_decoder,
+            video: self.video_decoders,
+            decoder_refused: self.decoder_refused,
+        }
+    }
 }
 
 /// Everything a screen needs to open a title.
@@ -438,10 +455,7 @@ impl<T: HttpTransport + 'static> Server<T> {
             request.source_id.as_deref(),
             now,
         )?;
-        let host = HostDecoders {
-            hardware_av1: request.hardware_av1,
-            no_dolby_vision: request.no_dolby_vision_decoder,
-        };
+        let host = request.host_decoders();
         let needs_transcode = plan.method != DeliveryMethod::Transcode
             && plan.source.as_ref().is_some_and(|s| {
                 swiftly_playback::dolby_vision::needs_server_transcode(s, request.flavour, host)
@@ -616,10 +630,7 @@ impl<T: HttpTransport + 'static> Server<T> {
                 .plan_with(
                     &request.item_id,
                     request.flavour,
-                    HostDecoders {
-                        hardware_av1: request.hardware_av1,
-                        no_dolby_vision: request.no_dolby_vision_decoder,
-                    },
+                    request.host_decoders(),
                     request.settings.max_bitrate,
                     request.source_id.as_deref(),
                 )
@@ -666,10 +677,7 @@ impl<T: HttpTransport + 'static> Server<T> {
         // carries no bitmap subtitle unless the request names it, so it is asked again with the chosen track (burned in
         // by the server; direct play and text tracks keep the first plan); the episode after this one; the skip
         // sections, preview sheets and chapters (a copy on the device brings its stored sections and has no others).
-        let host_decoders = HostDecoders {
-            hardware_av1: request.hardware_av1,
-            no_dolby_vision: request.no_dolby_vision_decoder,
-        };
+        let host_decoders = request.host_decoders();
         let source_id = plan.media_source_id.clone();
         let (again, next, (sections, trickplay, chapters)) = futures_util::future::join3(
             async {

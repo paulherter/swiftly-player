@@ -13,7 +13,7 @@ use crate::load_panel::{
     LoadSpec, mac_load_panel, mac_pick, mono, plain, raised_card, scrim, scrim_at, sheet_button,
 };
 use std::collections::HashMap;
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::{color, desktop as dtok};
 use swiftly_downloads::item::{audio_streams, first_source};
 use swiftly_downloads::load_selection::SeasonRight;
 use swiftly_downloads::{
@@ -684,7 +684,7 @@ fn numbers(count: usize, bytes: i64) -> String {
 
 fn line() -> Node {
     wide(
-        Node::rect(color(colour::MARGIN), 0.0).frame(None, Some(1.0), Alignment::CENTER),
+        Node::rect(color(color::SURFACE_FOCUS), 0.0).frame(None, Some(1.0), Alignment::CENTER),
         Alignment::CENTER,
     )
 }
@@ -692,22 +692,24 @@ fn line() -> Node {
 /// The 22 pt box of a row: empty ring, accent disc with a minus (some) or a check (all), or the quiet check (already there).
 fn box_image(icons: &Icons, k: CheckboxState) -> Node {
     let disc = |glyph: &str, pt: f32| {
-        Node::rect(color(colour::MARK_ACCENT), 11.0)
+        Node::rect(color(crate::look_glow::accent()), 11.0)
             .frame(Some(22.0), Some(22.0), Alignment::CENTER)
             .overlay(
-                icons.node(glyph, pt, false, color(colour::REASON)),
+                icons.node(glyph, pt, false, color(color::SURFACE_BASE)),
                 Alignment::CENTER,
             )
     };
     let n = match k {
-        CheckboxState::Empty => Node::rect(rgba(colour::FONT, 0.0), 11.0).paint(Paint::Stroke {
-            color: color(colour::FONT_VERY_QUIET),
-            width: 1.6,
-            radius: 11.0,
-        }),
+        CheckboxState::Empty => {
+            Node::rect(rgba(color::TEXT_PRIMARY, 0.0), 11.0).paint(Paint::Stroke {
+                color: color(color::TEXT_TERTIARY),
+                width: 1.6,
+                radius: 11.0,
+            })
+        }
         CheckboxState::Part => disc("minus", 12.0),
         CheckboxState::Full => disc("check", 11.0),
-        CheckboxState::Present => icons.node("check", 15.0, false, color(colour::FONT_VERY_QUIET)),
+        CheckboxState::Present => icons.node("check", 15.0, false, color(color::TEXT_TERTIARY)),
     };
     n.frame(Some(22.0), Some(22.0), Alignment::CENTER)
         .opacity(1.0, feel::toggle())
@@ -746,9 +748,9 @@ fn row(
             )
     };
     let c = if k == CheckboxState::Present || quiet {
-        colour::FONT_QUIET
+        color::TEXT_SECONDARY
     } else {
-        colour::FONT
+        color::TEXT_PRIMARY
     };
     let mut parts = vec![
         plain(
@@ -759,7 +761,7 @@ fn row(
             c,
         ),
         Node::spacer(),
-        mono(cx, right, 12.0, colour::FONT_VERY_QUIET),
+        mono(cx, right, 12.0, color::TEXT_TERTIARY),
     ];
     if let Some(open) = expanded {
         parts.push(
@@ -768,7 +770,7 @@ fn row(
                     if open { "caret-down" } else { "caret-right" },
                     13.0,
                     true,
-                    color(colour::FONT_VERY_QUIET),
+                    color(color::TEXT_TERTIARY),
                 )
                 .a11y_hidden(),
         );
@@ -830,7 +832,7 @@ fn series_card(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
         Align::Center,
         Some(13.0),
         vec![
-            plain(cx, "Nur ungesehene", 15.0, 600, colour::FONT),
+            plain(cx, "Nur ungesehene", 15.0, 600, color::TEXT_PRIMARY),
             Node::spacer(),
             forms::toggle_switch_mac(on),
         ],
@@ -842,12 +844,12 @@ fn series_card(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
         cx,
         "Entscheidet, was ein Haken ausw\u{00E4}hlt.",
         swiftly_design::TextStyle {
-            size: 12.0,
+            size: dtok::TEXT_CAPTION_SMALL.size,
             weight: 400,
             tracking: 0.0,
             uppercase: false,
         },
-        colour::FONT_VERY_QUIET,
+        color::TEXT_TERTIARY,
         None,
         swiftly_text::Align::Start,
     );
@@ -865,7 +867,10 @@ fn cardify(rows: Vec<Node>) -> Node {
         Node::vstack(Align::Start, Some(0.0), rows),
         Alignment::LEADING,
     )
-    .background(Node::rect(color(colour::AREA), 14.0), Alignment::CENTER)
+    .background(
+        Node::rect(color(color::SURFACE_CONTROL), 14.0),
+        Alignment::CENTER,
+    )
     .padding(ins(0.0, 16.0, 0.0, 16.0))
 }
 
@@ -954,20 +959,20 @@ fn footer(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
             cx,
             &format!("Danach {} frei", DownloadRules::size(rest, ",")),
             12.0,
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
         ),
         FootSpace::Few(missing) => Node::hstack(
             Align::Center,
             Some(5.0),
             vec![
                 icons
-                    .node("info", 12.0, true, color(colour::ORIGINAL_WARNING))
+                    .node("info", 12.0, true, color(color::STATE_WARNING))
                     .a11y_hidden(),
                 mono(
                     cx,
                     &format!("{} zu wenig", DownloadRules::size(missing, ",")),
                     12.0,
-                    colour::ORIGINAL_WARNING,
+                    color::STATE_WARNING,
                 ),
             ],
         ),
@@ -976,7 +981,7 @@ fn footer(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
         Align::Center,
         Some(10.0),
         vec![
-            mono(cx, &left, 14.0, colour::FONT).frame(None, None, Alignment::LEADING),
+            mono(cx, &left, 14.0, color::TEXT_PRIMARY).frame(None, None, Alignment::LEADING),
             Node::spacer(),
             space,
         ],
@@ -998,9 +1003,9 @@ fn footer(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
                 Align::Center,
                 Some(10.0),
                 vec![
-                    plain(cx, "Qualit\u{00E4}t", 15.0, 400, colour::FONT),
+                    plain(cx, "Qualit\u{00E4}t", 15.0, 400, color::TEXT_PRIMARY),
                     Node::spacer(),
-                    mono(cx, &label(s.sel.quality), 15.0, colour::FONT_QUIET),
+                    mono(cx, &label(s.sel.quality), 15.0, color::TEXT_SECONDARY),
                 ],
             )
             .padding(ins(5.0, 16.0, 5.0, 16.0)),
@@ -1036,7 +1041,8 @@ fn footer(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
 fn season_content(cx: &Cx, icons: &Icons, env: &Env, s: &SeasonSheet) -> Node {
     let f = forms::fm(env);
     let title = wide(
-        plain(cx, &s.series.name, 17.0, 600, colour::FONT).padding(ins(14.0, 16.0, 10.0, 16.0)),
+        plain(cx, &s.series.name, 17.0, 600, color::TEXT_PRIMARY)
+            .padding(ins(14.0, 16.0, 10.0, 16.0)),
         Alignment::LEADING,
     );
     let mut col = vec![title];
@@ -1045,12 +1051,12 @@ fn season_content(cx: &Cx, icons: &Icons, env: &Env, s: &SeasonSheet) -> Node {
             cx,
             "Der Server hat nicht geantwortet.",
             swiftly_design::TextStyle {
-                size: 15.0,
+                size: dtok::TEXT_BODY_DEFAULT.size,
                 weight: 400,
                 tracking: 0.0,
                 uppercase: false,
             },
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             None,
             swiftly_text::Align::Start,
         );

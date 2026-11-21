@@ -20,6 +20,8 @@ pub fn from_curve(c: Curve) -> Motion {
         Curve::EaseInOut(d) => Motion::EaseInOut(r(d)),
         Curve::Smooth(d) => Motion::Spring(Spring::smooth_d(r(d))),
         Curve::Snappy(d) => Motion::Spring(Spring::snappy_d(r(d))),
+        // The engine has no drawer bezier yet; the closest tween until the desktop wave takes it over.
+        Curve::Drawer(d) => Motion::EaseOut(r(d)),
         Curve::Spring { response, damping } => {
             Motion::Spring(Spring::from_response_damping(r(response), r(damping)))
         }

@@ -391,7 +391,7 @@ private struct ArrivalSkeleton: View {
                 Capsule().frame(width: 84, height: 11)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Capsule().frame(width: 92, height: 30)
+            Capsule().frame(width: 92, height: Theme.pillMinHeight)
             Color.clear.frame(width: 28, height: 1)
         }
         .padding(.vertical, 12)

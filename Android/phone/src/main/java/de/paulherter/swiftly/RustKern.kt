@@ -173,7 +173,7 @@ class RustKern(private val app: SwiftlyApplication) {
                 val c = core()
                 val detail = c.legacyDetail(account, language).also { it.playbackSelection(always, megabit) }
                 Rust(c, account, c.legacyLibrary(account, language), detail, SettingsSyncAdapter(c.settingsSyncModel(account, language)),
-                    c.legacyPlayback(account, language).also { it.playbackSelection(always, megabit); it.setServerExtractsText(serverExtractsText); it.setNoDolbyVisionDecoder(!PlayerEngine.dolbyVisionAnyDecoder()); it.setDownloads(downloadsList, withoutNetwork) })
+                    c.legacyPlayback(account, language).also { it.playbackSelection(always, megabit); it.setServerExtractsText(serverExtractsText); it.setNoDolbyVisionDecoder(!PlayerEngine.dolbyVisionAnyDecoder()); PlayerEngine.videoDecoders?.let { d -> it.setVideoDecoders(d) }; it.setDownloads(downloadsList, withoutNetwork) })
             }.onFailure { AppLog.writeOut("[Kern] Rust-Kern startet nicht: ${it.message}") }.getOrNull()?.also { rust = it; AppLog.writeOut("[Kern] Rust-Kern aktiv (${account.serverKind})") }
         }
     }
@@ -289,6 +289,21 @@ class RustKern(private val app: SwiftlyApplication) {
         acct({ c, a -> c.legacyHome(a, language, disconnected, stored.toList(), from.toList(), filmLibrary, seriesLibrary, genres.toList(), asChips, libraries) },
             { noCore("home") })
 
+    /**
+     * **The core's own reloads, for the pages that read it one-shot.** The core counts, per account, how often the account's
+     * lists went stale (the server socket reported a change from another device, a link that really dropped came back, a delete).
+     * `listsStaleVersion` is the count now; `listsStaleAfter` resolves once it is past `seen` and ends when the caller is cancelled.
+     */
+    fun listsStaleVersion(): Long {
+        val a = session ?: return 0L
+        return core().listsStaleVersion(a).toLong()
+    }
+
+    suspend fun listsStaleAfter(seen: Long): Long {
+        val a = session ?: kotlinx.coroutines.awaitCancellation()
+        return core().listsStaleAfter(a, seen.toULong()).toLong()
+    }
+
     fun startSelection(selected: String): CompletableFuture<String> =
         libFut({ it.startSelection(selected) }, { noCore("startSelection") })
 
@@ -370,6 +385,8 @@ class RustKern(private val app: SwiftlyApplication) {
 
     /** The title page's first frame from the core's stored copies; empty when nothing is stored or the Swift/Plex path answers. */
     fun titleSeed(id: String): String = rustOrNull()?.detail?.titleSeed(id).orEmpty()
+    /** The player's top bar (title, meta, episode facts) of a stored title in the plan's keys, before the plan answers; empty without a copy. */
+    fun playSeed(id: String): String = rustOrNull()?.detail?.playSeed(id).orEmpty()
     fun seriesSeed(id: String): String = rustOrNull()?.detail?.seriesSeed(id).orEmpty()
     fun episodesSeed(series: String, season: String): String = rustOrNull()?.detail?.episodesSeed(series, season).orEmpty()
 
@@ -525,6 +542,11 @@ class RustKern(private val app: SwiftlyApplication) {
     fun qualitySwitch(position: Double): CompletableFuture<String> {
         val r = playing() ?: return noCore("qualitySwitch")
         return scope.future { r.playback.qualitySwitch(position) }
+    }
+    /** The decoder refused the open title at the start: the core plans it again as a server transcode (once per title). */
+    fun decoderRetry(position: Double): CompletableFuture<String> {
+        val r = playing() ?: return noCore("decoderRetry")
+        return scope.future { r.playback.decoderRetry(position) }
     }
     fun episodeSwitch(id: String, position: Double): CompletableFuture<String> {
         val r = playing() ?: return noCore("episodeSwitch")

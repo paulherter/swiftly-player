@@ -383,3 +383,46 @@ fn ui_scale_snaps_to_the_eight_steps() {
     assert!((system_share(192, 2) - 1.0).abs() < f64::EPSILON);
     assert!((system_share(96, 1) - 1.0).abs() < f64::EPSILON);
 }
+
+#[test]
+fn a_damaged_file_is_kept_aside_and_the_store_starts_empty() {
+    let dir = std::env::temp_dir().join(format!("swiftly-settings-recover-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("settings.json");
+    // A good file opens as it is, nothing is reported.
+    std::fs::write(&path, r#"{"a":1}"#).unwrap();
+    let (store, recovered) = JsonFileStore::open_or_recover(&path).unwrap();
+    assert!(recovered.is_none());
+    assert_eq!(store.get("a"), Some(Value::Int(1)));
+    // A missing file is an empty store, also nothing to report.
+    let _ = std::fs::remove_file(&path);
+    let (store, recovered) = JsonFileStore::open_or_recover(&path).unwrap();
+    assert!(recovered.is_none() && store.keys().is_empty());
+    // Damaged: a truncated file, a wrong top level, binary junk. Each starts with defaults and keeps a copy.
+    for broken in ["{\"technik\":tr", "[1,2]", "\u{0}\u{1}\u{2}"] {
+        std::fs::write(&path, broken).unwrap();
+        let (store, recovered) = JsonFileStore::open_or_recover(&path).unwrap();
+        let recovered = recovered.expect("reported");
+        assert!(store.keys().is_empty());
+        let kept = recovered.kept.as_ref().expect("copy kept");
+        assert_eq!(std::fs::read_to_string(kept).unwrap(), broken);
+        assert!(!path.exists(), "the damaged file no longer sits in the way");
+        assert!(recovered.line().contains("started with defaults"));
+        // The new store is usable and writes a good file.
+        store.set("k", Value::Bool(true)).unwrap();
+        let (again, none) = JsonFileStore::open_or_recover(&path).unwrap();
+        assert!(none.is_none());
+        assert_eq!(again.get("k"), Some(Value::Bool(true)));
+        let _ = std::fs::remove_file(&path);
+    }
+    let kept = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter(|e| {
+            e.as_ref()
+                .is_ok_and(|e| e.file_name().to_string_lossy().contains(".broken-"))
+        })
+        .count();
+    assert_eq!(kept, 3);
+    let _ = std::fs::remove_dir_all(&dir);
+}

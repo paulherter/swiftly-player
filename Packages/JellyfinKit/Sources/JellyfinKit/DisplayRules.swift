@@ -23,6 +23,17 @@ public enum DisplayRules {
         return seconds > 0
     }
 
+    /// The whole minutes of a runtime worth a line of text, or `nil`.
+    ///
+    /// Beyond ``runtimeShow(seconds:)``, a runtime under one minute counts as unknown: a test
+    /// clip or half-filled metadata delivers a few seconds, and "0 Min." tells nobody anything.
+    /// Every place that writes a runtime asks this instead of checking `> 0` itself.
+    /// (Rust: `display_rules::runtime_minutes`.)
+    public static func runtimeMinutes(seconds: Double?) -> Int? {
+        guard let seconds, seconds.isFinite, seconds >= 60 else { return nil }
+        return Int(min(seconds / 60, 1e9))
+    }
+
     /// When a search input goes to the server.
     ///
     /// **A single letter is not a search** but a query over half the library, repeated on

@@ -33,6 +33,9 @@ struct TVPlayerMenuLayer: View {
     let host: PlayerMenuHost
     /// "Problem melden" is not on Apple TV.
     var canReport = false
+    /// Called after a row picked an audio or subtitle track: the box closes at once, as in Apple's players (Back stays the way
+    /// out of the box without a choice). The host closes through its own path, so focus returns to the bar button that opened it.
+    var closeAfterPick: () -> Void = {}
     @State private var shown = false
 
     var body: some View {
@@ -50,9 +53,10 @@ struct TVPlayerMenuLayer: View {
                 .transition(.opacity)
                 .scaleEffect(shown && session.isOpen ? 1 : 0.96, anchor: hangsFromPill ? .topLeading : .topTrailing)
                 .opacity(shown && session.isOpen ? 1 : 0)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: hangsFromPill ? .topLeading : .topTrailing)
-                .padding(.top, hangsFromPill ? TVMenuMetric.top + 150 : TVMenuMetric.top)
-                .padding(hangsFromPill ? .leading : .trailing, TVMenuMetric.side)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                // The season box hangs under the Folgen box's first row, its left edge in line with the Folgen box's.
+                .padding(.top, hangsFromPill ? TVMenuMetric.top + TVMenuMetric.boxPad + TVMenuMetric.row + 8 : TVMenuMetric.top)
+                .padding(.trailing, TVMenuMetric.side + (hangsFromPill ? TVFolgenMetric.width - TVMenuMetric.width : 0))
                 .onAppear { withAnimation(Motion.menuOpen) { shown = true } }
                 .onChange(of: session.isOpen) { _, open in
                     withAnimation(open ? Motion.menuOpen : Motion.menuClose) { shown = open }
@@ -67,7 +71,16 @@ struct TVPlayerMenuLayer: View {
         case .back: session.back()
         case let .segment(id): withAnimation(Motion.menuOpen) { session.tab = id == "audio" ? .audio : .subtitles }
         case .search: break
-        case let .footer(id), let .select(id), let .toggle(id, _): press(id)
+        case let .select(id):
+            press(id)
+            // Only a track choice closes the box; other rows (speed, sleep, quality) keep it open to show the new check mark.
+            if let core = built.actions[id], case let .player(intent) = core {
+                switch intent {
+                case .selectAudio, .selectSubtitle: closeAfterPick()
+                default: break
+                }
+            }
+        case let .footer(id), let .toggle(id, _): press(id)
         case let .capsule(id, value): press("\(id):\(value)")
         case let .step(ms): press(ms < 0 ? "earlier" : "later")
         case .reset: press("reset")
@@ -87,7 +100,10 @@ struct TVFolgenLayer<Content: View>: View {
         if session.kind == .folgen {
             content(session.panelTab)
                 .opacity(shown && session.isOpen ? 1 : 0)
-                .scaleEffect(shown && session.isOpen ? 1 : 0.98, anchor: .topLeading)
+                .scaleEffect(shown && session.isOpen ? 1 : 0.96, anchor: .topTrailing)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.top, TVMenuMetric.top)
+                .padding(.trailing, TVMenuMetric.side)
                 .onAppear { withAnimation(Motion.menuOpen) { shown = true } }
                 .onChange(of: session.isOpen) { _, open in
                     withAnimation(open ? Motion.menuOpen : Motion.menuClose) { shown = open }
@@ -349,7 +365,7 @@ struct TVMenuBox: View {
     }
 }
 
-private func tvText(_ text: String, _ color: Color, size: CGFloat = TVMenuMetric.label, weight: Font.Weight = .semibold,
+func tvText(_ text: String, _ color: Color, size: CGFloat = TVMenuMetric.label, weight: Font.Weight = .semibold,
                     lines: Int = 1) -> some View {
     Text(verbatim: text).font(.app(size: size, weight: weight)).foregroundStyle(color)
         .lineLimit(lines).truncationMode(.tail).fixedSize(horizontal: false, vertical: lines > 1)
@@ -509,7 +525,7 @@ struct TVBarCapsule<Content: View>: View {
 }
 
 /// `fadesUnderHeader` only when something sits above the list.
-private struct FadeUnderHeaderIf: ViewModifier {
+struct FadeUnderHeaderIf: ViewModifier {
     let header: Bool
 
     @ViewBuilder func body(content: Content) -> some View {

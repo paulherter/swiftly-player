@@ -24,6 +24,7 @@ mod detail_more;
 mod downloads_vm;
 mod history;
 mod home;
+mod home_fail_fast;
 pub mod home_rows;
 mod home_views;
 mod host;
@@ -71,9 +72,11 @@ mod seerr;
 mod seerr_admin;
 mod seerr_admin_io;
 mod seerr_delete;
+mod seerr_delete_io;
 mod seerr_io;
 mod seerr_lists;
 mod seerr_my_requests;
+mod seerr_report;
 mod seerr_setup;
 mod seerr_stash;
 mod seerr_title;
@@ -84,6 +87,7 @@ mod server_probe;
 mod settings_sync_run;
 mod settings_vm;
 mod shared;
+mod stale_lists;
 mod start_settings;
 pub mod subtitle_search;
 pub mod subtitle_sidecar;
@@ -103,8 +107,8 @@ pub use detail::{
 };
 pub use detail_more::{
     CollectionRailPart, DownloadField, DownloadState, FileExcerpt, FileRow, MenuContext, MenuEntry,
-    MenuKind, ProofPart, ProofPhase, TrailerCandidate, WatcherTile, tile_menu_carries,
-    trailer_candidates, web_address,
+    MenuKind, MoreFacts, ProofPart, ProofPhase, TrailerCandidate, WatcherTile, more_menu_for,
+    tile_menu_carries, trailer_candidates, web_address,
 };
 pub use downloads_vm::{
     DownloadRow, DownloadServices, DownloadsIntent, DownloadsRejected, DownloadsVm, ItemRow,
@@ -157,14 +161,14 @@ pub use play_display::{DisplayNext, PlayDisplay, play_display};
 pub use player::{
     AirPlayStart, CONTROLS_HIDE, ChapterRow, ChaptersPart, ControlsPart, GroupHook, JUMP_DISPLAY,
     NextEpisode, OfferPart, OfferView, Phase, PlayerEffect, PlayerIntent, PlayerLayer, PlayerPrefs,
-    PlayerSpec, PlayerVm, TrackRow, TracksPart, TransportPart,
+    PlayerSpec, PlayerVm, TrackRow, TracksPart, TransportPart, middle_up, top_bar_up, veil_up,
 };
 pub use player_controls::{ChainEvent, Controls, ControlsEvent, SeekChain, Side};
 pub use player_extra::{
     AfterPlay, CLOSE_WAIT, CloseStep, DISCORD_THRESHOLD, Failure, HINT_SECONDS, MIN_DURATION,
     MemoryTrackStore, Nudge, ORIGINAL_QUALITY_HINT, Quality, RATING_THRESHOLD, READY_SHARE,
-    RELOAD_FAILED_HINT, RemoteOrders, ReplaceRunning, SWITCH_FAILED_HINT, TrackMemoryStore,
-    counts_as_ready, kickoff,
+    RELOAD_FAILED_HINT, RemoteOrders, ReplaceRunning, START_TIMEOUT_SECONDS, SWITCH_FAILED_HINT,
+    StartVeil, StartVeilEvent, TrackMemoryStore, counts_as_ready, kickoff,
 };
 pub use player_menu::{
     ActionRow, ChoicePage, DeviceRow, EpisodesPage, GroupInfo, GroupMember, HandoffDevice,
@@ -210,10 +214,12 @@ pub use seerr_admin_io::{SeerrAdminScreen, SeerrRequestCard};
 pub use seerr_delete::{
     DeleteAction, DeletePhase, DeleteStepKind, SeerrDeleteInfo, SeerrDeleteStep,
     SeerrDeleteVersion, SeerrDeleteVm, StepState, delete_allowed, delete_offered,
+    delete_place_of_item,
 };
+pub use seerr_delete_io::{DeleteLibrary, HostFuture, SeerrDeleteScreen};
 pub use seerr_io::{ScreenTimer, SeerrHub, SeerrListsScreen, SeerrRequestResult, SeerrTitleScreen};
 pub use seerr_lists::{
-    ArrivalCandidate, ArrivalDeck, HOME_BUDGET_SECONDS, HubCounts, HubState, ListLoad,
+    ArrivalCandidate, ArrivalDeck, HOME_BUDGET_SECONDS, HubCounts, HubState, LibraryHit, ListLoad,
     ProfileRowKind, RailId, RequestPill, RequestScope, RowWork, SearchGroupKind, SeerrArrival,
     SeerrAttention, SeerrDiscoverRails, SeerrDiscoverVm, SeerrHomeInfo, SeerrHomeShape,
     SeerrHomeState, SeerrHomeVm, SeerrHubInfo, SeerrHubVm, SeerrPillInfo, SeerrProfileRow,
@@ -222,6 +228,10 @@ pub use seerr_lists::{
     seerr_home_memory_key,
 };
 pub use seerr_my_requests::{HOME_TAKE as HOME_REQUESTS_TAKE, MyRequests};
+pub use seerr_report::{
+    ReportInfo, ReportKindRow, ReportPhase, ReportSend, SeerrPlace, SeerrReportFlow, SeerrReportVm,
+    TitleMenuEntry, TitleMenuKind, place_of_item,
+};
 pub use seerr_setup::{
     SeerrSetupInfo, SeerrSetupVm, SetupEntry, SetupMethodRow, SetupPhase, cause_text,
 };
@@ -262,6 +272,7 @@ pub use shared::{
     CurrentGroup, GroupDetail, GroupRow, HandoffEvent, HandoffStage, SharedDetail, SharedIntent,
     SharedPart, SharedVm, TakeoverPart, TakeoverRow, handoff_next, join_names, phase_text,
 };
+pub use stale_lists::StaleLists;
 pub use start_settings::{apply_stored_settings, load_core_switches};
 pub use subtitle_search::{
     MAX_ROWS as SUBTITLE_SEARCH_MAX_ROWS, SubtitleHitRow, SubtitleLanguage, SubtitleSearchIntent,

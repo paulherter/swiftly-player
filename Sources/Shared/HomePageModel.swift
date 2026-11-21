@@ -1,6 +1,7 @@
 import Foundation
 import JellyfinKit
 import Observation
+import SwiftUI
 #if canImport(SwiftlyCore)
 import SwiftlyCore
 #endif
@@ -70,8 +71,6 @@ final class HomeModel {
     #endif
     /// Set by the page: runs a change of the rows with the page's own motion (the rollback of a refused removal).
     @ObservationIgnored var rowMotion: ((() -> Void) -> Void)?
-    /// Set by the page: shows a hint the core raised (a refused removal).
-    @ObservationIgnored var onNotice: ((String) -> Void)?
     private var rustLooks: [String: [String: RustTileLook]] = [:]
 
     /// **How many runs are in flight.** Only for
@@ -122,7 +121,13 @@ final class HomeModel {
         if !loaded, allEmpty, let account = model.session?.accountKey,
            let store = await Self.storeRead(account) {
             guard applies() else { return }
-            if allEmpty { previewShow(store, model: model) }
+            // **Stored rows stand in the first frame, no fade.** They are not news, the user saw them last time;
+            // the page's `.animation(value: loaded)` / genre / library fades are for rows that arrive later.
+            if allEmpty {
+                var instant = Transaction()
+                instant.disablesAnimations = true
+                withTransaction(instant) { previewShow(store, model: model) }
+            }
             forAccount = itAccount
         }
         if model.views.isEmpty {
@@ -393,21 +398,41 @@ extension HomeModel {
         AppLog.writeOut("[Weiterschauen] \(item.seriesName ?? item.name): aus der Reihe genommen (Kern), Anfrage läuft im Hintergrund")
     }
 
+    /// **A refused removal's hint, on every platform.** The core puts the title back and raises the sentence; each platform
+    /// shows it in its own strip (iPhone, iPad and Apple TV: `TileRequest`, Mac: `TileMessage`). It was set up by the iOS
+    /// home page only, so on Apple TV and the Mac the tile came back without a word.
+    private func say(_ text: String) {
+        AppLog.writeOut("[Weiterschauen] Kern: Server lehnt ab, Titel zurückgelegt, Hinweis: \(text)")
+        #if os(macOS)
+        TileMessage.shared.text = text
+        #else
+        TileRequest.shared.message = text
+        #endif
+    }
+
     /// One watcher per core model: a refused removal comes back as a hint (`SwiftlyCore.HomeModel.watchNotices`) with the
     /// rails read again, which the page shows with its change motion. The Task holds neither this page model nor the
     /// core model while it waits to start, and it is cancelled when the core model is replaced and when this page
     /// model goes away (`NoticeWatch`), so no watcher outlives the page.
+    ///
+    /// **A load the core starts by itself is taken over too** (a delete from the server, another device, the socket
+    /// marking the lists stale): the rows followed only this page's own loads before, so a deleted series stayed in
+    /// "Nächste Folge" on the Mac until an account switch. While a load of this page runs, that load adopts.
     private func watchNotices(of home: SwiftlyCore.HomeModel) {
         guard watchedHome !== home else { return }
         noticeWatch?.cancel()
         watchedHome = home
         noticeWatch = NoticeWatch(Task { [weak self, weak home] in
             guard let home else { return }
-            await home.watchNotices { [weak self, weak home] text in
+            await home.watchNotices(changed: { [weak self, weak home] in
+                guard let self, let home, self.runningRuns == 0, home.status.status == .ready else { return }
+                let apply = { self.adoptRust(home, self.forAccount) }
+                if let motion = self.rowMotion { motion(apply) } else { apply() }
+            }) { [weak self, weak home] text in
                 guard let self, let home else { return }
                 let apply = { self.adoptRust(home, self.forAccount) }
                 if let motion = self.rowMotion { motion(apply) } else { apply() }
-                self.onNotice?(text)
+                self.say(text)
             }
         })
     }
@@ -573,7 +598,7 @@ extension HomeModel {
 #if canImport(SwiftlyCore)
 /// The Task that listens for the core's hints. Cancels it when the last reference goes: the page model's own `deinit`
 /// cannot reach its main-actor state, and a listener that outlives the page would keep the core model alive.
-private final class NoticeWatch: Sendable {
+final class NoticeWatch: Sendable {
     private let task: Task<Void, Never>
     init(_ task: Task<Void, Never>) { self.task = task }
     func cancel() { task.cancel() }

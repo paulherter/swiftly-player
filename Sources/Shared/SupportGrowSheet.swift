@@ -102,6 +102,12 @@ struct SupportGrowSheet: View {
                             .transition(.opacity)
                     }
 
+                    if support.supportedThroughStore {
+                        SupportKeyCard()
+                            .padding(.top, 18)
+                            .padding(.horizontal, 16)
+                    }
+
                     plans
                         .padding(.top, 20)
                         .padding(.horizontal, 16)
@@ -516,7 +522,7 @@ struct LooksHero: View {
 }
 
 /// **A phone of 104 × 208 showing the home page in a look.** Drawn, not a screenshot:
-/// wordmark, heart, a row, the bar, all in the look's own colors.
+/// the page title, heart, a row, the bar, all in the look's own colors.
 struct LookMiniPhone: View {
     let palette: LookPalette
     var delay: Double = 0
@@ -527,8 +533,11 @@ struct LookMiniPhone: View {
             EllipticalGradient(colors: [accent.opacity(0.34), accent.opacity(0)],
                                center: .top, startRadiusFraction: 0, endRadiusFraction: 0.75)
                 .frame(height: 64)
-            Wordmark(height: 11.6, logo: palette.logoStyle)
-                .offset(x: 9, y: 16)
+            // The title the Start page has instead of a logo, at the scale of this picture.
+            Text("Start")
+                .font(.app(size: 11, weight: .bold))   // token-lint: allow drawn miniature of the page title, scaled with the picture
+                .foregroundStyle(Theme.font)
+                .offset(x: 9, y: 14)
             Image(icon: "heart.fill", size: 10)
                 .font(.app(size: 10))
                 .foregroundStyle(Theme.font)
@@ -720,6 +729,106 @@ private struct RisingHearts: View {
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+        }
+    }
+}
+
+// MARK: - Key for the direct apps
+
+/// **One quiet row, which becomes the key.** Only for supporters through the App Store.
+/// Tap: the purchase record goes to the server once, the key comes back in a block that
+/// can be selected and copied, with one line on where to paste it. Nothing is kept.
+struct SupportKeyCard: View {
+    private var model: SupportKeyModel { .shared }
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            switch model.state {
+            case .idle:
+                Button { model.fetch() } label: { row }
+                    .buttonStyle(.plain)
+            case .loading:
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text(SupportKeyText.loading)
+                        .growing(15)
+                        .foregroundStyle(Theme.fontQuiet)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.updatesFrequently)
+            case let .key(key, plan, expires):
+                keyBlock(key, plan: plan, expires: expires)
+            case let .failed(reason):
+                failed(reason)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous))
+        .animation(Theme.reveal, value: model.state)
+        .onDisappear { model.reset() }
+    }
+
+    private var row: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(SupportKeyText.title)
+                    .growing(15, .medium)
+                    .foregroundStyle(Theme.font)
+                    .multilineTextAlignment(.leading)
+                Text(SupportKeyText.detail)
+                    .growing(13)
+                    .foregroundStyle(Theme.fontQuiet)
+                    .multilineTextAlignment(.leading)
+            }
+            Spacer(minLength: 8)
+            Image(icon: "key", size: 15)
+                .foregroundStyle(Theme.fontVeryQuiet)
+                .accessibilityHidden(true)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func keyBlock(_ key: String, plan: SupportPlan, expires: Date?) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(key)
+                .font(.app(size: 15, weight: .medium))
+                .foregroundStyle(Theme.font)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.reason, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+            Text(SupportKeyText.validity(plan: plan, expires: expires))
+                .growing(13)
+                .foregroundStyle(Theme.fontQuiet)
+            Button {
+                model.copy(key)
+                Theme.jerk(.lightweight)
+                copied = true
+            } label: {
+                Text(copied ? SupportKeyText.copied : SupportKeyText.copy)
+            }
+            .buttonStyle(SecondaryButtonStyle(accent: true))
+            Text(SupportKeyText.paste)
+                .growing(13)
+                .foregroundStyle(Theme.fontVeryQuiet)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func failed(_ reason: SupportKeyFailure) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(SupportKeyText.failure(reason))
+                .growing(15)
+                .foregroundStyle(Theme.font)
+                .fixedSize(horizontal: false, vertical: true)
+            if reason != .sandbox && reason != .revoked && reason != .noPurchase {
+                Button { model.fetch() } label: { Text(SupportKeyText.retry) }
+                    .buttonStyle(SecondaryButtonStyle(accent: true))
+            }
         }
     }
 }

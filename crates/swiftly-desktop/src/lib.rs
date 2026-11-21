@@ -7,17 +7,21 @@
 pub mod a11y_bridge;
 #[cfg(feature = "window")]
 pub mod app;
+pub mod app_icon;
 pub mod art;
 pub mod autoplay;
 pub mod browse;
 pub mod browser_open;
+pub mod build_info;
 pub mod cli;
 pub mod crash;
 pub mod deep_link;
+pub mod delete_sheet;
 pub mod demo;
 pub mod desk;
 pub mod detail_screen;
 pub mod device_language;
+pub mod discord_link;
 #[cfg(all(feature = "mpv", any(target_os = "linux", windows)))]
 #[cfg_attr(windows, path = "win_gpu_video.rs")]
 pub mod dmabuf_import;
@@ -28,6 +32,7 @@ pub mod field_book;
 pub mod focus_scene;
 pub mod forms;
 pub mod frame_surface;
+pub mod glyph_swap;
 pub mod headless;
 pub mod home;
 pub mod home_choices;
@@ -51,7 +56,7 @@ pub mod local_clock;
 pub mod login_mac;
 pub mod login_screen;
 pub mod look_glow;
-pub mod lottie;
+pub mod looks_panel;
 pub mod management_hub;
 pub mod media_keys;
 pub mod nav_machine;
@@ -65,6 +70,7 @@ pub mod player_host;
 pub(crate) mod player_menu_box;
 pub mod player_screen;
 pub mod quit_guard;
+pub mod report_sheet;
 #[cfg(feature = "window")]
 pub mod resize_latency;
 pub mod script;
@@ -88,7 +94,10 @@ pub mod store;
 pub mod subtitle_style;
 pub mod suite;
 pub mod support_card;
+pub mod support_key;
 pub mod switch_stage;
+#[doc(hidden)]
+pub mod testdir;
 pub mod tile_menu;
 pub mod title_data;
 pub mod title_target;
@@ -105,6 +114,7 @@ pub mod trick_preview;
 pub mod update_check;
 #[cfg(feature = "mpv")]
 pub mod video_demo;
+pub mod whats_new_sheet;
 pub mod wheel;
 #[cfg(all(feature = "window", target_os = "windows"))]
 pub mod win_backdrop;

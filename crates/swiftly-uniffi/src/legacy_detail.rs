@@ -29,6 +29,10 @@ impl LegacyDetail {
     pub fn title_seed(&self, id: String) -> String {
         self.inner.title_seed(&id)
     }
+    /// The player's top bar (title line, meta facts) of a stored title, in the playback plan's keys; empty without a copy. No network.
+    pub fn play_seed(&self, id: String) -> String {
+        self.inner.play_seed(&id)
+    }
     /// The first frame of a series page from the stored copies (the `Kern.series` shape), or an empty string.
     pub fn series_seed(&self, id: String) -> String {
         self.inner.series_seed(&id)

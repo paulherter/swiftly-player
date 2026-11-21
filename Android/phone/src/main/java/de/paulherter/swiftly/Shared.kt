@@ -42,6 +42,7 @@ import de.paulherter.swiftly.shared.Texts
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Glyph
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
@@ -202,7 +203,7 @@ fun sharedCreateOpen(app: SwiftlyApplication, titleIdentifier: String, titleLine
         Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(bottom = 12.dp)) {
             Text(titleLine, style = Theme.body, color = Theme.fontQuiet, modifier = Modifier.padding(bottom = 16.dp))
             Text(translated("Name der Gruppe"), style = Theme.small, color = Theme.fontVeryQuiet, modifier = Modifier.padding(bottom = 6.dp))
-            Box(Modifier.fillMaxWidth().heightIn(min = 44.dp).background(Theme.raised, RoundedCornerShape(Theme.cornerField))
+            Box(Modifier.fillMaxWidth().heightIn(min = 44.dp).background(Theme.raised, smoothRoundedShape(Theme.cornerField))
                     .padding(horizontal = 14.dp), contentAlignment = Alignment.CenterStart) {
                 if (name.isEmpty()) Text(translated("Filmabend"), style = Theme.body.copy(fontSize = 17.sp), color = Theme.fontVeryQuiet)
                 BasicTextField(name, { name = it }, singleLine = true,

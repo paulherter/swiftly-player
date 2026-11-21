@@ -1,10 +1,11 @@
+// Template: `build.rs` fills the @...@ marks (version numbers and text) and compiles the result next to a copy of the icon.
 // Program icon and the details Windows shows in Task Manager, the file dialog and "Open with".
 // ID 1: Windows uses the icon with the lowest ID as the program icon.
 1 ICON "swiftly-player.ico"
 
 1 VERSIONINFO
-FILEVERSION 0,1,0,0
-PRODUCTVERSION 0,1,0,0
+FILEVERSION @VER_NUMBERS@
+PRODUCTVERSION @VER_NUMBERS@
 FILEOS 0x40004
 FILETYPE 1
 {
@@ -17,6 +18,8 @@ FILETYPE 1
       VALUE "InternalName", "swiftly-desktop"
       VALUE "OriginalFilename", "swiftly-desktop.exe"
       VALUE "CompanyName", "Paul Herter"
+      VALUE "FileVersion", @VER_TEXT@
+      VALUE "ProductVersion", @VER_TEXT@
     }
   }
   BLOCK "VarFileInfo"

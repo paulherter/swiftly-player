@@ -8,7 +8,7 @@ use crate::home::{ins, tabular_text, text};
 use crate::login_mac::{self, Kind, Mac, PinState, PlexStep};
 use crate::signin_flows::{self, EmbyFound, PlexEvent};
 use std::rc::Rc;
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::color;
 use swiftly_jellyfin::discovery::FoundServer;
 use swiftly_jellyfin::{QuickConnectDeadline, QuickConnectState, QuickConnectWait, WaitEvent};
 use swiftly_layout::{Align, Alignment};
@@ -118,7 +118,7 @@ fn st(size: f32, weight: u16) -> swiftly_design::TextStyle {
 }
 
 fn dot(size: f32) -> Node {
-    Node::rect(color(colour::MARK_ACCENT), size / 2.0).frame(
+    Node::rect(color(crate::look_glow::accent()), size / 2.0).frame(
         Some(size),
         Some(size),
         Alignment::CENTER,
@@ -139,25 +139,28 @@ fn code_fields(cx: &Cx, f: &Fm, code: &str) -> Node {
                 cx,
                 &c.to_string(),
                 st(92.0, 700),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Center,
             )
             .frame(Some(120.0), Some(160.0), Alignment::CENTER)
-            .background(Node::rect(color(colour::RAISED), 16.0), Alignment::CENTER)
+            .background(
+                Node::rect(color(color::SURFACE_RAISED), 16.0),
+                Alignment::CENTER,
+            )
         } else {
             text(
                 cx,
                 &c.to_string(),
                 st(28.0, 600),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Center,
             )
             .frame(Some(46.0), Some(60.0), Alignment::CENTER)
             .background(
                 Node::rect(
-                    color(colour::AREA),
+                    color(color::SURFACE_CONTROL),
                     if f.form == crate::home::Form::Touch {
                         10.0
                     } else {
@@ -186,7 +189,7 @@ fn quick_body(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
             cx,
             "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.",
             st(15.0, 400),
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             Some(4),
             swiftly_text::Align::Start,
         )
@@ -199,7 +202,7 @@ fn quick_body(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
                     cx,
                     e,
                     st(15.0, 400),
-                    colour::ERROR,
+                    color::STATE_ERROR,
                     Some(3),
                     swiftly_text::Align::Center,
                 ),
@@ -224,7 +227,7 @@ fn quick_body(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
                                 p.left % 60
                             ),
                             st(13.0, 400),
-                            colour::FONT_QUIET,
+                            color::TEXT_SECONDARY,
                             Some(1),
                             swiftly_text::Align::Start,
                         ),
@@ -244,7 +247,7 @@ fn quick_body(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
                     cx,
                     &n.to_string(),
                     st(13.0, 400),
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 )
@@ -253,7 +256,7 @@ fn quick_body(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
                     cx,
                     s,
                     st(13.0, 400),
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(3),
                     swiftly_text::Align::Start,
                 ),
@@ -267,7 +270,11 @@ fn quick_body(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
             Some(0.0),
             vec![
                 wide(
-                    Node::rect(color(colour::LINE), 0.0).frame(None, Some(1.0), Alignment::CENTER),
+                    Node::rect(color(color::BORDER_HAIRLINE), 0.0).frame(
+                        None,
+                        Some(1.0),
+                        Alignment::CENTER,
+                    ),
                     Alignment::CENTER,
                 )
                 .padding(ins(0.0, 0.0, 14.0, 0.0)),
@@ -278,7 +285,7 @@ fn quick_body(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
                         tracking: -0.2,
                         ..st(22.0, 700)
                     },
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
@@ -320,9 +327,12 @@ fn pinned_new_code(cx: &Cx, f: &Fm, env: &Env, ctx: &Ctx) -> Node {
 fn address_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
     let mark = ctx
         .icons
-        .node("hard-drives", 22.0, true, color(colour::FONT))
+        .node("hard-drives", 22.0, true, color(color::TEXT_PRIMARY))
         .frame(Some(44.0), Some(44.0), Alignment::CENTER)
-        .background(Node::rect(color(colour::AREA), 22.0), Alignment::CENTER);
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 22.0),
+            Alignment::CENTER,
+        );
     let mut b = vec![
         wide(mark, Alignment::LEADING).padding(ins(8.0, 0.0, 0.0, 0.0)),
         wide(
@@ -330,7 +340,7 @@ fn address_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                 cx,
                 "Wo steht dein Jellyfin-Server?",
                 st(15.0, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(2),
                 swiftly_text::Align::Start,
             ),
@@ -400,7 +410,7 @@ fn credentials_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                     cx,
                     "Verbunden \u{00B7} Jellyfin 10.10.3",
                     st(12.0, 400),
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
@@ -454,19 +464,27 @@ fn credentials_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             Some(12.0),
             vec![
                 wide(
-                    Node::rect(color(colour::LINE), 0.0).frame(None, Some(1.0), Alignment::CENTER),
+                    Node::rect(color(color::BORDER_HAIRLINE), 0.0).frame(
+                        None,
+                        Some(1.0),
+                        Alignment::CENTER,
+                    ),
                     Alignment::CENTER,
                 ),
                 text(
                     cx,
                     "oder",
                     st(12.0, 400),
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     Some(1),
                     swiftly_text::Align::Center,
                 ),
                 wide(
-                    Node::rect(color(colour::LINE), 0.0).frame(None, Some(1.0), Alignment::CENTER),
+                    Node::rect(color(color::BORDER_HAIRLINE), 0.0).frame(
+                        None,
+                        Some(1.0),
+                        Alignment::CENTER,
+                    ),
                     Alignment::CENTER,
                 ),
             ],
@@ -554,8 +572,10 @@ fn accounts_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
 /// A centred tv column on `reason` (`tvOS/QuickConnectView.swift`: no header, the title in the page, buttons in a row).
 fn tv_page(rows: Vec<Node>) -> Node {
     let col = Node::vstack(Align::Center, Some(0.0), rows);
-    crate::home::fill_frame(col, Alignment::CENTER)
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+    crate::home::fill_frame(col, Alignment::CENTER).background(
+        Node::rect(color(color::SURFACE_BASE), 0.0),
+        Alignment::CENTER,
+    )
 }
 
 fn tv_title(cx: &Cx, s: &str) -> Node {
@@ -566,7 +586,7 @@ fn tv_title(cx: &Cx, s: &str) -> Node {
             tracking: 0.0,
             ..st(56.0, 700)
         },
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(1),
         swiftly_text::Align::Center,
     )
@@ -580,7 +600,7 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
             cx,
             "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.",
             st(30.0, 400),
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             Some(3),
             swiftly_text::Align::Center,
         )
@@ -593,7 +613,7 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                 cx,
                 e,
                 st(30.0, 400),
-                colour::ERROR,
+                color::STATE_ERROR,
                 Some(3),
                 swiftly_text::Align::Center,
             )
@@ -607,7 +627,7 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                 cx,
                 &format!("Läuft ab in {}:{:02}", p.left / 60, p.left % 60),
                 st(24.0, 400),
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 Some(1),
                 swiftly_text::Align::Center,
             )
@@ -623,7 +643,7 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                     cx,
                     &n.to_string(),
                     st(26.0, 500),
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 )
@@ -632,7 +652,7 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                     cx,
                     s,
                     st(26.0, 500),
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(2),
                     swiftly_text::Align::Start,
                 ),
@@ -651,7 +671,7 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                         tracking: -0.2,
                         ..st(34.0, 700)
                     },
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
@@ -746,7 +766,7 @@ fn tv_password(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                 cx,
                 e,
                 st(30.0, 400),
-                colour::ERROR,
+                color::STATE_ERROR,
                 Some(3),
                 swiftly_text::Align::Center,
             )
@@ -871,6 +891,8 @@ pub struct LoginScreen {
     copy: Option<String>,
     /// When the current Plex step or Emby load began.
     stage_since: Option<f64>,
+    /// When the chip "Kopiert" came up (it goes after 1.4 s, as on the Mac).
+    copied_at: Option<f64>,
     /// Servers found by the broadcast (live only).
     found_rx: Option<std::sync::mpsc::Receiver<Vec<FoundServer>>>,
     /// The full address behind each row of `Mac::found`.
@@ -1298,6 +1320,7 @@ impl LoginScreen {
             waiting: None,
             copy: None,
             stage_since: None,
+            copied_at: None,
             found_rx: None,
             found_full: Vec::new(),
             users_rx: None,
@@ -2079,6 +2102,14 @@ impl LoginScreen {
         }
         self.poll_quick(now);
         self.mac_tick(now);
+        if self.p.mac.copied {
+            let since = *self.copied_at.get_or_insert(now);
+            if now - since >= 1400.0 {
+                self.copied_at = None;
+                self.p.mac.copied = false;
+                self.sync();
+            }
+        }
         // A picture that arrived rebuilds the page (the shared hub counts loads; the app's frame runs the hub itself).
         let stamp = crate::hub::HubSlotExt::stamp(&self.p.mac.hub.0);
         if stamp != self.p.mac.pictures {
@@ -2200,6 +2231,7 @@ impl LoginScreen {
         } else if is("copy") {
             self.copy = Some(self.p.code.clone());
             self.p.mac.copied = true;
+            self.copied_at = None;
         } else if is("plexstart") || is("plexagain") {
             // "Erneut versuchen" / "Neuen Code holen" start the sign-in again (`actions.start`).
             self.p.mac.plex = PlexStep::Opening;

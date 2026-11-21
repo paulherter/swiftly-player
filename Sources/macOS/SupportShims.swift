@@ -106,11 +106,17 @@ struct SheetCategory: View {
 
 /// The sheet's last row. On the Mac it also answers Escape, like every system sheet.
 struct SheetCancel: View {
+    /// The word, when the core gives it (the report sheet); `nil` keeps the app's own "Abbrechen".
+    var text: String?
     let perform: () -> Void
+
+    private var cancelWord: Text {
+        text.map { Text(verbatim: $0) } ?? Text("Abbrechen")
+    }
 
     var body: some View {
         Button(action: perform) {
-            Text("Abbrechen")
+            cancelWord
                 .font(.app(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.fontQuiet)
                 .frame(maxWidth: .infinity, minHeight: Theme.rowHeight)

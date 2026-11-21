@@ -13,7 +13,7 @@ use crate::cx::Cx;
 use crate::env::Env;
 use crate::feel;
 use crate::view::{Action, Node, Paint};
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::color;
 use swiftly_layout::{Align, Alignment, EdgeInsets, Point, Rect, Size};
 use swiftly_motion::catalogue::Id;
 use swiftly_render::{Color, ShadowStyle};
@@ -324,7 +324,7 @@ const SHORTCUT_GAP: f32 = 24.0;
 const SEPARATOR_HEIGHT: f32 = 9.0;
 
 fn quiet() -> Color {
-    color(colour::FONT_QUIET)
+    color(color::TEXT_SECONDARY)
 }
 
 /// The panel: rows on a raised rounded rectangle with a hairline and the shared panel shadow.
@@ -347,7 +347,7 @@ pub fn panel_node_tinted(
         .iter()
         .enumerate()
         .map(|(i, e)| match e {
-            MenuEntry::Separator => Node::rect(color(colour::MARGIN), 0.0)
+            MenuEntry::Separator => Node::rect(color(color::SURFACE_FOCUS), 0.0)
                 .frame(None, Some(1.0), Alignment::CENTER)
                 .padding(EdgeInsets {
                     top: 4.0,
@@ -374,13 +374,13 @@ pub fn panel_node_tinted(
             radius: feel::MENU_RADIUS,
         })
         .paint(Paint::Fill {
-            color: color(colour::RAISED),
+            color: color(color::SURFACE_RAISED),
             radius: feel::MENU_RADIUS,
         });
     let back = match tint {
         Some(mood) => back
             .paint(Paint::Fill {
-                color: color(colour::REASON),
+                color: color(color::SURFACE_BASE),
                 radius: feel::MENU_RADIUS,
             })
             .paint(Paint::Fill {
@@ -388,13 +388,13 @@ pub fn panel_node_tinted(
                 radius: feel::MENU_RADIUS,
             })
             .paint(Paint::Fill {
-                color: color(colour::SURFACE_TRANSLUCENT),
+                color: color(color::SURFACE_TRANSLUCENT),
                 radius: feel::MENU_RADIUS,
             }),
         None => back,
     };
     let back = back.paint(Paint::Stroke {
-        color: color(colour::MARGIN),
+        color: color(color::SURFACE_FOCUS),
         width: 1.0,
         radius: feel::MENU_RADIUS,
     });
@@ -411,11 +411,11 @@ pub fn panel_node_tinted(
 
 fn item_row(cx: &Cx, style: &TextStyle, it: &MenuItem, highlighted: bool, icons: bool) -> Node {
     let ink = if !it.enabled {
-        color(colour::FONT_VERY_QUIET)
+        color(color::TEXT_TERTIARY)
     } else if it.destructive {
-        color(colour::ERROR)
+        color(color::STATE_ERROR)
     } else {
-        color(colour::FONT)
+        color(color::TEXT_PRIMARY)
     };
     let check = if it.checked {
         Node::text(

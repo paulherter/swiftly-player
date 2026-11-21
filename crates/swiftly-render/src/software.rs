@@ -9,7 +9,7 @@
 
 use crate::atlas::{Atlas, AtlasFormat};
 use crate::draw_list::{DrawList, DrawQuad, QuadKind};
-use crate::geometry::Color;
+use crate::geometry::{CORNER_REACH as SMOOTH_REACH, Color};
 use crate::image::RgbaImage;
 
 /// The atlas pages a list refers to.
@@ -57,10 +57,35 @@ fn radius_at(px: f32, py: f32, r: [f32; 4]) -> f32 {
     }
 }
 
-fn sd_round_box(px: f32, py: f32, hx: f32, hy: f32, r: f32) -> f32 {
+/// Signed distance to a box with circular corners of radius `r` (negative inside, in pixels).
+fn sd_circle_box(px: f32, py: f32, hx: f32, hy: f32, r: f32) -> f32 {
     let (qx, qy) = (px.abs() - hx + r, py.abs() - hy + r);
     let (mx, my) = (qx.max(0.0), qy.max(0.0));
     (mx * mx + my * my).sqrt() + qx.max(qy).min(0.0) - r
+}
+
+/// Signed distance to a box whose corners have radius `r` and are smoothed by 60 % (Figma "iOS", Apple's continuous
+/// corner): a superellipse of exponent 3 whose zone reaches `SMOOTH_REACH * r` along each edge (at most half the short
+/// side), joined tangentially to the straight edges. A capsule (radius within half a pixel of half the short side) and a
+/// radius under one pixel keep the circular formula. First-order estimate (the superellipse norm over its gradient
+/// length), good for one pixel of anti-aliasing. The oracle of `sd_round_box` in `quad.wgsl`.
+fn sd_round_box(px: f32, py: f32, hx: f32, hy: f32, r: f32) -> f32 {
+    let m = hx.min(hy);
+    if r < 1.0 || r >= m - 0.5 {
+        return sd_circle_box(px, py, hx, hy, r);
+    }
+    let k = (r * SMOOTH_REACH).min(m);
+    let (qx, qy) = (px.abs() - hx + k, py.abs() - hy + k);
+    let inside = qx.max(qy).min(0.0);
+    let (ux, uy) = (qx.max(0.0), qy.max(0.0));
+    let (cx, cy) = (ux * ux * ux, uy * uy * uy);
+    let total = cx + cy;
+    if total <= 1e-9 {
+        return inside - k;
+    }
+    let n = total.powf(1.0 / 3.0);
+    let grad = (ux * cx + uy * cy).sqrt() / (n * n);
+    (n - k) / grad + inside
 }
 
 fn blur_along_x(x: f32, y: f32, sigma: f32, corner: f32, hx: f32, hy: f32) -> f32 {
@@ -467,6 +492,179 @@ mod tests {
 
     fn render(l: &DrawList, clear: Color) -> RgbaImage {
         SoftwareRenderer::render(l, clear, &Sources::default())
+    }
+
+    /// Point of the smoothed corner of a box `hx` x `hy` (bottom right quadrant) at parameter `c` of |u/k|^3 + |v/k|^3 = 1.
+    fn corner_point(hx: f32, hy: f32, k: f32, c: f32) -> (f32, f32) {
+        let s = (1.0 - c * c * c).cbrt();
+        (hx - k + c * k, hy - k + s * k)
+    }
+
+    #[test]
+    fn the_shader_uses_the_same_corner_reach() {
+        let line = format!("const SMOOTH_REACH: f32 = {SMOOTH_REACH:?};");
+        assert!(
+            include_str!("quad.wgsl").contains(&line),
+            "quad.wgsl must declare `{line}`"
+        );
+    }
+
+    #[test]
+    fn smoothed_corner_boundary_lies_on_the_superellipse() {
+        let (hx, hy, r) = (50.0, 40.0, 20.0);
+        let k = r * SMOOTH_REACH;
+        for i in 0..=40 {
+            let (px, py) = corner_point(hx, hy, k, i as f32 / 40.0);
+            for (sx, sy) in [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
+                let d = sd_round_box(sx * px, sy * py, hx, hy, r);
+                assert!(d.abs() < 1e-3, "boundary point {i} is {d} px off");
+            }
+        }
+        // Straight edges, outside and inside, are exact distances; the zone leaves the edge tangentially.
+        assert!((sd_round_box(hx, 0.0, hx, hy, r)).abs() < 1e-4);
+        assert!((sd_round_box(hx + 3.0, 5.0, hx, hy, r) - 3.0).abs() < 1e-4);
+        assert!((sd_round_box(0.0, hy - 4.0, hx, hy, r) + 4.0).abs() < 1e-4);
+        // Tangential join: 0.1 k into the zone the curve is still a hundredth of a pixel from the edge.
+        let (_, ey) = corner_point(hx, hy, k, 0.1);
+        assert!(hy - ey < 0.02, "the curve is {} px off the edge", hy - ey);
+    }
+
+    #[test]
+    fn smoothed_corner_distance_is_a_good_estimate() {
+        // Against the true distance to a dense polyline of the boundary (bottom right corner, scale 1).
+        let (hx, hy, r) = (60.0, 45.0, 18.0);
+        let k = r * SMOOTH_REACH;
+        // By angle, so the points are evenly spread (by `c` they thin out towards the edge).
+        let mut line: Vec<(f32, f32)> = (0..=6000)
+            .map(|i| {
+                let a = i as f32 / 6000.0 * std::f32::consts::FRAC_PI_2;
+                let (c, s) = (a.cos().powf(2.0 / 3.0), a.sin().powf(2.0 / 3.0));
+                (hx - k + c * k, hy - k + s * k)
+            })
+            .collect();
+        line.extend((0..=200).map(|i| (hx, (hy - k) * i as f32 / 200.0)));
+        line.extend((0..=200).map(|i| ((hx - k) * i as f32 / 200.0, hy)));
+        let inside = |x: f32, y: f32| {
+            let (u, v) = ((x - (hx - k)).max(0.0) / k, (y - (hy - k)).max(0.0) / k);
+            x <= hx && y <= hy && u * u * u + v * v * v <= 1.0
+        };
+        let mut worst = 0.0_f32;
+        let mut checked = 0;
+        for iy in 0..120 {
+            for ix in 0..120 {
+                let (x, y) = (
+                    hx - k - 2.0 + ix as f32 * 0.25,
+                    hy - k - 2.0 + iy as f32 * 0.25,
+                );
+                let near = line
+                    .iter()
+                    .map(|&(a, b)| ((a - x).powi(2) + (b - y).powi(2)).sqrt())
+                    .fold(f32::MAX, f32::min);
+                if near > 1.5 {
+                    continue;
+                }
+                let truth = if inside(x, y) { -near } else { near };
+                worst = worst.max((sd_round_box(x, y, hx, hy, r) - truth).abs());
+                checked += 1;
+            }
+        }
+        assert!(checked > 500, "only {checked} sample points near the edge");
+        assert!(worst < 0.1, "estimate is {worst} px off the true distance");
+    }
+
+    #[test]
+    fn capsules_circles_and_tiny_radii_keep_the_circular_formula() {
+        let old = |px: f32, py: f32, hx: f32, hy: f32, r: f32| {
+            let (qx, qy) = (px.abs() - hx + r, py.abs() - hy + r);
+            (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt() + qx.max(qy).min(0.0) - r
+        };
+        let boxes: [(f32, f32); 4] = [(60.0, 16.0), (16.0, 16.0), (30.0, 10.0), (10.0, 40.0)];
+        for (hx, hy) in boxes {
+            let m = hx.min(hy);
+            for r in [m, m - 0.5, m - 0.25, m + 4.0, 0.0, 0.5, 0.99_f32] {
+                for iy in -12..=12 {
+                    for ix in -12..=12 {
+                        let (x, y) = (ix as f32 * hx / 11.0, iy as f32 * hy / 11.0);
+                        assert_eq!(
+                            sd_round_box(x, y, hx, hy, r.min(m)),
+                            old(x, y, hx, hy, r.min(m)),
+                            "box {hx}x{hy} radius {r} at ({x}, {y})"
+                        );
+                    }
+                }
+            }
+        }
+        // A radius that leaves a straight part on the short side is smoothed.
+        assert_ne!(
+            sd_round_box(-26.0, -6.0, 30.0, 10.0, 9.0),
+            old(-26.0, -6.0, 30.0, 10.0, 9.0)
+        );
+    }
+
+    #[test]
+    fn a_rendered_pill_is_pixel_for_pixel_the_circular_one() {
+        let mut l = DrawList::new(40.0, 10.0, 1.0);
+        l.fill(Rect::new(0.0, 0.0, 40.0, 10.0), Color::WHITE, 5.0);
+        let img = render(&l, Color::BLACK);
+        for y in 0..10 {
+            for x in 0..40 {
+                let d = sd_circle_box(x as f32 + 0.5 - 20.0, y as f32 + 0.5 - 5.0, 20.0, 5.0, 5.0);
+                let want = ((0.5 - d).clamp(0.0, 1.0) * 255.0).round() as i32;
+                assert!(
+                    (img.pixel(x, y)[0] as i32 - want).abs() <= 1,
+                    "pill pixel ({x}, {y}) is not circular"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_rendered_corner_follows_the_smoothed_edge() {
+        let mut l = DrawList::new(100.0, 100.0, 1.0);
+        l.fill(Rect::new(0.0, 0.0, 100.0, 100.0), Color::WHITE, 20.0);
+        let img = render(&l, Color::BLACK);
+        let mut smoother_somewhere = false;
+        for y in 0..30 {
+            for x in 0..30 {
+                let (rx, ry) = (x as f32 + 0.5 - 50.0, y as f32 + 0.5 - 50.0);
+                let smooth = ((0.5 - sd_round_box(rx, ry, 50.0, 50.0, 20.0)).clamp(0.0, 1.0)
+                    * 255.0)
+                    .round() as i32;
+                let circle = ((0.5 - sd_circle_box(rx, ry, 50.0, 50.0, 20.0)).clamp(0.0, 1.0)
+                    * 255.0)
+                    .round() as i32;
+                assert!(
+                    (img.pixel(x, y)[0] as i32 - smooth).abs() <= 1,
+                    "pixel ({x}, {y}) differs from the formula"
+                );
+                smoother_somewhere |= (smooth - circle).abs() > 10;
+            }
+        }
+        assert!(
+            smoother_somewhere,
+            "smoothing changed no pixel by 10 levels"
+        );
+    }
+
+    #[test]
+    fn the_shadow_keeps_circular_corners_because_the_shapes_stay_within_a_few_percent_of_the_radius()
+     {
+        // The analytic shadow assumes circular corners: the smoothed boundary must stay within 5 % of the radius from
+        // the circle (a blurred shadow hides that).
+        for r in [8.0_f32, 16.0, 24.0] {
+            let (hx, hy) = (60.0, 60.0);
+            let k = r * SMOOTH_REACH;
+            let worst = (0..=400)
+                .map(|i| {
+                    let (x, y) = corner_point(hx, hy, k, i as f32 / 400.0);
+                    sd_circle_box(x, y, hx, hy, r).abs()
+                })
+                .fold(0.0, f32::max);
+            assert!(
+                worst < 0.05 * r,
+                "radius {r}: boundary is {worst} px from the circle"
+            );
+        }
     }
 
     #[test]

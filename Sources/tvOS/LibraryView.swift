@@ -93,7 +93,7 @@ struct LibraryView: View {
         self.filter = collection != nil && art == "tvshows"
             ? [.all, .begun, .watchlist] : filter
         let state = LibraryModel(rememberName: collection == nil ? (library?.id ?? art) : nil)
-        if collection != nil { state.sorting = .erscheinung }
+        if collection != nil { state.sorting = coreCollectionPageSorting() }
         _state = State(initialValue: state)
     }
     @Environment(\.panelOpen) private var panelOpen
@@ -261,7 +261,8 @@ struct LibraryView: View {
         // Screenshot runs: `-bereich filme|serien` focuses the design's poster, `-gescrollt`
         // scrolls to "Hafen 9", `-sortierung` opens the sort panel.
         .task(id: state.items.count) {
-            guard DebugLaunch.has("-bereich"), !state.items.isEmpty, !debugDone else { return }
+            // `-fokus reiter` keeps focus on the tab bar (tab-bar proof): this hook would move it to a poster.
+            guard DebugLaunch.has("-bereich"), !DebugLaunch.has("-fokus"), !state.items.isEmpty, !debugDone else { return }
             let scrolled = DebugLaunch.has("-gescrollt")
             let name = scrolled ? "Hafen 9" : (art == "tvshows" ? "Die Brücke" : "Nordlicht")
             if DebugLaunch.has("-sortierung") {

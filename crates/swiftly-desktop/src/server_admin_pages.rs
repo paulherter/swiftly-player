@@ -14,7 +14,7 @@ use crate::hub::HubSlot;
 use crate::management_hub::Dest;
 use crate::server_admin_link::{poster_address, user_address};
 use std::sync::Arc;
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::color;
 use swiftly_images::ImageAddress;
 use swiftly_layout::{Align, Alignment};
 use swiftly_render::Color;
@@ -104,9 +104,9 @@ pub fn hub_tabs(cx: &Cx, tabs: &[(Dest, String, bool)]) -> Node {
         .map(|(n, (_, label, on))| {
             let key = format!("hub:tab:{n}");
             let (fg, bg) = if *on {
-                (colour::REASON, colour::FONT)
+                (color::SURFACE_BASE, color::TEXT_PRIMARY)
             } else {
-                (colour::FONT_QUIET, colour::AREA)
+                (color::TEXT_SECONDARY, color::SURFACE_CONTROL)
             };
             text(
                 cx,
@@ -144,7 +144,7 @@ fn bar(share: f64, w: f32, fill: Color) -> Node {
 }
 
 fn accent() -> Color {
-    color(colour::MARK_ACCENT)
+    color(crate::look_glow::accent())
 }
 
 /// A label on the left, a value on the right, the line under them (a task, the load, a drive).
@@ -158,9 +158,9 @@ fn meter_row(
     trail: Option<Node>,
 ) -> Node {
     let tone = if warn {
-        colour::ERROR
+        color::STATE_ERROR
     } else {
-        colour::FONT_QUIET
+        color::TEXT_SECONDARY
     };
     let head = Node::hstack(
         Align::Center,
@@ -170,7 +170,7 @@ fn meter_row(
                 cx,
                 label,
                 style(15.0, 500),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Start,
             )
@@ -217,7 +217,7 @@ fn server_group(cx: &Cx, f: &Fm, page: &ServerAdminPage, col_w: f32) -> Node {
                 cx,
                 &page.name,
                 style(15.0, 700),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Start,
             )
@@ -226,7 +226,7 @@ fn server_group(cx: &Cx, f: &Fm, page: &ServerAdminPage, col_w: f32) -> Node {
                 cx,
                 &page.version,
                 style(15.0, 500),
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 Some(1),
                 swiftly_text::Align::Start,
             ),
@@ -247,7 +247,7 @@ fn server_group(cx: &Cx, f: &Fm, page: &ServerAdminPage, col_w: f32) -> Node {
                             cx,
                             &n.text,
                             style(22.0, 700),
-                            colour::FONT,
+                            color::TEXT_PRIMARY,
                             Some(1),
                             swiftly_text::Align::Start,
                         ),
@@ -255,7 +255,7 @@ fn server_group(cx: &Cx, f: &Fm, page: &ServerAdminPage, col_w: f32) -> Node {
                             cx,
                             &n.label,
                             style(13.0, 400),
-                            colour::FONT_QUIET,
+                            color::TEXT_SECONDARY,
                             Some(1),
                             swiftly_text::Align::Start,
                         ),
@@ -283,11 +283,11 @@ fn tasks_group(cx: &Cx, icons: &Icons, f: &Fm, page: &ServerAdminPage, col_w: f3
         .iter()
         .map(|t| {
             let stop = icons
-                .node("x-circle", 22.0, true, color(colour::FONT_QUIET))
+                .node("x-circle", 22.0, true, color(color::TEXT_SECONDARY))
                 .frame(Some(44.0), Some(44.0), Alignment::CENTER);
             let stop = forms::tappable_kb(stop, f, &format!("admin:stop-task:{}", t.id), 22.0)
                 .hover_surface(
-                    crate::home::rgba(colour::FONT, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
+                    crate::home::rgba(color::TEXT_PRIMARY, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
                     22.0,
                 )
                 .padding(ins(0.0, 0.0, 0.0, 8.0));
@@ -329,7 +329,11 @@ fn poster(hub: &HubSlot, address: Option<&str>, w: f32, h: f32, radius: f32) -> 
             h,
             radius,
         ),
-        _ => Node::rect(color(colour::AREA), radius).frame(Some(w), Some(h), Alignment::CENTER),
+        _ => Node::rect(color(color::SURFACE_CONTROL), radius).frame(
+            Some(w),
+            Some(h),
+            Alignment::CENTER,
+        ),
     }
 }
 
@@ -366,7 +370,7 @@ fn stream_card(
                 cx,
                 &initial,
                 style(11.0, 600),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(1),
                 swiftly_text::Align::Center,
             )
@@ -381,7 +385,10 @@ fn stream_card(
             letter,
         )
         .frame(Some(22.0), Some(22.0), Alignment::CENTER)
-        .background(Node::rect(color(colour::AREA), 11.0), Alignment::CENTER);
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 11.0),
+            Alignment::CENTER,
+        );
         Node::hstack(
             Align::Center,
             Some(6.0),
@@ -391,7 +398,7 @@ fn stream_card(
                     cx,
                     &s.user_name,
                     style(13.0, 500),
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
@@ -399,7 +406,7 @@ fn stream_card(
         )
     };
     let stop = icons
-        .node("x-circle", 20.0, true, color(colour::FONT_QUIET))
+        .node("x-circle", 20.0, true, color(color::TEXT_SECONDARY))
         .frame(Some(32.0), Some(32.0), Alignment::CENTER);
     let stop = forms::tappable_kb(
         stop,
@@ -408,7 +415,7 @@ fn stream_card(
         16.0,
     )
     .hover_surface(
-        crate::home::rgba(colour::FONT, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
+        crate::home::rgba(color::TEXT_PRIMARY, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
         16.0,
     );
     let mut title_line = vec![
@@ -416,7 +423,7 @@ fn stream_card(
             cx,
             &s.title,
             style(15.0, 700),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         )
@@ -427,7 +434,7 @@ fn stream_card(
             cx,
             a,
             style(13.0, 500),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(1),
             swiftly_text::Align::Start,
         ));
@@ -445,7 +452,7 @@ fn stream_card(
                 cx,
                 sub,
                 style(13.0, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(1),
                 swiftly_text::Align::Start,
             ),
@@ -461,7 +468,7 @@ fn stream_card(
                     cx,
                     &b.text,
                     style(11.0, 700),
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(1),
                     swiftly_text::Align::Center,
                 )
@@ -479,7 +486,7 @@ fn stream_card(
             cx,
             &s.device_line,
             style(12.0, 400),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(1),
             swiftly_text::Align::Start,
         ),
@@ -490,7 +497,7 @@ fn stream_card(
         if s.paused { "pause" } else { "play" },
         11.0,
         false,
-        color(colour::FONT_QUIET),
+        color(color::TEXT_SECONDARY),
     );
     col.push(wide(
         Node::hstack(
@@ -502,7 +509,7 @@ fn stream_card(
                     cx,
                     &s.time_line,
                     style(12.0, 500),
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
@@ -514,15 +521,18 @@ fn stream_card(
         s.share,
         content_w,
         if s.paused {
-            color(colour::FONT_VERY_QUIET)
+            color(color::TEXT_TERTIARY)
         } else {
-            color(colour::FONT)
+            color(color::TEXT_PRIMARY)
         },
     ));
     let (tone, fill) = if s.cautionary {
         (WARNING, Color::new(0.910, 0.514, 0.227, 0.16))
     } else {
-        (colour::MARK_ACCENT, Color::new(0.314, 0.835, 0.855, 0.16))
+        (
+            crate::look_glow::accent(),
+            Color::new(0.314, 0.835, 0.855, 0.16),
+        )
     };
     col.push(wide(
         text(
@@ -560,7 +570,7 @@ fn streams_group(
                 cx,
                 &page.streams_empty,
                 style(15.0, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 None,
                 swiftly_text::Align::Start,
             ),
@@ -611,7 +621,7 @@ fn load_group(cx: &Cx, f: &Fm, page: &ServerAdminPage, col_w: f32) -> Option<Nod
                         cx,
                         &io.label,
                         style(15.0, 500),
-                        colour::FONT,
+                        color::TEXT_PRIMARY,
                         Some(1),
                         swiftly_text::Align::Start,
                     ),
@@ -620,7 +630,7 @@ fn load_group(cx: &Cx, f: &Fm, page: &ServerAdminPage, col_w: f32) -> Option<Nod
                         cx,
                         &io.text,
                         style(13.0, 400),
-                        colour::FONT_QUIET,
+                        color::TEXT_SECONDARY,
                         Some(1),
                         swiftly_text::Align::End,
                     ),
@@ -714,11 +724,14 @@ fn ask_dialog(cx: &Cx, window_h: f32, ask: &ServerAdminAsk) -> Option<Node> {
             .frame(None, Some(34.0), Alignment::CENTER),
             Alignment::CENTER,
         )
-        .background(Node::rect(color(colour::AREA), 8.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 8.0),
+            Alignment::CENTER,
+        )
         .key(key)
         .on_tap(Action::from(key))
         .hover_surface(
-            crate::home::rgba(colour::FONT, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
+            crate::home::rgba(color::TEXT_PRIMARY, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
             8.0,
         )
     };
@@ -726,7 +739,7 @@ fn ask_dialog(cx: &Cx, window_h: f32, ask: &ServerAdminAsk) -> Option<Node> {
         cx,
         title,
         style(15.0, 700),
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(2),
         swiftly_text::Align::Center,
     )];
@@ -737,9 +750,9 @@ fn ask_dialog(cx: &Cx, window_h: f32, ask: &ServerAdminAsk) -> Option<Node> {
                 l,
                 style(13.0, 400),
                 if i == 2 {
-                    colour::FONT_VERY_QUIET
+                    color::TEXT_TERTIARY
                 } else {
-                    colour::FONT_QUIET
+                    color::TEXT_SECONDARY
                 },
                 Some(4),
                 swiftly_text::Align::Center,
@@ -747,13 +760,20 @@ fn ask_dialog(cx: &Cx, window_h: f32, ask: &ServerAdminAsk) -> Option<Node> {
             .padding(ins(if i == 0 { 6.0 } else { 0.0 }, 0.0, 0.0, 0.0)),
         );
     }
-    col.push(button("admin:ask.ok", action, colour::ERROR).padding(ins(6.0, 0.0, 0.0, 0.0)));
-    col.push(button("admin:ask.cancel", cancel_label(), colour::FONT));
+    col.push(button("admin:ask.ok", action, color::STATE_ERROR).padding(ins(6.0, 0.0, 0.0, 0.0)));
+    col.push(button(
+        "admin:ask.cancel",
+        cancel_label(),
+        color::TEXT_PRIMARY,
+    ));
     Some(
         Node::vstack(Align::Center, Some(8.0), col)
             .padding(ins(20.0, 20.0, 20.0, 20.0))
             .frame(Some(320.0), None, Alignment::CENTER)
-            .background(Node::rect(color(colour::RAISED), 14.0), Alignment::CENTER)
+            .background(
+                Node::rect(color(color::SURFACE_RAISED), 14.0),
+                Alignment::CENTER,
+            )
             .appear_offset(0.0, -slide)
             .exit_offset(0.0, -slide),
     )
@@ -780,7 +800,7 @@ fn message_page(
                 cx,
                 hint,
                 style(15.0, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 None,
                 swiftly_text::Align::Start,
             ),
@@ -962,7 +982,7 @@ pub fn logs_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &AdminView) -> No
                     cx,
                     &shown,
                     style(12.0, 400),
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     None,
                     swiftly_text::Align::Start,
                 )
@@ -970,7 +990,7 @@ pub fn logs_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &AdminView) -> No
                 Alignment::TOP_LEADING,
             )
             .background(
-                Node::rect(color(colour::GROUPS_AREA), 16.0),
+                Node::rect(color(color::SURFACE_GROUP), 16.0),
                 Alignment::CENTER,
             );
             forms::settings_page(

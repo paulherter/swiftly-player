@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -72,6 +71,7 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.delay
 
@@ -89,12 +89,12 @@ private object TvMenuMetric {
     val row = 36.dp
     val pad = 12.dp
     val boxPad = 6.dp
-    val radius = 14.dp
-    val rowRadius = 8.dp
+    /** The box is a card (`radius.card`); its rows sit concentric inside it: card corner minus the 6 dp pad = `radius.small`. */
+    val radius = TvTheme.cornerArea
+    val rowRadius = TvTheme.cornerSmall
     val label = 15.sp
     val detail = 12.sp
     val chip = 32.dp
-    val seasonsTop = 76.dp
 }
 
 internal val menuOpenSpring = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 440f)
@@ -137,18 +137,19 @@ internal fun TvPlayerMenuLayer(session: PlayerMenuSession, menus: () -> PlayerMe
     val hangs = kind == MenuKind.Seasons
     val wide = level is PlayerMenuLevel.Tracks
     Box(modifier.fillMaxSize().zIndex(8f)) {
-        Box(Modifier.align(if (hangs) Alignment.TopStart else Alignment.TopEnd)
-                .padding(top = if (hangs) TvTheme.edgeTop + TvMenuMetric.seasonsTop else TvTheme.edgeTop - 6.dp,
-                         start = TvTheme.edgePage, end = TvTheme.edgePage)
+        // The season box hangs under the Folgen box's first row, its right edge in line with the Folgen box's (tvOS `TVFolgenBox`).
+        Box(Modifier.align(Alignment.TopEnd)
+                .padding(top = if (hangs) TvTheme.edgeTop - 6.dp + TvFolgenMetric.boxPad + TvFolgenMetric.row + 4.dp else TvTheme.edgeTop - 6.dp,
+                         end = TvTheme.edgePage)
                 .graphicsLayer {
                     val s = 0.96f + 0.04f * shown.value
                     scaleX = s; scaleY = s
                     alpha = shown.value.coerceIn(0f, 1f)
-                    transformOrigin = TransformOrigin(if (hangs) 0f else 1f, 0f)
+                    transformOrigin = TransformOrigin(1f, 0f)
                 }
                 .width(if (wide) TvMenuMetric.wide else TvMenuMetric.width)
-                .clip(RoundedCornerShape(TvMenuMetric.radius)).background(Theme.groupsArea)
-                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), RoundedCornerShape(TvMenuMetric.radius))
+                .clip(smoothRoundedShape(TvMenuMetric.radius)).background(Theme.raised)
+                .border(BorderStroke(1.dp, TvTheme.edge), smoothRoundedShape(TvMenuMetric.radius))
                 // Focus stays in the box until Back closes it.
                 .focusProperties { exit = { FocusRequester.Cancel } }
                 .focusGroup()) {
@@ -247,7 +248,7 @@ private fun TvMenuItem(modifier: Modifier = Modifier, label: String, height: Dp 
     FocusArea(modifier.fillMaxWidth().focusProperties { canFocus = enabled }.semantics { contentDescription = label }
             .then(if (onKey != null) Modifier.onPreviewKeyEvent { onKey(it) } else Modifier),
         magnifier = 1f, perform = perform) { lit ->
-        Row(Modifier.fillMaxWidth().heightIn(min = height).clip(RoundedCornerShape(radius))
+        Row(Modifier.fillMaxWidth().heightIn(min = height).clip(smoothRoundedShape(radius))
                 .background(if (lit) Color.White else Color.Transparent).padding(horizontal = TvMenuMetric.pad),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = if (centre) Arrangement.Center else Arrangement.spacedBy(8.dp)) { content(lit) }
@@ -310,7 +311,7 @@ private fun TvRowView(spec: RowSpec, landing: (String) -> Modifier, act: (TvAct)
         }
         is RowSpec.Section -> MenuText(spec.text, Theme.fontVeryQuiet, Modifier.padding(horizontal = TvMenuMetric.pad, vertical = 6.dp), size = TvMenuMetric.detail, semibold = false)
         is RowSpec.Hint -> MenuText(spec.text, Theme.fontVeryQuiet, Modifier.padding(horizontal = TvMenuMetric.pad, vertical = 6.dp), size = TvMenuMetric.detail, semibold = false, lines = 4)
-        RowSpec.Divider -> Box(Modifier.fillMaxWidth().padding(horizontal = TvMenuMetric.pad, vertical = 3.dp).height(1.dp).background(Color.White.copy(alpha = 0.08f)))
+        RowSpec.Divider -> Box(Modifier.fillMaxWidth().padding(horizontal = TvMenuMetric.pad, vertical = 3.dp).height(1.dp).background(TvTheme.hairline))
     }
 }
 
@@ -354,7 +355,7 @@ private fun TvBarHalf(glyph: Glyph, label: String, open: Boolean, focus: FocusRe
             left = before ?: FocusRequester.Cancel
             right = after ?: FocusRequester.Cancel
         }.semantics { contentDescription = label }, magnifier = TvTheme.focusMagnifierSmall, perform = perform) { lit ->
-        Box(Modifier.size(56.dp, 40.dp).clip(RoundedCornerShape(20.dp))
+        Box(Modifier.size(56.dp, 40.dp).clip(smoothRoundedShape(20.dp))
                 .background(if (lit) Color.White else if (open) Color.White.copy(alpha = 0.16f) else Color.Transparent), contentAlignment = Alignment.Center) {
             Symbol(glyph, 22.dp, color = if (lit) Theme.reason else Theme.font, strength = Strength.Medium)
         }

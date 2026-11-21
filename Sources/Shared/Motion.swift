@@ -15,28 +15,68 @@ import SwiftUI
 //
 // Included in the iPhone/iPad and Mac targets.
 
+#if os(iOS) || os(macOS)
+extension Animation {
+    /// A design-token motion role as a SwiftUI animation: `curve` is the token's curve name (bezier points come from the
+    /// generated `SwiftlyDesignTokens.Curves`), `duration` its seconds.
+    static func token(_ curve: String, _ duration: Double) -> Animation {
+        typealias C = SwiftlyDesignTokens.Curves
+        switch curve {
+        case "drawer":
+            return .timingCurve(C.drawerX1, C.drawerY1, C.drawerX2, C.drawerY2, duration: duration)
+        case "ease-in-out":
+            return .timingCurve(C.easeInOutX1, C.easeInOutY1, C.easeInOutX2, C.easeInOutY2, duration: duration)
+        case "linear":
+            return .linear(duration: duration)
+        case "smooth":
+            return .smooth(duration: duration)
+        case "snappy":
+            return .snappy(duration: duration)
+        default:  // "ease-out"
+            return .timingCurve(C.easeOutX1, C.easeOutY1, C.easeOutX2, C.easeOutY2, duration: duration)
+        }
+    }
+}
+#endif
+
 enum Motion {
     /// **A surface from below** (sheet, panel): fast approach, no overshoot. The same as
     /// the app's own sheet (`Theme.sheetMotion`), which takes its numbers from here.
     static var sheet: Animation {
+        #if os(iOS) || os(macOS)
+        Theme.motionReduced ? Theme.fadeReduced : .token(SwiftlyDesignTokens.Layout.motionEmphasizedCurve, SwiftlyDesignTokens.Layout.motionEmphasizedDuration)   // token motion.emphasized
+        #else
         Theme.motionReduced ? Theme.fadeReduced : .spring(response: 0.35, dampingFraction: 0.86)
+        #endif
     }
 
     /// **Content that changes in place**: a look's colors and glow, a step of the gift,
     /// the thank-you page. Smooth, 0.28 s, no overshoot (`Theme.reveal` is the same).
     static var change: Animation {
+        #if os(iOS) || os(macOS)
+        Theme.motionReduced ? Theme.fadeReduced : .token(SwiftlyDesignTokens.Layout.motionStandardCurve, SwiftlyDesignTokens.Layout.motionStandardDuration)   // token motion.standard
+        #else
         Theme.motionReduced ? Theme.fadeReduced : .smooth(duration: 0.28)
+        #endif
     }
 
     /// **A small selection**: the segments' surface, the ring around a chosen dot.
     static var select: Animation {
+        #if os(iOS) || os(macOS)
+        Theme.motionReduced ? Theme.fadeReduced : .token(SwiftlyDesignTokens.Layout.motionSelectCurve, SwiftlyDesignTokens.Layout.motionSelectDuration)   // token motion.select
+        #else
         Theme.motionReduced ? Theme.fadeReduced : .smooth(duration: 0.25)
+        #endif
     }
 
     /// **Something that lands**: the picked-up gift's icon, like the profile picture that
     /// settles in the header (spring of about 0.45 s, almost critically damped).
     static var land: Animation {
+        #if os(iOS) || os(macOS)
+        Theme.motionReduced ? Theme.fadeReduced : .token(SwiftlyDesignTokens.Layout.motionEmphasizedLandCurve, SwiftlyDesignTokens.Layout.motionEmphasizedLandDuration)   // token motion.emphasized-land
+        #else
         Theme.motionReduced ? Theme.fadeReduced : .spring(response: 0.45, dampingFraction: 0.86)
+        #endif
     }
 
     /// **How long the page takes before a sheet follows it**, in seconds: the profile

@@ -8,7 +8,7 @@
 
 use crate::home::{ins, text};
 use swiftly_accounts::AccountSwitchCurve;
-use swiftly_design::tokens::colour;
+use swiftly_design::tokens_generated::color;
 use swiftly_layout::Alignment;
 use swiftly_render::Color;
 use swiftly_ui::components::color;
@@ -140,7 +140,7 @@ impl SwitchStage {
                     tracking: 0.0,
                     uppercase: false,
                 },
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Center,
             )
@@ -157,7 +157,7 @@ impl SwitchStage {
         let face = inner(p.size)
             .frame(Some(p.size), Some(p.size), Alignment::CENTER)
             .background(
-                Node::rect(color(colour::AREA), p.size / 2.0),
+                Node::rect(color(color::SURFACE_CONTROL), p.size / 2.0),
                 Alignment::CENTER,
             )
             .opacity(p.alpha, swiftly_ui::Motion::Instant);
@@ -224,7 +224,7 @@ impl StageScreen {
                                 tracking: 0.0,
                                 uppercase: false,
                             },
-                            colour::FONT,
+                            color::TEXT_PRIMARY,
                             Some(1),
                             swiftly_text::Align::Center,
                         )

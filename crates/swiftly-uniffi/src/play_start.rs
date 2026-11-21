@@ -323,6 +323,8 @@ fn request_of(r: PlayPlanRequest) -> StartRequest {
         },
         hardware_av1: r.hardware_av1,
         no_dolby_vision_decoder: false,
+        video_decoders: swiftly_playback::video_decoders::VideoDecoders::default(),
+        decoder_refused: false,
         ask_versions: r.ask_versions,
         downloaded: r.downloaded.map(|d| DownloadedFile {
             file: d.file,

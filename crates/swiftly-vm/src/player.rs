@@ -352,6 +352,31 @@ pub struct TransportPart {
     pub small_window: Option<&'static str>,
 }
 
+impl TransportPart {
+    /// The start veil (black, with the loader in the centre) is up: no first picture yet and no failed start to show
+    /// instead. **The top bar is not part of the veil** (title, capsule and close button are known before the stream
+    /// answers, so they are up from the first frame and stay put when the picture arrives); only the centre and the
+    /// timeline wait for it (`ControlsPart::middle_up`). The same rule on every platform.
+    pub fn veil_up(&self) -> bool {
+        veil_up(self.picture_shown, self.failure.is_some())
+    }
+}
+
+/// `TransportPart::veil_up` for a host that keeps the two facts itself (the picture is there, the start failed).
+pub fn veil_up(picture_shown: bool, failed: bool) -> bool {
+    !picture_shown && !failed
+}
+
+/// `ControlsPart::top_bar_up` for a host that keeps the "controls wanted" flag itself.
+pub fn top_bar_up(controls_wanted: bool) -> bool {
+    controls_wanted
+}
+
+/// `ControlsPart::middle_up` for a host that keeps the "controls wanted" flag itself.
+pub fn middle_up(controls_wanted: bool, veil_up: bool) -> bool {
+    controls_wanted && !veil_up
+}
+
 /// Controls visibility and the transient indicators.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ControlsPart {
@@ -375,6 +400,19 @@ pub struct ControlsPart {
     pub volume: u8,
     /// Silent (volume zero): the speaker button shows the muted symbol.
     pub muted: bool,
+}
+
+impl ControlsPart {
+    /// The top bar (title, context line, capsule, close button) is up: whenever the controls are, also under the start
+    /// veil (see `TransportPart::veil_up`).
+    pub fn top_bar_up(&self) -> bool {
+        top_bar_up(self.visible)
+    }
+
+    /// The centre (play/pause, jumps) and the timeline are up: the controls are, and the picture is there.
+    pub fn middle_up(&self, transport: &TransportPart) -> bool {
+        middle_up(self.visible, transport.veil_up())
+    }
 }
 
 /// A track in the panel.
@@ -1393,8 +1431,8 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
             l.prepared = true;
             l.effects.push(PlayerEffect::PrepareNext(next.id));
         }
-        // Advance by itself at the end, only through the card path.
-        if l.layer.next_at_end()
+        // Advance by itself at the end: through the card, or without one while "Next episode automatically" is on.
+        if l.layer.next_at_end_with(l.prefs.next_automatic)
             && l.spec.next.is_some()
             && episodes_end::advance(
                 l.snap.position,
@@ -1426,6 +1464,11 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
                 now,
                 may_hide: false,
             });
+        }
+        // The idle timer does not run under the start veil: the bar that is up from the first frame (`veil_up`) stays
+        // while the stream answers, however long that takes, and its four seconds start when the picture arrives.
+        if l.controls && l.hide_at.is_some() && !l.snap.first_image_present && l.error.is_none() {
+            l.hide_at = Some(now + CONTROLS_HIDE);
         }
         // Controls fade out: only while playing, not while scrubbing or with a panel open.
         if l.controls

@@ -53,25 +53,29 @@ struct LicensesView: View {
 
     var body: some View {
         LicensePage(title: "Open-Source-Lizenzen", back: back) {
-            Text("Swiftly Player nutzt VLCKit und libVLC von VideoLAN (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.")
+            Text("Swiftly Player spielt mit AetherEngine und FFmpeg (Apple), Media3 (Android) und libmpv (Windows, Linux). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.")
                 .font(Theme.body)
                 .lineSpacing(3)
                 .foregroundStyle(Theme.fontQuiet)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, 4)
             if let inventory {
-                SettingGroup(title: "VLCKit und libVLC") {
+                SettingGroup(title: "Wiedergabe") {
                     ForEach(inventory.components(group: "player")) { b in
                         row(b)
                         SheetLine().padding(.leading, Theme.separatorInsetCard)
                     }
                     ValuesRow(symbol: "doc.text",
                                title: Text("Quelltext und schriftliches Angebot"),
-                               under: Text("Woher VLCKit kommt und wie du es ersetzt"),
+                               under: Text("Woher die Player-Bausteine kommen und wie du sie ersetzt"),
                                arrow: true) { navigator.openIt(.licenseOffering, in: section) }
                 }
+                Text("Frühere Versionen enthielten VLCKit und libVLC (LGPL 2.1 oder später). Das schriftliche Angebot für ihren Quelltext gilt weiter, siehe „Quelltext und schriftliches Angebot“.")
+                    .font(Theme.body)
+                    .lineSpacing(3)
+                    .foregroundStyle(Theme.fontQuiet)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 group("Weitere Bausteine", inventory.components(group: "app"))
-                group("In VLCKit eingebaut", inventory.components(group: "in-vlckit"))
             } else {
                 Missing()
             }

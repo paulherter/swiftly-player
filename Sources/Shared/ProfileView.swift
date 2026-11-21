@@ -163,9 +163,9 @@ struct ProfileView: View {
                             log = LogFile.write()
                         }
                         // Last, because it sets nothing: it shows what is in the app and where the
-                        // VLCKit source is (LGPL).
+                        // source of the player components is (LGPL).
                         ProfileRow(symbol: "text.book.closed", title: "Open-Source-Lizenzen",
-                                    under: "Und der Quelltext von VLCKit",
+                                    under: "Und der Quelltext der Player-Bausteine",
                                     last: true, target: LicensesRoute())
                     }
 

@@ -238,3 +238,37 @@ fn the_preview_store_reads_the_old_host_copy_once_and_keeps_scopes_apart() {
     cache.entity_cache().drop_scope(&a);
     assert!(store_a.read("startseite-x").is_none());
 }
+
+#[test]
+fn the_strip_comes_with_the_cached_first_page_and_needs_no_fetch() {
+    let cache = cache();
+    let online = server("");
+    let first = vm(&online, &cache, "A");
+    first.send(LibraryIntent::Load);
+    wait_for("first load", || ready(&first));
+    futures_executor::block_on(first.load_alphabet());
+    let whole = first.alphabet();
+    assert!(!whole.entries.is_empty());
+
+    // A new screen with the server gone: tiles and strip are there together, strip equal to the whole list's.
+    let down = server("");
+    down.offline.store(true, Ordering::SeqCst);
+    let second = vm(&down, &cache, "A");
+    assert!(
+        second.alphabet_known().is_none(),
+        "nothing is known before the page"
+    );
+    second.send(LibraryIntent::Load);
+    wait_for("cached paint", || ready(&second));
+    let known = second.alphabet_known().expect("strip with the cached page");
+    assert_eq!(known, whole);
+    assert_eq!(second.alphabet(), whole);
+
+    // Another account never reads it.
+    let other = vm(&down, &cache, "B");
+    other.send(LibraryIntent::Load);
+    wait_for("b settles", || {
+        other.status().status != LibraryStatus::Loading
+    });
+    assert!(other.alphabet_known().is_none());
+}

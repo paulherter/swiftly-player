@@ -6,7 +6,7 @@ import Testing
 /// The person page and the playlist page over the scripted server (the old Swift loading is gone;
 /// these pin what the core hands the views: sections, rows, empty and failed states).
 @Suite(.serialized) struct PersonPlaylistTests {
-    private let anna = PersonInfo(id: "p1", name: "Anna Muster", role: "Hauptrolle", kind: "Actor", imageTag: nil)
+    private let anna = PersonInfo(id: "p1", name: "Anna Muster", role: "Hauptrolle", kind: "Actor", imageTag: nil, tmdb: nil, imageUrl: nil)
 
     @MainActor private func person(_ server: FixtureServer) throws -> PersonController {
         PersonController(model: try makeCore().personModel(account: account(server), locale: "de", person: anna, origin: nil))

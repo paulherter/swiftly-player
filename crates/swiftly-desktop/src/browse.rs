@@ -11,7 +11,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use swiftly_design::tokens::{colour, desktop, touch, tv};
+use swiftly_design::tokens::{touch, tv};
+use swiftly_design::tokens_generated::color;
+use swiftly_design::tokens_generated::desktop as dsk;
 use swiftly_jellyfin::ServerKind;
 use swiftly_l10n::Locale;
 use swiftly_layout::{Align, Alignment, EdgeInsets, Size};
@@ -269,16 +271,16 @@ pub fn metrics(env: &Env) -> Metrics {
         },
         Form::Desktop => Metrics {
             form,
-            edge: desktop::EDGE_SPACING,
+            edge: dsk::SPACE_PAGE,
             gap: 16.0,
             row_gap: 24.0,
-            tile_w: desktop::TILE_WIDTH,
-            tile_h: desktop::TILE_HEIGHT,
-            corner: desktop::CORNER_TILE,
-            title: desktop::text::TILE,
-            small: desktop::text::SMALL,
-            side: desktop::SIDEBAR_WIDTH,
-            top: desktop::CONTENT_TOP,
+            tile_w: dsk::SIZE_POSTER_WIDTH,
+            tile_h: dsk::SIZE_POSTER_HEIGHT,
+            corner: dsk::RADIUS_TILE,
+            title: dsk::TEXT_LABEL_TILE,
+            small: dsk::TEXT_CAPTION_SMALL,
+            side: dsk::SIZE_SIDEBAR_WIDTH,
+            top: dsk::SPACE_CONTENT_TOP,
         },
         Form::Tv => Metrics {
             form,
@@ -381,7 +383,7 @@ impl Art {
 pub(crate) fn tile_mark(cx: &Cx, icons: &Icons, tile: &Tile) -> Option<Node> {
     let mut parts = Vec::new();
     let label = if tile.badges.contains(&Badge::Watched) {
-        parts.push(icons.node("check", 10.0, true, color(colour::FONT)));
+        parts.push(icons.node("check", 10.0, true, color(color::TEXT_PRIMARY)));
         None
     } else {
         tile.badges.iter().find_map(|b| match b {
@@ -396,7 +398,7 @@ pub(crate) fn tile_mark(cx: &Cx, icons: &Icons, tile: &Tile) -> Option<Node> {
             cx,
             l,
             style(10.0, 600),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         ));
@@ -409,7 +411,7 @@ pub(crate) fn tile_mark(cx: &Cx, icons: &Icons, tile: &Tile) -> Option<Node> {
         Node::hstack(Align::Center, Some(3.0), parts)
             .padding(EdgeInsets::symmetric(side, 3.0))
             .background(
-                Node::rect(rgba(colour::REASON, 0.78), 8.0),
+                Node::rect(rgba(color::SURFACE_BASE, 0.78), 8.0),
                 Alignment::CENTER,
             )
             .padding(EdgeInsets::all(6.0)),
@@ -500,7 +502,7 @@ pub fn grid_tile_with(
         ),
         (None, _) => match art.pick(&tile.id) {
             Some(id) => Node::image(id, g.w, g.h, m.corner),
-            None => Node::rect(color(colour::AREA), m.corner).frame(
+            None => Node::rect(color(color::SURFACE_CONTROL), m.corner).frame(
                 Some(g.w),
                 Some(g.h),
                 Alignment::CENTER,
@@ -508,7 +510,7 @@ pub fn grid_tile_with(
         },
     };
     let mut image = image.paint(Paint::Stroke {
-        color: color(colour::TILE_BORDER),
+        color: color(color::BORDER_TILE),
         width: 1.0,
         radius: m.corner,
     });
@@ -528,7 +530,7 @@ pub fn grid_tile_with(
             cx,
             &tile.title,
             m.title,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         )
@@ -544,7 +546,7 @@ pub fn grid_tile_with(
                 cx,
                 sub,
                 m.small,
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 Some(1),
                 swiftly_text::Align::Start,
             )
@@ -556,7 +558,7 @@ pub fn grid_tile_with(
         image
             .on_tap(Action::from(format!("tile:{}", tile.id).as_str()))
             .focusable(focus_id(key), None)
-            .focus_ring(color(colour::MARK_ACCENT), m.corner)
+            .focus_ring(color(crate::look_glow::accent()), m.corner)
     } else {
         image
     };
@@ -616,12 +618,12 @@ pub fn value_pill(
             Align::Center,
             Some(12.0),
             vec![
-                icons.node(asset, 22.0, true, rgba(colour::FONT, 0.6)),
+                icons.node(asset, 22.0, true, rgba(color::TEXT_PRIMARY, 0.6)),
                 text(
                     cx,
                     label,
                     style(26.0, 600),
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
@@ -644,12 +646,12 @@ pub fn value_pill(
         Align::Center,
         Some(6.0),
         vec![
-            icons.node(asset, 11.0, true, color(colour::FONT)),
+            icons.node(asset, 11.0, true, color(color::TEXT_PRIMARY)),
             text(
                 cx,
                 label,
                 style(13.0, 500),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Start,
             ),
@@ -657,7 +659,10 @@ pub fn value_pill(
     )
     .padding(EdgeInsets::symmetric(12.0, 0.0))
     .frame(None, Some(30.0), Alignment::CENTER)
-    .background(Node::rect(color(colour::AREA), 15.0), Alignment::CENTER)
+    .background(
+        Node::rect(color(color::SURFACE_CONTROL), 15.0),
+        Alignment::CENTER,
+    )
     .key(action)
     .on_tap(Action::from(action))
 }
@@ -667,21 +672,24 @@ pub fn value_pill(
 pub fn popup_chip(cx: &Cx, icons: &Icons, asset: Option<&str>, label: &str, action: &str) -> Node {
     let mut kids = Vec::new();
     if let Some(asset) = asset {
-        kids.push(icons.node(asset, 14.0, true, color(colour::FONT_QUIET)));
+        kids.push(icons.node(asset, 14.0, true, color(color::TEXT_SECONDARY)));
     }
     kids.push(text(
         cx,
         label,
         style(13.0, 600),
-        colour::FONT_QUIET,
+        color::TEXT_SECONDARY,
         Some(1),
         swiftly_text::Align::Start,
     ));
-    kids.push(icons.node("caret-down", 11.0, true, color(colour::FONT_QUIET)));
+    kids.push(icons.node("caret-down", 11.0, true, color(color::TEXT_SECONDARY)));
     Node::hstack(Align::Center, Some(7.0), kids)
         .padding(EdgeInsets::symmetric(12.0, 0.0))
         .frame(None, Some(30.0), Alignment::CENTER)
-        .background(Node::rect(color(colour::AREA), 15.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 15.0),
+            Alignment::CENTER,
+        )
         .key(action)
         .on_tap(Action::from(action))
 }
@@ -697,7 +705,7 @@ pub fn count_mark(cx: &Cx, count: i64, tv: bool) -> Node {
         cx,
         &count.to_string(),
         st,
-        colour::FONT_VERY_QUIET,
+        color::TEXT_TERTIARY,
         Some(1),
         swiftly_text::Align::End,
     )
@@ -755,9 +763,9 @@ pub fn sheet_with(
         .enumerate()
         .map(|(i, r)| {
             let c = if r.selected {
-                colour::FONT
+                color::TEXT_PRIMARY
             } else {
-                colour::FONT_QUIET
+                color::TEXT_SECONDARY
             };
             let key = format!("{prefix}{i}");
             let mut n = Node::hstack(
@@ -771,9 +779,9 @@ pub fn sheet_with(
                                 17.0,
                                 true,
                                 if r.selected {
-                                    color(colour::FONT)
+                                    color(color::TEXT_PRIMARY)
                                 } else {
-                                    rgba(colour::FONT, 0.0)
+                                    rgba(color::TEXT_PRIMARY, 0.0)
                                 },
                             )
                             .frame(Some(18.0), None, Alignment::CENTER)
@@ -807,7 +815,7 @@ pub fn sheet_with(
             cx,
             caption,
             style(13.0, 600),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(1),
             swiftly_text::Align::Start,
         )
@@ -821,7 +829,7 @@ pub fn sheet_with(
         cx,
         title,
         style(17.0, 600),
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(1),
         swiftly_text::Align::Start,
     )
@@ -841,8 +849,8 @@ pub fn sheet_with(
     let card = wide(card, Alignment::TOP_LEADING)
         .frame(card_w, None, Alignment::TOP_LEADING)
         .background(
-            Node::rect(color(colour::AREA), 28.0).paint(Paint::Stroke {
-                color: color(colour::LINE),
+            Node::rect(color(color::SURFACE_CONTROL), 28.0).paint(Paint::Stroke {
+                color: color(color::BORDER_HAIRLINE),
                 width: 1.0,
                 radius: 28.0,
             }),
@@ -865,13 +873,13 @@ pub fn search_field(cx: &Cx, icons: &Icons, v: &swiftly_ui::field::FieldView, tv
     let (icon, high) = if tv { (30.0, 72.0) } else { (17.0, 56.0) };
     let look = search_look(tv);
     let filled = !v.display.text.is_empty();
-    let mut row = vec![icons.node("magnifying-glass", icon, true, color(colour::FONT))];
+    let mut row = vec![icons.node("magnifying-glass", icon, true, color(color::TEXT_PRIMARY))];
     row.push(swiftly_ui::field::field_content(cx, v, &look).key("field.text"));
     row.push(Node::spacer());
     if filled {
         row.push(
             icons
-                .node("x-circle.fill", 17.0, false, color(colour::FONT_VERY_QUIET))
+                .node("x-circle.fill", 17.0, false, color(color::TEXT_TERTIARY))
                 .frame(Some(44.0), Some(44.0), Alignment::CENTER)
                 .padding(ins(0.0, 0.0, 0.0, -13.0))
                 .key("field.clear")
@@ -881,7 +889,10 @@ pub fn search_field(cx: &Cx, icons: &Icons, v: &swiftly_ui::field::FieldView, tv
     Node::hstack(Align::Center, Some(10.0), row)
         .padding(EdgeInsets::symmetric(14.0, 0.0))
         .frame(None, Some(high), Alignment::LEADING)
-        .background(Node::rect(color(colour::AREA), 10.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 10.0),
+            Alignment::CENTER,
+        )
         .key("field")
         .on_tap(Action::from("field.focus"))
 }
@@ -891,18 +902,13 @@ pub fn search_field(cx: &Cx, icons: &Icons, v: &swiftly_ui::field::FieldView, tv
 pub fn search_field_desktop(cx: &Cx, icons: &Icons, v: &swiftly_ui::field::FieldView) -> Node {
     let look = search_look(false);
     let filled = !v.display.text.is_empty();
-    let mut row = vec![icons.node(
-        "magnifying-glass",
-        16.0,
-        true,
-        color(colour::FONT_VERY_QUIET),
-    )];
+    let mut row = vec![icons.node("magnifying-glass", 16.0, true, color(color::TEXT_TERTIARY))];
     row.push(swiftly_ui::field::field_content(cx, v, &look));
     row.push(Node::spacer());
     if filled {
         row.push(
             icons
-                .node("x-circle.fill", 16.0, false, color(colour::FONT_VERY_QUIET))
+                .node("x-circle.fill", 16.0, false, color(color::TEXT_TERTIARY))
                 .frame(Some(28.0), Some(28.0), Alignment::CENTER)
                 .cursor(swiftly_ui::Cursor::Arrow)
                 .key("field.clear")
@@ -912,14 +918,14 @@ pub fn search_field_desktop(cx: &Cx, icons: &Icons, v: &swiftly_ui::field::Field
     let on = if v.focused { 1.0 } else { 0.0 };
     let border = Node::rect(Color::new(0.0, 0.0, 0.0, 0.0), 12.0)
         .paint(Paint::Stroke {
-            color: color(colour::MARK_ACCENT),
+            color: color(crate::look_glow::accent()),
             width: 1.0,
             radius: 12.0,
         })
         .opacity(on, swiftly_ui::feel::hover());
     let ring = Node::rect(Color::new(0.0, 0.0, 0.0, 0.0), 15.0)
         .paint(Paint::Stroke {
-            color: color(colour::MARK_ACCENT).with_alpha(0.35),
+            color: color(crate::look_glow::accent()).with_alpha(0.35),
             width: 6.0,
             radius: 15.0,
         })
@@ -933,7 +939,10 @@ pub fn search_field_desktop(cx: &Cx, icons: &Icons, v: &swiftly_ui::field::Field
     Node::hstack(Align::Center, Some(8.0), row)
         .padding(EdgeInsets::symmetric(12.0, 0.0))
         .frame(None, Some(40.0), Alignment::LEADING)
-        .background(Node::rect(color(colour::AREA), 12.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 12.0),
+            Alignment::CENTER,
+        )
         .overlay(border, Alignment::CENTER)
         .overlay(ring, Alignment::CENTER)
         .cursor(swiftly_ui::Cursor::Text)
@@ -945,10 +954,10 @@ pub fn search_field_desktop(cx: &Cx, icons: &Icons, v: &swiftly_ui::field::Field
 pub fn search_look(tv: bool) -> swiftly_ui::field::FieldLook {
     swiftly_ui::field::FieldLook {
         style: swiftly_text::TextStyle::from(style(if tv { 30.0 } else { 15.0 }, 400)),
-        text: color(colour::FONT),
-        placeholder: color(colour::FONT_VERY_QUIET),
-        caret: color(colour::MARK_ACCENT),
-        selection: color(colour::MARK_ACCENT).with_alpha(0.30),
+        text: color(color::TEXT_PRIMARY),
+        placeholder: color(color::TEXT_TERTIARY),
+        caret: color(crate::look_glow::accent()),
+        selection: color(crate::look_glow::accent()).with_alpha(0.30),
         caret_height: Some(if tv { 36.0 } else { 20.0 }),
     }
 }
@@ -975,7 +984,7 @@ pub fn page(
             let side = crate::look_glow::behind(
                 fill_frame(body, Alignment::TOP_LEADING).overlay(strip, Alignment::TOP),
                 bar.glow,
-                env.size.w - desktop::SIDEBAR_WIDTH,
+                env.size.w - dsk::SIZE_SIDEBAR_WIDTH,
             );
             Node::hstack(
                 Align::Start,
@@ -986,8 +995,10 @@ pub fn page(
         Form::Tv => fill_frame(body, Alignment::TOP_LEADING)
             .overlay(home::header_bar(cx, &bar, "P"), Alignment::TOP),
     };
-    let page = fill_frame(page, Alignment::TOP_LEADING)
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER);
+    let page = fill_frame(page, Alignment::TOP_LEADING).background(
+        Node::rect(color(color::SURFACE_BASE), 0.0),
+        Alignment::CENTER,
+    );
     match overlay {
         Some(o) => page.overlay(o, Alignment::BOTTOM),
         None => page,
@@ -1000,8 +1011,8 @@ pub fn heading(cx: &Cx, m: &Metrics, title: &str) -> Node {
     text(
         cx,
         title,
-        desktop::text::TITLE_LARGE,
-        colour::FONT,
+        dsk::TEXT_TITLE_LARGE,
+        color::TEXT_PRIMARY,
         Some(1),
         swiftly_text::Align::Start,
     )

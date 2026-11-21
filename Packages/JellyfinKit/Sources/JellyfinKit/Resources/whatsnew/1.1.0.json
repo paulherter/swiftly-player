@@ -1,0 +1,20 @@
+{
+  "version": "1.1.0",
+  "variant": "standard",
+  "title": { "en": "Seerr and a new player", "de": "Seerr und ein neuer Player" },
+  "items": [
+    { "symbol": "plus.circle",
+      "title": { "en": "Request movies and shows through Seerr", "de": "Filme und Serien über Seerr anfragen" },
+      "detail": { "en": "Sign in with Jellyfin, e-mail or Plex.", "de": "Anmelden mit Jellyfin, E-Mail oder Plex." } },
+    { "symbol": "play.rectangle",
+      "title": { "en": "The player is redrawn", "de": "Der Player ist neu gezeichnet" },
+      "detail": { "en": "One glass bar, menus right at their buttons.", "de": "Eine Glas-Leiste, Menüs direkt an ihren Knöpfen." } },
+    { "symbol": "line.3.horizontal.decrease",
+      "title": { "en": "Filter libraries by year and audio language", "de": "Bibliotheken nach Jahr und Sprache filtern" },
+      "detail": { "en": "Libraries now open on Recently added.", "de": "Bibliotheken öffnen bei „Zuletzt hinzugefügt“." } },
+    { "symbol": "trash",
+      "title": { "en": "Delete from the server in the title menu", "de": "Im Titelmenü vom Server löschen" },
+      "detail": { "en": "A switch locks deleting.", "de": "Ein Schalter sperrt das Löschen." } }
+  ],
+  "primary": { "label": "continue", "action": "dismiss" }
+}

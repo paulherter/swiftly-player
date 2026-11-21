@@ -20,7 +20,7 @@ import Testing
     }
 
     @Test func librariesAndFixedRowsShareOneListAndHeal() {
-        let order = HomeRowOrder.effective(stored: [], fallbackFixed: [], disconnected: false, libraries: libs)
+        let order = HomeRowOrder.effective(stored: [], fallbackFixed: [], disconnected: false, libraries: libs, seerr: false)
         #expect(order.contains("library:l1") && order.contains("library:c1"))
         // Libraries come after the fixed rows by default, and every row appears once.
         #expect(Set(order).count == order.count)
@@ -29,7 +29,7 @@ import Testing
         // A stored list with a deleted library and an unknown row heals.
         let healed = HomeRowOrder.effective(
             stored: ["library:gone", "library:c1", "nonsense"] , fallbackFixed: [], disconnected: false,
-            libraries: [libs[1]])
+            libraries: [libs[1]], seerr: false)
         #expect(healed.first == "library:c1")
         #expect(!healed.contains("library:gone") && !healed.contains("nonsense"))
     }

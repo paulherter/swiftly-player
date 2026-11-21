@@ -591,7 +591,7 @@ impl Icons {
         )
     }
 
-    /// The wordmark as two layers of the same size, `(letters, play mark)`, to animate apart (the launch curtain).
+    /// The wordmark as two layers of the same size, `(letters, play mark)`, to animate apart (the launch curtain it was made for is gone).
     /// Drawn one texel to one device pixel (the node is exactly the raster's size in points), never resampled.
     pub fn wordmark_layers(&self, height: f32, font: Color, accent: Color) -> (Node, Node) {
         let ((px_w, px_h), (width, height)) = self.wordmark_raster(height);
@@ -629,6 +629,40 @@ impl Icons {
         )
     }
 
+    /// A finished square picture (`src`: straight-alpha RGBA, `src_w` x `src_h`, for example the app icon) `pt` points
+    /// across with corners of `radius` points. It is resampled once to whole device pixels at the surface's scale and
+    /// drawn one texel to one device pixel, so it is never resized by the GPU; `key` names it in the shared cache and a
+    /// new scale builds it again.
+    pub fn picture(
+        &self,
+        key: &str,
+        src: &[u8],
+        src_w: u32,
+        src_h: u32,
+        pt: f32,
+        radius: f32,
+    ) -> Node {
+        let s = self.scale.get();
+        let px = ((pt * s).round() as u32).max(8);
+        let side = px as f32 / s;
+        let k = (key.to_owned(), px);
+        let cached = self.cache.borrow().get(&k).copied();
+        let id = match cached {
+            Some(id) => id,
+            None => {
+                let id = self
+                    .cx
+                    .add_image(px, px, &resample_rgba(src, src_w, src_h, px, px));
+                self.cache.borrow_mut().insert(k, id);
+                id
+            }
+        };
+        match id {
+            Some(id) => Node::image(id, side, side, radius),
+            None => Node::fixed(side, side),
+        }
+    }
+
     /// Spoke `i` of the activity spinner, `pt` points square, in `tint`.
     pub fn spoke(&self, i: usize, pt: f32, tint: Color) -> Node {
         let d = spoke_path(i % SPOKES);
@@ -648,6 +682,46 @@ impl Icons {
             None => Node::fixed(pt, pt),
         }
     }
+}
+
+/// `src` (straight-alpha RGBA, `sw` x `sh`) averaged down (or, for a larger target, sampled up) to `dw` x `dh` by exact
+/// area coverage on premultiplied colour, so edges stay clean and a transparent corner never tints its neighbours.
+fn resample_rgba(src: &[u8], sw: u32, sh: u32, dw: u32, dh: u32) -> Vec<u8> {
+    let (sw, sh, dw, dh) = (sw as usize, sh as usize, dw as usize, dh as usize);
+    let mut out = vec![0_u8; dw * dh * 4];
+    if sw == 0 || sh == 0 || src.len() < sw * sh * 4 {
+        return out;
+    }
+    let (rx, ry) = (sw as f32 / dw as f32, sh as f32 / dh as f32);
+    for y in 0..dh {
+        let (y0, y1) = (y as f32 * ry, (y + 1) as f32 * ry);
+        for x in 0..dw {
+            let (x0, x1) = (x as f32 * rx, (x + 1) as f32 * rx);
+            let mut acc = [0.0_f32; 4];
+            let mut weight = 0.0_f32;
+            for sy in (y0.floor() as usize)..(y1.ceil() as usize).min(sh) {
+                let wy = (y1.min((sy + 1) as f32) - y0.max(sy as f32)).max(0.0);
+                for sx in (x0.floor() as usize)..(x1.ceil() as usize).min(sw) {
+                    let w = wy * (x1.min((sx + 1) as f32) - x0.max(sx as f32)).max(0.0);
+                    let i = (sy * sw + sx) * 4;
+                    let a = f32::from(src[i + 3]) / 255.0;
+                    for c in 0..3 {
+                        acc[c] += f32::from(src[i + c]) * a * w;
+                    }
+                    acc[3] += a * w;
+                    weight += w;
+                }
+            }
+            let o = (y * dw + x) * 4;
+            if weight > 0.0 && acc[3] > 0.0 {
+                for c in 0..3 {
+                    out[o + c] = (acc[c] / acc[3]).round().clamp(0.0, 255.0) as u8;
+                }
+                out[o + 3] = (acc[3] / weight * 255.0).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -695,5 +769,19 @@ mod tests {
             "template placed: {placed}"
         );
         assert!(by_box + 20 < placed, "bounding-box placed: {by_box}");
+    }
+
+    #[test]
+    fn resampling_averages_by_area_and_keeps_transparent_corners_clean() {
+        // 2x2 -> 1x1: the mean of four opaque pixels.
+        let src = [
+            255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+        ];
+        assert_eq!(resample_rgba(&src, 2, 2, 1, 1), vec![128, 128, 128, 255]);
+        // Same size: unchanged.
+        assert_eq!(resample_rgba(&src, 2, 2, 2, 2), src.to_vec());
+        // A transparent pixel adds no colour to the opaque one beside it.
+        let half = [200, 100, 50, 255, 0, 0, 0, 0];
+        assert_eq!(resample_rgba(&half, 2, 1, 1, 1), vec![200, 100, 50, 128]);
     }
 }

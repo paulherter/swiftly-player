@@ -194,9 +194,6 @@ table! {
     Fullscreen, "fullscreen target", Spec::EaseInOut(0.5), 0.0, Repeat::Once,
         ".easeInOut(duration: 0.5)", "macOS/PlayerScreen.swift:191",
         "fullscreen state of the window chrome";
-    Curtain, "launch curtain", Spec::EaseOut(0.35), 0.0, Repeat::Once,
-        ".easeOut(duration: 0.35)", "macOS/RootView.swift:44",
-        "the launch curtain fades out";
     ScreenDistance, "screen distance", Spec::EaseOut(0.3), 0.0, Repeat::Once,
         ".easeOut(duration: 0.3)", "macOS/PlayerScreen.swift:1664",
         "screen-distance flag of the player";

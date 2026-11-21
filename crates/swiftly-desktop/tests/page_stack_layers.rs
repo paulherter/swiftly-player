@@ -36,6 +36,11 @@ fn keep(frames: &[RgbaImage], what: &str) {
     }
 }
 
+/// A pixel counts as uncovered when one channel differs from the page in front by more than this. The calmer palette
+/// brought the grounds of the pages closer together (about 6 to 12 per channel), so 12 no longer saw them; the slide
+/// itself is unchanged: 12 of the 17 frames in the push window and 18 of 18 in the pop window uncover enough to be judged.
+const UNCOVERED_DELTA: u8 = 6;
+
 /// Mean absolute difference of the content column over the pixels that differ from `front` (the page in front at
 /// rest): what a page sliding in or out has uncovered. `None` while it uncovers (almost) nothing.
 fn uncovered(img: &RgbaImage, front: &RgbaImage, reference: &RgbaImage) -> Option<f64> {
@@ -44,7 +49,7 @@ fn uncovered(img: &RgbaImage, front: &RgbaImage, reference: &RgbaImage) -> Optio
         for x in (320..1260).step_by(4) {
             all += 1.0;
             let (p, f, r) = (img.pixel(x, y), front.pixel(x, y), reference.pixel(x, y));
-            if (0..3).any(|i| p[i].abs_diff(f[i]) > 12) {
+            if (0..3).any(|i| p[i].abs_diff(f[i]) > UNCOVERED_DELTA) {
                 sum += (0..3).map(|i| f64::from(p[i].abs_diff(r[i]))).sum::<f64>();
                 n += 3.0;
             }

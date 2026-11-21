@@ -94,11 +94,7 @@ pub fn grid_tile_sorted(
             item.production_year.map(|y| y.to_string())
         },
         poster: ImageSelection::portrait(item, addresses, 480).map(|u| u.to_string()),
-        progress: item
-            .user_data
-            .as_ref()
-            .and_then(|d| d.played_percentage)
-            .map(|p| p / 100.0),
+        progress: item.watched_share(),
         mark,
         mark_count: count,
         letter: Some(AlphabetIndex::key_of(&index_item(item), sorting, false)),

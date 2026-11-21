@@ -21,7 +21,9 @@ struct RequestsView: View {
 
     var body: some View {
         if embedded {
-            content
+            // In a stack: `content` is empty until the first answer, and a modifier on an empty view never appears, so
+            // its `.task` never ran and the page stayed blank (no rows, no empty state).
+            VStack(alignment: .leading, spacing: 0) { content }
                 .opacity(flow.settled ? 1 : 0)
                 .animation(Theme.reveal, value: flow.settled)
                 .task { await flow.load(model) }

@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.delay
 
@@ -123,7 +123,7 @@ fun SubtitleLookPage(app: SwiftlyApplication, back: () -> Unit) {
                 enter = slideInVertically(Motion.change()) { it } + fadeIn(Motion.change()),
                 exit = slideOutVertically(Motion.change()) { it } + fadeOut(Motion.change())) {
                 Row(Modifier.padding(horizontal = Theme.edgeSpacing).padding(bottom = 12.dp).fillMaxWidth().heightIn(min = 52.dp)
-                        .clip(RoundedCornerShape(Theme.cornerCard)).background(Theme.area).padding(horizontal = 16.dp),
+                        .clip(smoothRoundedShape(Theme.cornerCard)).background(Theme.area).padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(translated("Zurückgesetzt"), style = Theme.listTitle.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), color = Theme.font)
                     Box(Modifier.weight(1f))
@@ -246,8 +246,8 @@ private fun GlyphSegments(group: String, options: List<String>, value: String, e
     val pillX by animateDpAsState(2.dp + (pillWidth + 2.dp) * index, Motion.select(), label = "segmentFlaeche")
     Box(Modifier.size(total, 44.dp), contentAlignment = Alignment.Center) {
         // On the card the track is one step lighter than the card (`Theme.raised`).
-        Box(Modifier.size(total, 32.dp).clip(RoundedCornerShape(Theme.cornerSmall)).background(Theme.raised)) {
-            Box(Modifier.offset(x = pillX, y = 2.dp).size(pillWidth, 28.dp).clip(RoundedCornerShape(6.dp)).background(Color(0.29f, 0.29f, 0.29f)))
+        Box(Modifier.size(total, 32.dp).clip(smoothRoundedShape(Theme.cornerSmall)).background(Theme.raised)) {
+            Box(Modifier.offset(x = pillX, y = 2.dp).size(pillWidth, 28.dp).clip(smoothRoundedShape(6.dp)).background(Color(0.29f, 0.29f, 0.29f)))
         }
         Row(Modifier.size(total, 44.dp).padding(horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             options.forEach { option ->

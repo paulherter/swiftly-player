@@ -67,8 +67,7 @@ fn a_series_download_saves_poster_header_and_episode_stills() {
         .enable_all()
         .build()
         .unwrap();
-    let dir = std::env::temp_dir().join(format!("swiftly-series-covers-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = swiftly_desktop::testdir::TestDir::path_only("swiftly-series-covers");
     let media = format!("{base}/media.mkv");
     let vm = live_downloads::build(
         dir.clone(),

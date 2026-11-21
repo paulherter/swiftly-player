@@ -6,7 +6,8 @@ use crate::browse::wide;
 use crate::forms::{self, Fm};
 use crate::home::{ins, text};
 use swiftly_design::TextStyle;
-use swiftly_design::tokens::{colour, touch};
+use swiftly_design::tokens::touch;
+use swiftly_design::tokens_generated::color;
 use swiftly_downloads::DownloadRules;
 use swiftly_layout::{Align, Alignment};
 use swiftly_render::Color;
@@ -95,9 +96,9 @@ fn line_with(
     key: &str,
 ) -> Node {
     let c = if cautionary {
-        colour::ORIGINAL_WARNING
+        color::STATE_WARNING
     } else {
-        colour::FONT
+        color::TEXT_PRIMARY
     };
     let t = |w: u16| TextStyle {
         size: 15.0,
@@ -118,13 +119,13 @@ fn line_with(
                 cx,
                 value,
                 t(if picker { 600 } else { 400 }),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::End,
             ),
             if picker {
                 icons
-                    .node("caret-down", 14.0, true, color(colour::FONT))
+                    .node("caret-down", 14.0, true, color(color::TEXT_PRIMARY))
                     .frame(Some(16.0), None, Alignment::CENTER)
             } else {
                 Node::fixed(0.0, 0.0)
@@ -134,7 +135,7 @@ fn line_with(
     .padding(ins(13.0, touch::EDGE_SPACING, 13.0, touch::EDGE_SPACING))
     .frame(None, Some(52.0), Alignment::LEADING);
     let n = wide(row, Alignment::LEADING).overlay(
-        Node::rect(color(colour::LINE), 0.0).frame(None, Some(1.0), Alignment::TOP),
+        Node::rect(color(color::BORDER_HAIRLINE), 0.0).frame(None, Some(1.0), Alignment::TOP),
         Alignment::TOP,
     );
     if picker {
@@ -155,7 +156,7 @@ fn hint(cx: &Cx, s: &str) -> Node {
                 tracking: 0.0,
                 uppercase: false,
             },
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             None,
             swiftly_text::Align::Start,
         )
@@ -192,7 +193,7 @@ pub fn load_sheet(cx: &Cx, icons: &Icons, env: &Env, spec: &LoadSpec) -> Node {
                     tracking: 0.0,
                     uppercase: false,
                 },
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Start,
             )
@@ -297,8 +298,8 @@ pub fn load_sheet(cx: &Cx, icons: &Icons, env: &Env, spec: &LoadSpec) -> Node {
     let card = wide(card, Alignment::TOP_LEADING)
         .frame(card_w, None, Alignment::TOP_LEADING)
         .background(
-            Node::rect(color(colour::AREA), 28.0).paint(Paint::Stroke {
-                color: color(colour::LINE),
+            Node::rect(color(color::SURFACE_CONTROL), 28.0).paint(Paint::Stroke {
+                color: color(color::BORDER_HAIRLINE),
                 width: 1.0,
                 radius: 28.0,
             }),
@@ -354,14 +355,14 @@ fn mac_detail(
     cautionary: bool,
 ) -> Node {
     let c = if cautionary {
-        colour::ORIGINAL_WARNING
+        color::STATE_WARNING
     } else {
-        colour::FONT
+        color::TEXT_PRIMARY
     };
     let icon_c = if cautionary {
-        colour::ORIGINAL_WARNING
+        color::STATE_WARNING
     } else {
-        colour::FONT_QUIET
+        color::TEXT_SECONDARY
     };
     let row = Node::hstack(
         Align::Center,
@@ -373,7 +374,7 @@ fn mac_detail(
                 .a11y_hidden(),
             plain(cx, was, 15.0, 400, c),
             Node::spacer(),
-            mono(cx, value, 15.0, colour::FONT_QUIET),
+            mono(cx, value, 15.0, color::TEXT_SECONDARY),
         ],
     );
     wide(row.padding(ins(9.0, 14.0, 9.0, 14.0)), Alignment::LEADING)
@@ -389,7 +390,7 @@ pub(crate) fn mac_pick(
     value: &str,
     key: &str,
 ) -> Node {
-    let accent = color(colour::MARK_ACCENT);
+    let accent = color(crate::look_glow::accent());
     // Quality: a check for the original, the "smaller" arrow otherwise; sound: the speaker.
     let lead = if key.ends_with("sound") {
         "speaker-high"
@@ -403,7 +404,7 @@ pub(crate) fn mac_pick(
         Some(6.0),
         vec![
             icons.node(lead, 11.0, true, accent).a11y_hidden(),
-            plain(cx, value, 12.0, 400, colour::MARK_ACCENT),
+            plain(cx, value, 12.0, 400, crate::look_glow::accent()),
             icons.node("caret-down", 9.0, true, accent).a11y_hidden(),
         ],
     )
@@ -412,7 +413,7 @@ pub(crate) fn mac_pick(
         Node::rect(Color::new(accent.r, accent.g, accent.b, 0.15), 8.0),
         Alignment::CENTER,
     )
-    .hover_surface(color(colour::HOVER_AREA), 8.0)
+    .hover_surface(color(color::SURFACE_HOVER), 8.0)
     .key(key)
     .on_tap(Action::from(key))
     .a11y(
@@ -424,10 +425,10 @@ pub(crate) fn mac_pick(
         Some(10.0),
         vec![
             icons
-                .node(symbol, 15.0, true, color(colour::FONT_QUIET))
+                .node(symbol, 15.0, true, color(color::TEXT_SECONDARY))
                 .frame(Some(20.0), None, Alignment::CENTER)
                 .a11y_hidden(),
-            plain(cx, was, 15.0, 400, colour::FONT),
+            plain(cx, was, 15.0, 400, color::TEXT_PRIMARY),
             Node::spacer(),
             badge,
         ],
@@ -449,14 +450,17 @@ pub(crate) fn sheet_button(
         Some(8.0),
         vec![
             icons
-                .node("arrow-down", 15.0, true, color(colour::REASON))
+                .node("arrow-down", 15.0, true, color(color::SURFACE_BASE))
                 .a11y_hidden(),
-            plain(cx, label, 17.0, 600, colour::REASON),
+            plain(cx, label, 17.0, 600, color::SURFACE_BASE),
         ],
     );
     let n = wide(inner, Alignment::CENTER)
         .frame(None, Some(48.0), Alignment::CENTER)
-        .background(Node::rect(color(colour::FONT), 10.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::TEXT_PRIMARY), 10.0),
+            Alignment::CENTER,
+        )
         .hover_surface(Color::new(0.0, 0.0, 0.0, 0.12), 10.0);
     let n = if enabled {
         forms::tappable(n, f, key, 10.0)
@@ -483,7 +487,7 @@ fn mac_hint(cx: &Cx, s: &str) -> Node {
                 tracking: 0.0,
                 uppercase: false,
             },
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             None,
             swiftly_text::Align::Start,
         )
@@ -495,7 +499,7 @@ fn mac_hint(cx: &Cx, s: &str) -> Node {
 /// The "Abbrechen" way out, always present (Esc reports the same through the screen's back).
 fn mac_cancel(cx: &Cx, f: &Fm) -> Node {
     let n = wide(
-        plain(cx, "Abbrechen", 15.0, 400, colour::FONT_QUIET),
+        plain(cx, "Abbrechen", 15.0, 400, color::TEXT_SECONDARY),
         Alignment::CENTER,
     )
     .padding(ins(0.0, 0.0, 12.0, 0.0));
@@ -505,8 +509,8 @@ fn mac_cancel(cx: &Cx, f: &Fm) -> Node {
 
 /// The card of the sheets: raised, margin stroke 1, corner 16, no shadow; `w` wide.
 pub(crate) fn raised_card(content: Node, w: f32, title: &str) -> Node {
-    let form = Node::rect(color(colour::RAISED), 16.0).paint(Paint::Stroke {
-        color: color(colour::MARGIN),
+    let form = Node::rect(color(color::SURFACE_RAISED), 16.0).paint(Paint::Stroke {
+        color: color(color::SURFACE_FOCUS),
         width: 1.0,
         radius: 16.0,
     });
@@ -545,11 +549,11 @@ pub fn mac_load_panel(
         "Nicht genug Platz".to_owned()
     };
     col.push(wide(
-        plain(cx, &head, 15.0, 600, colour::FONT).padding(ins(12.0, 14.0, 10.0, 14.0)),
+        plain(cx, &head, 15.0, 600, color::TEXT_PRIMARY).padding(ins(12.0, 14.0, 10.0, 14.0)),
         Alignment::LEADING,
     ));
     col.push(wide(
-        Node::rect(color(colour::MARGIN), 0.0).frame(None, Some(1.0), Alignment::CENTER),
+        Node::rect(color(color::SURFACE_FOCUS), 0.0).frame(None, Some(1.0), Alignment::CENTER),
         Alignment::CENTER,
     ));
     let quality = |col: &mut Vec<Node>| match (&spec.quality, quality_pick) {
@@ -561,14 +565,23 @@ pub fn mac_load_panel(
             q,
             "load.quality",
         )),
-        (Some(q), false) => col.push(mac_detail(
-            cx,
-            icons,
-            "sparkle",
-            "Qualit\u{00E4}t",
-            q,
-            false,
-        )),
+        (Some(q), false) => {
+            col.push(mac_detail(
+                cx,
+                icons,
+                "sparkle",
+                "Qualit\u{00E4}t",
+                q,
+                false,
+            ));
+            // The note of `LoadSelection`: the quality is not a choice because the server offers no smaller version.
+            col.push(hint(
+                cx,
+                &swiftly_l10n::t(
+                    "Kleinere Fassungen gibt der Server f\u{00FC}r dieses Konto nicht frei.",
+                ),
+            ));
+        }
         _ => {}
     };
     if !spec.suffices() {

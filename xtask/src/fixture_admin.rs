@@ -219,8 +219,16 @@ fn answer_with(
             nothing()
         }
         ("POST", ["Library", "Refresh"]) => {
-            w.scan_running = true;
-            nothing()
+            // This route answers before the Seerr one does, so the Seerr side of the call runs here: its log, a failure
+            // a test asked for (`/__seerr/fail?step=jellyfin`), and the rescan that makes a deleted title leave the
+            // library. A refused scan is this answer too.
+            match crate::fixture_seerr::answer(method, path, query, body) {
+                Some(refused) if refused.0 != 204 => refused,
+                _ => {
+                    w.scan_running = true;
+                    nothing()
+                }
+            }
         }
         ("DELETE", ["ScheduledTasks", "Running", id]) => {
             match *id {

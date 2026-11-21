@@ -12,15 +12,35 @@ struct SeerrEpisodes: View {
     let flow: SeerrTitleFlow
     /// The page's left and right margin.
     let margin: CGFloat
+    #if os(tvOS)
+    /// Whether the season menu is open; the page shows its panel (the series page's `ActionPanel`).
+    @Binding var pickerOpen: Bool
+    @FocusState private var atPill: Bool
+    #endif
 
     var body: some View {
         if let current = flow.episodeSeasonRow {
             VStack(alignment: .leading, spacing: 0) {
+                #if os(tvOS)
+                // The season button of the series page (`SeasonPill`) next to the title, not a row of chips.
+                HStack(spacing: 24) {
+                    RailTitle(text: "Folgen").accessibilityAddTraits(.isHeader)
+                    if flow.episodeSeasons.count > 1 {
+                        SeasonPill(name: current.title, opened: $pickerOpen)
+                            .focused($atPill)
+                            .panelTrigger("staffel")
+                    }
+                }
+                .padding(.horizontal, margin)
+                .padding(.bottom, Look.headingGap)
+                .onChange(of: pickerOpen) { _, opened in if !opened { atPill = true } }
+                #else
                 RailTitle(text: "Folgen")
                     .padding(.horizontal, margin)
                     .padding(.bottom, Look.headingGap)
                     .accessibilityAddTraits(.isHeader)
                 if flow.episodeSeasons.count > 1 { chips(current: current.number) }
+                #endif
                 ForEach(current.episodeList) { episode in
                     SeerrEpisodeRow(episode: episode, margin: margin)
                 }
@@ -32,38 +52,28 @@ struct SeerrEpisodes: View {
         }
     }
 
+    #if !os(tvOS)
     private func chips(current: Int64) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Look.chipGap) {
                 ForEach(flow.episodeSeasons) { season in
                     let on = season.number == current
                     Button { flow.pickEpisodeSeason(season.number) } label: {
-                        #if os(tvOS)
-                        Text(verbatim: season.title)
-                        #else
                         Text(verbatim: season.title)
                             .font(.app(size: 14, weight: on ? .semibold : .regular))
                             .foregroundStyle(on ? Theme.font : Theme.fontQuiet)
                             .padding(.horizontal, 14).frame(height: 34)
                             .background(Capsule().fill(Theme.font.opacity(on ? 0.14 : 0.06)))
-                        #endif
                     }
-                    #if os(tvOS)
-                    .buttonStyle(ChipStyle(an: on))
-                    #else
                     .buttonStyle(Theme.PressButton())
                     .accessibilityAddTraits(on ? .isSelected : [])
-                    #endif
                 }
             }
             .padding(.horizontal, margin)
-            #if os(tvOS)
-            // Room for the focused chip's magnification, which the scroll view would clip.
-            .padding(.vertical, 14)
-            #endif
         }
         .padding(.bottom, Look.chipsBottom)
     }
+    #endif
 
     /// The sizes that differ with the distance to the screen.
     fileprivate enum Look {

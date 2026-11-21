@@ -165,9 +165,6 @@
 "Das kann ein Plex-Server nicht." = "This is not something a Plex server can do.";
 "Kapitel %lld" = "Chapter %lld";
 
-"VLC, Dolby Vision und HDR mit AVPlayer" = "VLC, Dolby Vision and HDR with AVPlayer";
 
 "Immer AVPlayer" = "Always AVPlayer";
 
-"Immer VLC" = "Always VLC";
-"Aether, bei Problemen VLC" = "Aether, VLC if there are problems";

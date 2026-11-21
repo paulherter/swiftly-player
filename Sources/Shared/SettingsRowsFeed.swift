@@ -270,10 +270,11 @@ final class SettingsRowsFeed {
         "technikschild": "waveform.badge.magnifyingglass", "endzeitImPlayer": "clock",
         "fortschritt": "chart.bar", "merklisteAn": "bookmark", "gesehenVonAn": "eye",
         "alphabetAn": "textformat.abc", "titelAlsLogo": "textformat",
+        "leereSerienAusblenden": "rectangle.stack.badge.minus",
         "downloadsAn": "arrow.down.circle", "nurUeberWLAN": "wifi",
         "naechsteFolgeLaden": "play.square.stack", "downloadsSpeicher": "internaldrive",
         "eigeneHeader": "key", "seerr": "sparkle.magnifyingglass",
-        "einstellungenSync": "arrow.triangle.2.circlepath",
+        "einstellungenSync": "arrow.triangle.2.circlepath", "loeschenSperren": "trash.slash",
     ]
 
     static func symbol(_ key: String) -> String { symbols[key] ?? "gearshape" }

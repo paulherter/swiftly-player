@@ -324,6 +324,13 @@ impl OfferingLayer {
         self.occasion == Occasion::NextEpisode && !self.next_cancelled
     }
 
+    /// Like [`Self::next_at_end`], but with "Next episode automatically" on the end of the file advances
+    /// even when no card ran (a short episode, an outro that stops before the end, a seek to the end);
+    /// only a cancelled countdown stops it. The card path stays the same.
+    pub fn next_at_end_with(&self, automatic: bool) -> bool {
+        !self.next_cancelled && (automatic || self.occasion == Occasion::NextEpisode)
+    }
+
     /// Back, or focus moves elsewhere: the overlay is gone until a new offer arrives; a
     /// running countdown is cancelled (OfferingLayer.swift:244-252). Returns `true` if there
     /// was something to close; Back has then done its job here and must not leave the player.
@@ -1341,5 +1348,19 @@ mod tests {
                 .is_administrator,
             Some(true)
         );
+    }
+
+    #[test]
+    fn end_of_file_advances_without_a_card_only_while_automatic_is_on_and_not_cancelled() {
+        let mut e = layer();
+        // No card ever ran: the old rule says no, with automatic on the end of the file advances.
+        assert!(!e.next_at_end());
+        assert!(e.next_at_end_with(true));
+        assert!(!e.next_at_end_with(false));
+        // A cancelled countdown stops it in both ways.
+        e.tick(ButtonOffering::NextEpisode, true, true, 0.5, 7.0, false);
+        assert!(e.next_at_end_with(false));
+        assert!(e.close());
+        assert!(!e.next_at_end_with(true) && !e.next_at_end_with(false));
     }
 }

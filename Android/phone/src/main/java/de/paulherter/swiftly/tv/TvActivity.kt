@@ -4,30 +4,23 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.unit.dp
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.layer.drawLayer
 import de.paulherter.swiftly.Phase
-import de.paulherter.swiftly.StartCurtain
 import de.paulherter.swiftly.SwiftlyApplication
 import de.paulherter.swiftly.entrySwitch
-import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.Theme
 
 /**
@@ -49,6 +42,7 @@ class TvActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Theme.tvMode = true
         // Reverse of `MainActivity`: a phone arriving here (e.g. via a swiftly:// link) gets the phone
         // version.
         if (!(application as SwiftlyApplication).isTv) { entrySwitch(de.paulherter.swiftly.MainActivity::class.java); return }
@@ -112,7 +106,6 @@ class TvActivity : ComponentActivity() {
                 de.paulherter.swiftly.DebugPlay.read(intent)
                 app.play.value = de.paulherter.swiftly.PlayRequest(id, de.paulherter.swiftly.DebugPlay.since)
             }
-            var started by rememberSaveable { mutableStateOf(false) }
             // The screen as a recorded layer, source of the still frame for the account switch (`AccountSwitchTransition`).
             // DEBUG render shoots (`page` extra, see `TvMain`) go straight to the page, without the picker.
             val shootPage = de.paulherter.swiftly.BuildConfig.DEBUG && intent?.hasExtra("page") == true
@@ -149,14 +142,14 @@ class TvActivity : ComponentActivity() {
                             }
                             if (pickerOpen) Box(Modifier.fillMaxSize().background(Theme.reason.copy(alpha = if (blurs) 0.6f else 1f)))
                         }
-                        if (pickerOpen) TvProfilePicker(app, entered = started, close = { pickerOpen = false; ProfilePickerRule.answered() }) { pickerNotice = it }
+                        if (pickerOpen) TvProfilePicker(app, close = { pickerOpen = false; ProfilePickerRule.answered() }) { pickerNotice = it }
                     }
                 }
                 }
                 pickerNotice?.let { text ->
                     Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.TopCenter) {
                         Text(text, style = TvTheme.small, color = Theme.font,
-                             modifier = Modifier.background(Theme.area, RoundedCornerShape(TvTheme.corner)).padding(horizontal = 14.dp, vertical = 8.dp))
+                             modifier = Modifier.background(Theme.area, smoothRoundedShape(TvTheme.corner)).padding(horizontal = 14.dp, vertical = 8.dp))
                     }
                 }
                 // The account switch: still frame, flying profile image, ring, above everything.
@@ -173,9 +166,6 @@ class TvActivity : ComponentActivity() {
                     discordHint = true
                 }
                 if (discordHint) TvDiscordHint(app.communityAddress("discordKurz")) { discordHint = false }
-                AnimatedVisibility(!started, enter = EnterTransition.None, exit = fadeOut(tween(450, easing = Motion.soft))) {
-                    StartCurtain { started = true }
-                }
             }
         }
     }

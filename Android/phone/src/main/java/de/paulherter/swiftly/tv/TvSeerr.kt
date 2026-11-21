@@ -1,6 +1,7 @@
 package de.paulherter.swiftly.tv
 
 import androidx.compose.ui.graphics.graphicsLayer
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.sheetListFade
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -159,6 +159,8 @@ fun TvSeerrDetailPage(app: SwiftlyApplication, target: Destination, open: (Desti
     var screen by remember(target.id) { mutableStateOf<SeerrTitleScreen?>(null) }
     var info by remember(target.id) { mutableStateOf<SeerrTitleInfo?>(null) }
     var retry by remember { mutableIntStateOf(0) }
+    /** The season the person picked for the episode list; which one shows is the core's rule (`seerrEpisodeSeasons`). */
+    var picked by remember(target.id) { mutableStateOf<Long?>(null) }
     val run = rememberCoroutineScope()
     LaunchedEffect(target.id, retry) {
         val s = withContext(Dispatchers.IO) { app.seerr.title(art, tmdb) }
@@ -177,14 +179,23 @@ fun TvSeerrDetailPage(app: SwiftlyApplication, target: Destination, open: (Desti
     val main = firstFocus(ready)
     val backdrop = tmdbImage(i?.backdrop ?: i?.poster, 1280)
     BackHandler(onBack = back)
+    // Season admin (`SeasonAdmin`, shared with the phone): who may decide and which request waits for a season come from the core.
+    val waiting = remember(i) { i?.seasons.orEmpty().mapNotNull { row -> SeasonAdmin.waitingRequest(app, row.waitingRequest)?.let { row to it } } }
+    var adminBusy by remember { mutableStateOf<Long?>(null) }
+    val decide = { request: Long, approve: Boolean ->
+        adminBusy = request
+        run.launch {
+            SeasonAdmin.decide(app, request, approve)
+            screen?.let { s -> info = withContext(Dispatchers.IO) { try { s.load() } catch (e: CancellationException) { throw e } catch (_: Exception) { s.info() } } }
+            adminBusy = null
+        }
+        Unit
+    }
 
     Box(Modifier.fillMaxSize().background(Theme.reason)) {
         if (i != null && i.load != TitleLoad.LOADING && !ready) {
-            Column(Modifier.align(Alignment.Center).widthIn(max = 520.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(i.error ?: translated("Seerr antwortet gerade nicht."), style = TvTheme.body, color = Theme.fontQuiet, textAlign = TextAlign.Center)
-                Text(translated("Deine Bibliothek läuft normal."), style = TvTheme.small, color = Theme.fontVeryQuiet, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
-                TvButton(translated("Erneut versuchen"), modifier = Modifier.padding(top = 20.dp).focusRequester(main)) { retry++ }
-            }
+            // Seerr's own address, not the library server's: that one runs, or we would not be on this page (tvOS `DisturbState`).
+            TvDisruption(app, address = app.seerrAddress().orEmpty(), buttonModifier = Modifier.focusRequester(main), top = 0.dp) { retry++ }
         }
         if (i != null && ready) {
             TvImageReason(backdrop)
@@ -210,14 +221,40 @@ fun TvSeerrDetailPage(app: SwiftlyApplication, target: Destination, open: (Desti
                         }
                     }
                 }
-                if (i.cast.isNotEmpty()) TvStrip(translated("Besetzung"), Modifier.tvSection(a, "besetzung", firstArt)) {
-                    items(i.cast.take(12), key = { it.name + it.role }) { p -> TvCast(WithAct(p.name, p.name, p.role, tmdbImage(p.image, 185))) { open(seerrPersonTarget(p, i.title)) } }
+                // Seasons with a request waiting, for an account that may decide (tvOS `waitingSeasons`): the season and its state, two buttons.
+                if (waiting.isNotEmpty()) Column(Modifier.tvSection(a, "staffeln", firstArt).padding(top = TvTheme.railsSpacing - TvTheme.railsPadding)) {
+                    TvRailsTitle(translated("Staffeln"))
+                    waiting.forEach { (row, request) ->
+                        Row(Modifier.padding(start = TvTheme.edgePage, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                            Column(Modifier.width(420.dp)) {
+                                Text(row.title, style = TvTheme.body, color = Theme.font)
+                                Text(row.badge.line.ifEmpty { row.badge.word }, style = TvTheme.small, color = SeerrBadgeMark.color(row.badge.kind))
+                            }
+                            val free = adminBusy != request
+                            TvButton(adminWords().decline, height = 64.dp, released = free) { decide(request, false) }
+                            TvButton(adminWords().approve, height = 64.dp, released = free) { decide(request, true) }
+                        }
+                    }
                 }
-                if (i.similar.isNotEmpty()) TvStrip(translated("Ähnliche Titel"),
-                        Modifier.tvSection(a, "aehnliche", if (i.cast.isEmpty()) firstArt else TvSectionKind.Flush)) {
+                // Order as on tvOS: header, waiting seasons, episodes, similar titles, then the cast.
+                val episodes = seerrEpisodeSeasons(screen, i, picked)
+                val episodesKind = if (waiting.isEmpty()) firstArt else TvSectionKind.Flush
+                val similarKind = if (episodes == null && waiting.isEmpty()) firstArt else TvSectionKind.Flush
+                val castKind = if (episodes == null && i.similar.isEmpty() && waiting.isEmpty()) firstArt else TvSectionKind.Flush
+                if (episodes != null) {
+                    TvSeerrEpisodesHeading(app, episodes, { n -> picked = n }, Modifier.padding(top = TvTheme.railsSpacing - TvTheme.railsPadding))
+                    // One focus section per row, so the page scrolls row by row (it has no vertical bring-into-view).
+                    episodes.current.episodeList.forEachIndexed { n, e ->
+                        TvSeerrEpisodeRow(e, Modifier.tvSection(a, "folge-${episodes.current.number}-${e.number}", if (n == 0) episodesKind else TvSectionKind.NearHeader))
+                    }
+                }
+                if (i.similar.isNotEmpty()) TvStrip(translated("Ähnliche Titel"), Modifier.tvSection(a, "aehnliche", similarKind)) {
                     items(i.similar, key = { it.key }) { t ->
                         TvTile(tmdbImage(t.poster, 342), t.title, t.badge?.word ?: t.year?.toString(), opacity = 0.45f) { run.launch { openSeerrCard(app, t, open) } }
                     }
+                }
+                if (i.cast.isNotEmpty()) TvStrip(translated("Besetzung"), Modifier.tvSection(a, "besetzung", castKind)) {
+                    items(i.cast.take(12), key = { it.name + it.role }) { p -> TvCast(WithAct(p.name, p.name, p.role, tmdbImage(p.image, 185))) { open(seerrPersonTarget(p, i.title)) } }
                 }
                 Spacer(Modifier.height(40.dp))
             }

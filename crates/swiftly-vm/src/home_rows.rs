@@ -463,7 +463,7 @@ mod tests {
             seerr_ids(HomeForm::Handheld),
             ["seerr:arrival", "seerr:requests"]
         );
-        assert_eq!(seerr_ids(HomeForm::Desktop), ["seerr:arrival"]);
+        assert_eq!(seerr_ids(HomeForm::Desktop), ["seerr:requests"]);
         assert!(seerr_ids(HomeForm::Tv).is_empty());
     }
 

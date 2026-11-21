@@ -8,12 +8,7 @@ use swiftly_render::{Color, DrawList, GpuContext, WgpuRenderer};
 
 use crate::host::Host;
 
-const CLEAR: Color = Color {
-    r: 0.0627451,
-    g: 0.0627451,
-    b: 0.0627451,
-    a: 1.0,
-};
+const CLEAR: Color = swiftly_ui::components::GROUND;
 
 /// The device, surface and renderer of one layer.
 pub struct Gpu {

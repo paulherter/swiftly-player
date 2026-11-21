@@ -444,7 +444,9 @@ pub fn stack_view(env: &Env, style: NavStyle, layers: &Layers, pages: Vec<(u64, 
     let (w, h) = (env.size.w, env.size.h);
     let count = pages.len();
     let dim_colour = match style {
-        NavStyle::Desktop => crate::components::color(swiftly_design::tokens::colour::REASON),
+        NavStyle::Desktop => {
+            crate::components::color(swiftly_design::tokens_generated::color::SURFACE_BASE)
+        }
         NavStyle::Touch => Color::new(0.0, 0.0, 0.0, 1.0),
     };
     let top_x = place(style, layers, layers.top, w).x;

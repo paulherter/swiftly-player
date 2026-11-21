@@ -1,4 +1,4 @@
-//! The fill of the skip button while "skip automatically" counts down.
+//! The fill of the skip button while "skip automatically" counts down, and the ring of the next-episode card.
 //!
 //! The core reports the share (0 to 1) when the player ticks, a few times a second, so a fill drawn from it moves in
 //! steps. The Apple players compute the fill from the clock on every frame (`FillClock`); this does the same: between two
@@ -12,9 +12,14 @@ pub const SKIP_SECONDS: f64 = 6.0;
 const AHEAD: f64 = 0.08;
 const BEHIND: f64 = 0.02;
 
+/// Length of the card's countdown in seconds (`OfferingLayer.countdown`).
+pub const CARD_SECONDS: f64 = 7.0;
+
 /// The smoothed share of one countdown.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SkipFill {
+    /// Seconds the countdown takes from 0 to 1.
+    length: f64,
     /// The drawn share at `at`, and the core's last reported value.
     base: f64,
     at: f64,
@@ -23,12 +28,29 @@ pub struct SkipFill {
     active: bool,
 }
 
+impl Default for SkipFill {
+    fn default() -> SkipFill {
+        SkipFill::over(SKIP_SECONDS)
+    }
+}
+
 impl SkipFill {
+    /// A fill for a countdown of `length` seconds.
+    pub fn over(length: f64) -> SkipFill {
+        SkipFill {
+            length,
+            base: 0.0,
+            at: 0.0,
+            core: 0.0,
+            active: false,
+        }
+    }
+
     /// The share to draw at `now` (seconds), given the core's `reported` share and whether the film plays.
     /// `None` when no countdown is shown.
     pub fn share(&mut self, reported: Option<f64>, running: bool, now: f64) -> Option<f64> {
         let Some(c) = reported else {
-            *self = SkipFill::default();
+            *self = SkipFill::over(self.length);
             return None;
         };
         if !self.active {
@@ -59,7 +81,7 @@ impl SkipFill {
         if !running {
             return self.base;
         }
-        (self.base + ((now - self.at).max(0.0) / SKIP_SECONDS)).min(1.0)
+        (self.base + ((now - self.at).max(0.0) / self.length)).min(1.0)
     }
 
     /// Whether the fill is still moving and needs frames.
@@ -114,5 +136,17 @@ mod tests {
         // A seek moved the core far ahead: the drawn share follows within the band, not by a jump of the whole gap.
         let s = f.share(Some(0.5), true, 0.016).expect("share");
         assert!((0.5 - BEHIND - 1e-9..=0.5 + AHEAD).contains(&s), "{s}");
+    }
+
+    #[test]
+    fn the_card_ring_runs_over_seven_seconds() {
+        let mut f = SkipFill::over(CARD_SECONDS);
+        let _ = f.share(Some(0.0), true, 0.0);
+        // No new report for 3.5 s: the ring has run on by half (inside the band the next report allows).
+        let s = f.share(Some(0.0), true, 3.5).expect("share");
+        assert!((s - 0.5).abs() < 1e-9, "{s}");
+        assert_eq!(f.share(None, true, 4.0), None);
+        let s = f.share(Some(0.0), true, 4.0).expect("share");
+        assert!(s.abs() < 1e-9 && f.moving(true));
     }
 }

@@ -6,7 +6,7 @@
     (`Marken.markeFlaeche` / `markeAkzent`). The banner is a brand tile, not a page; two different
     dark tones for the same role would only add a difference.
     
-    The mark is the brand path (`Marken.signetForm`), so icon, banner and launch curtain show the
+    The mark is the brand path (`Marken.signetForm`), so icon and banner show the
     same shape. The path lives in its own 1024 box; it is scaled to 124 and centred, which makes
     the mark 56 high, about a third of the banner height, as on tvOS.
     

@@ -123,7 +123,7 @@ struct SeerrDetailView: View {
         guard model.seerr.connected else { return }
         let made = flow ?? SeerrTitleFlow(hub: model.seerr.hub, art: hit.art, tmdb: Int64(hit.id))
         // The answer is applied once the page has stopped sliding (`InTravel`).
-        made.settle = { await InTravel.waitFor() }
+        made.settle = { await InTravel.waitFor() }  // every write of the flow lands after the slide, in order
         flow = made
         await made.start()
     }

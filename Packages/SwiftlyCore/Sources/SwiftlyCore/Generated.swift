@@ -1291,6 +1291,13 @@ public protocol CoreProtocol: AnyObject, Sendable {
     func cacheSizeBytes()  -> UInt64
     
     /**
+     * Prepares "Vom Server löschen" on `screen` for a library item (film, series or episode: its series): the core
+     * reads the item, finds its TMDB id and file size and asks Seerr which versions it knows. `None` when the
+     * item has no TMDB id, Seerr does not know it, or this account / device may not delete.
+     */
+    func deletePrepareItem(screen: SeerrAdminScreen, account: AccountRef, locale: String, itemId: String) async throws  -> SeerrDeleteInfo?
+    
+    /**
      * A movie or episode page, started from the tile that was tapped.
      */
     func detailVm(account: AccountRef, locale: String, tile: Tile) throws  -> DetailVm
@@ -1431,6 +1438,21 @@ public protocol CoreProtocol: AnyObject, Sendable {
     func libraryVm(account: AccountRef, locale: String, spec: LibrarySpec) throws  -> LibraryVm
     
     /**
+     * Resolves with the new count once the account's lists went stale after `seen` (at once if they already did;
+     * a burst answers once). Cancelling the call ends the wait. The host then reloads its page and keeps the rows
+     * on screen meanwhile.
+     */
+    func listsStaleAfter(account: AccountRef, seen: UInt64) async throws  -> UInt64
+    
+    /**
+     * Where the count of "the account's lists went stale" stands. The core reloads its own Home and library grids when
+     * the server socket reports a change from another device, after a link that really dropped and after a delete; a
+     * host that draws its pages itself reads this count when its page opens and then waits with `lists_stale_after`.
+     * `0` when the core has no cache.
+     */
+    func listsStaleVersion(account: AccountRef)  -> UInt64
+    
+    /**
      * The sign-in screen over the byte store (see [`crate::login::LoginModel`]).
      */
     func loginModel(accounts: AccountsModel, locale: String)  -> LoginModel
@@ -1552,6 +1574,13 @@ public protocol CoreProtocol: AnyObject, Sendable {
      * session can be controlled and other devices offer "continue here" (`reportCapabilities` of the old core).
      */
     func reportCapabilities(account: AccountRef) async throws 
+    
+    /**
+     * Starts a "Problem melden" report on `flow` for a library item (film, series or episode; `seconds` is the
+     * player's position): the core reads the item, finds its TMDB id (an episode: its series') and fills the
+     * place. `false` when the title has no TMDB id or cannot be read, so the host shows nothing.
+     */
+    func reportStartItem(flow: ReportIssueFlow, account: AccountRef, locale: String, itemId: String, seconds: Double?) async throws  -> Bool
     
     /**
      * Search with recent terms per account.
@@ -1835,6 +1864,28 @@ open func cacheSizeBytes() -> UInt64  {
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * Prepares "Vom Server löschen" on `screen` for a library item (film, series or episode: its series): the core
+     * reads the item, finds its TMDB id and file size and asks Seerr which versions it knows. `None` when the
+     * item has no TMDB id, Seerr does not know it, or this account / device may not delete.
+     */
+open func deletePrepareItem(screen: SeerrAdminScreen, account: AccountRef, locale: String, itemId: String)async throws  -> SeerrDeleteInfo?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_swiftly_uniffi_fn_method_core_delete_prepare_item(
+                        self.uniffiCloneHandle(),FfiConverterTypeSeerrAdminScreen_lower(screen),FfiConverterTypeAccountRef_lower(account),FfiConverterString.lower(locale),FfiConverterString.lower(itemId)
+                )
+            },
+            pollFunc: ffi_swiftly_uniffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_swiftly_uniffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_swiftly_uniffi_rust_future_free_rust_buffer,
+            cancelFunc: ffi_swiftly_uniffi_rust_future_cancel_rust_buffer,
+            liftFunc: FfiConverterOptionTypeSeerrDeleteInfo.lift,
+            errorHandler: FfiConverterTypeCoreError_lift
+        )
 }
     
     /**
@@ -2263,6 +2314,44 @@ open func libraryVm(account: AccountRef, locale: String, spec: LibrarySpec)throw
 }
     
     /**
+     * Resolves with the new count once the account's lists went stale after `seen` (at once if they already did;
+     * a burst answers once). Cancelling the call ends the wait. The host then reloads its page and keeps the rows
+     * on screen meanwhile.
+     */
+open func listsStaleAfter(account: AccountRef, seen: UInt64)async throws  -> UInt64  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_swiftly_uniffi_fn_method_core_lists_stale_after(
+                        self.uniffiCloneHandle(),FfiConverterTypeAccountRef_lower(account),FfiConverterUInt64.lower(seen)
+                )
+            },
+            pollFunc: ffi_swiftly_uniffi_rust_future_poll_u64,
+            completeFunc: ffi_swiftly_uniffi_rust_future_complete_u64,
+            freeFunc: ffi_swiftly_uniffi_rust_future_free_u64,
+            cancelFunc: ffi_swiftly_uniffi_rust_future_cancel_u64,
+            liftFunc: FfiConverterUInt64.lift,
+            errorHandler: FfiConverterTypeCoreError_lift
+        )
+}
+    
+    /**
+     * Where the count of "the account's lists went stale" stands. The core reloads its own Home and library grids when
+     * the server socket reports a change from another device, after a link that really dropped and after a delete; a
+     * host that draws its pages itself reads this count when its page opens and then waits with `lists_stale_after`.
+     * `0` when the core has no cache.
+     */
+open func listsStaleVersion(account: AccountRef) -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_core_lists_stale_version(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeAccountRef_lower(account),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * The sign-in screen over the byte store (see [`crate::login::LoginModel`]).
      */
 open func loginModel(accounts: AccountsModel, locale: String) -> LoginModel  {
@@ -2625,6 +2714,28 @@ open func reportCapabilities(account: AccountRef)async throws   {
             freeFunc: ffi_swiftly_uniffi_rust_future_free_void,
             cancelFunc: ffi_swiftly_uniffi_rust_future_cancel_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError_lift
+        )
+}
+    
+    /**
+     * Starts a "Problem melden" report on `flow` for a library item (film, series or episode; `seconds` is the
+     * player's position): the core reads the item, finds its TMDB id (an episode: its series') and fills the
+     * place. `false` when the title has no TMDB id or cannot be read, so the host shows nothing.
+     */
+open func reportStartItem(flow: ReportIssueFlow, account: AccountRef, locale: String, itemId: String, seconds: Double?)async throws  -> Bool  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_swiftly_uniffi_fn_method_core_report_start_item(
+                        self.uniffiCloneHandle(),FfiConverterTypeReportIssueFlow_lower(flow),FfiConverterTypeAccountRef_lower(account),FfiConverterString.lower(locale),FfiConverterString.lower(itemId),FfiConverterOptionDouble.lower(seconds)
+                )
+            },
+            pollFunc: ffi_swiftly_uniffi_rust_future_poll_i8,
+            completeFunc: ffi_swiftly_uniffi_rust_future_complete_i8,
+            freeFunc: ffi_swiftly_uniffi_rust_future_free_i8,
+            cancelFunc: ffi_swiftly_uniffi_rust_future_cancel_i8,
+            liftFunc: FfiConverterBool.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
 }
@@ -5515,6 +5626,324 @@ public func FfiConverterTypeForwardBacklog_lower(_ value: ForwardBacklog) -> UIn
 
 
 /**
+ * Where the gift sheet stands, for the whole app, and the rule that keeps big asks apart: at most one per session.
+ */
+public protocol GiftFlowModelProtocol: AnyObject, Sendable {
+    
+    /**
+     * One big ask showed this session.
+     */
+    func bigAskShown()  -> Bool
+    
+    /**
+     * Closes the sheet (named `dismiss`: a generated `close` collides with Kotlin's `AutoCloseable.close`).
+     * `true` when it was the looks panel or the animation: the host then drops a preview and follows
+     * the worn look with the icon.
+     */
+    func dismiss()  -> Bool
+    
+    /**
+     * **Called a moment after the home page came up.** Decides what shows (What's new first, which carries the gift, else
+     * the offer), shows it, and stores the offer in `looks`.
+     */
+    func evaluate(looks: LookModel, input: GiftEvalInput)  -> GiftEvaluationInfo
+    
+    /**
+     * **"Grab it"**: the look the host has to claim in the store now, or `None` when the animation already runs. With
+     * Reduce Motion the panel comes at once.
+     */
+    func grab(lookId: String, reduceMotion: Bool)  -> String?
+    
+    /**
+     * The pick-up animation ended (after `gift_claim_ms`, or a tap on it): the looks panel.
+     */
+    func land() 
+    
+    /**
+     * The looks panel is up, over the real home page.
+     */
+    func looksOpen()  -> Bool
+    
+    /**
+     * Another big ask showed (support sheet, rating, hint): the gift waits.
+     */
+    func noteBigAsk() 
+    
+    /**
+     * The looks panel over the page that is showing.
+     */
+    func openLooks() 
+    
+    /**
+     * Back to before the gift (Settings, Preview, Reset).
+     */
+    func reset() 
+    
+    /**
+     * Shows a step (a tap that opens the sheet, a debug entry); that counts as this session's ask.
+     */
+    func show(stage: GiftStageInfo) 
+    
+    /**
+     * The step the sheet is on; `None`: closed.
+     */
+    func stage()  -> GiftStageInfo?
+    
+}
+/**
+ * Where the gift sheet stands, for the whole app, and the rule that keeps big asks apart: at most one per session.
+ */
+open class GiftFlowModel: GiftFlowModelProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_swiftly_uniffi_fn_clone_giftflowmodel(self.handle, $0) }
+    }
+    /**
+     * A closed flow, no ask shown yet.
+     */
+public convenience init() {
+    let handle =
+        try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_constructor_giftflowmodel_new(uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_swiftly_uniffi_fn_free_giftflowmodel(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * One big ask showed this session.
+     */
+open func bigAskShown() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_giftflowmodel_big_ask_shown(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Closes the sheet (named `dismiss`: a generated `close` collides with Kotlin's `AutoCloseable.close`).
+     * `true` when it was the looks panel or the animation: the host then drops a preview and follows
+     * the worn look with the icon.
+     */
+open func dismiss() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_giftflowmodel_dismiss(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * **Called a moment after the home page came up.** Decides what shows (What's new first, which carries the gift, else
+     * the offer), shows it, and stores the offer in `looks`.
+     */
+open func evaluate(looks: LookModel, input: GiftEvalInput) -> GiftEvaluationInfo  {
+    return try!  FfiConverterTypeGiftEvaluationInfo_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_giftflowmodel_evaluate(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeLookModel_lower(looks),
+        FfiConverterTypeGiftEvalInput_lower(input),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * **"Grab it"**: the look the host has to claim in the store now, or `None` when the animation already runs. With
+     * Reduce Motion the panel comes at once.
+     */
+open func grab(lookId: String, reduceMotion: Bool) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_giftflowmodel_grab(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(lookId),
+        FfiConverterBool.lower(reduceMotion),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The pick-up animation ended (after `gift_claim_ms`, or a tap on it): the looks panel.
+     */
+open func land()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_giftflowmodel_land(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The looks panel is up, over the real home page.
+     */
+open func looksOpen() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_giftflowmodel_looks_open(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Another big ask showed (support sheet, rating, hint): the gift waits.
+     */
+open func noteBigAsk()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_giftflowmodel_note_big_ask(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The looks panel over the page that is showing.
+     */
+open func openLooks()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_giftflowmodel_open_looks(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Back to before the gift (Settings, Preview, Reset).
+     */
+open func reset()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_giftflowmodel_reset(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Shows a step (a tap that opens the sheet, a debug entry); that counts as this session's ask.
+     */
+open func show(stage: GiftStageInfo)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_giftflowmodel_show(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeGiftStageInfo_lower(stage),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The step the sheet is on; `None`: closed.
+     */
+open func stage() -> GiftStageInfo?  {
+    return try!  FfiConverterOptionTypeGiftStageInfo.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_giftflowmodel_stage(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGiftFlowModel: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = GiftFlowModel
+
+    public static func lift(_ handle: UInt64) throws -> GiftFlowModel {
+        return GiftFlowModel(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: GiftFlowModel) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GiftFlowModel {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: GiftFlowModel, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGiftFlowModel_lift(_ handle: UInt64) throws -> GiftFlowModel {
+    return try FfiConverterTypeGiftFlowModel.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGiftFlowModel_lower(_ value: GiftFlowModel) -> UInt64 {
+    return FfiConverterTypeGiftFlowModel.lower(value)
+}
+
+
+
+
+
+
+/**
  * The polling and hand-over flow as one explicit state machine; the host runs the network and the
  * player and feeds the results back as events.
  */
@@ -7523,6 +7952,11 @@ public protocol LegacyDetailProtocol: AnyObject, Sendable {
     func plan(id: String) async throws  -> String
     
     /**
+     * The player's top bar (title line, meta facts) of a stored title, in the playback plan's keys; empty without a copy. No network.
+     */
+    func playSeed(id: String)  -> String
+    
+    /**
      * `Kern.playbackSelection`: the settings that decide the bitrate limit, at start and on every change.
      */
     func playbackSelection(alwaysDirectPlay: Bool, megabit: Int64) 
@@ -7989,6 +8423,19 @@ open func plan(id: String)async throws  -> String  {
             liftFunc: FfiConverterString.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
+}
+    
+    /**
+     * The player's top bar (title line, meta facts) of a stored title, in the playback plan's keys; empty without a copy. No network.
+     */
+open func playSeed(id: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_legacydetail_play_seed(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
 }
     
     /**
@@ -9582,6 +10029,11 @@ public protocol LegacyPlaybackProtocol: AnyObject, Sendable {
     func controlsChanged(opened: Bool)  -> String
     
     /**
+     * `Kern.decoderRetry`: the decoder refused the open title at the start; the same title as a server transcode.
+     */
+    func decoderRetry(position: Double) async throws  -> String
+    
+    /**
      * `Kern.displayTime`.
      */
     func displayTime(position: Double, atPush: Bool)  -> Double
@@ -9730,6 +10182,12 @@ public protocol LegacyPlaybackProtocol: AnyObject, Sendable {
      * `Kern.subtitleLookReport`: whether the server hands ASS out as SRT.
      */
     func setServerExtractsText(on: Bool) 
+    
+    /**
+     * The video decoders of the device, asked once: a title none of them decodes is planned as a server transcode. An empty
+     * list says the device decodes none of the codecs the core knows.
+     */
+    func setVideoDecoders(decoders: [LegacyVideoDecoder]) 
     
     /**
      * A group plays without a next episode.
@@ -9957,6 +10415,26 @@ open func controlsChanged(opened: Bool) -> String  {
         FfiConverterBool.lower(opened),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * `Kern.decoderRetry`: the decoder refused the open title at the start; the same title as a server transcode.
+     */
+open func decoderRetry(position: Double)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_swiftly_uniffi_fn_method_legacyplayback_decoder_retry(
+                        self.uniffiCloneHandle(),FfiConverterDouble.lower(position)
+                )
+            },
+            pollFunc: ffi_swiftly_uniffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_swiftly_uniffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_swiftly_uniffi_rust_future_free_rust_buffer,
+            cancelFunc: ffi_swiftly_uniffi_rust_future_cancel_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeCoreError_lift
+        )
 }
     
     /**
@@ -10396,6 +10874,19 @@ open func setServerExtractsText(on: Bool)  {try! rustCall() {
     uniffi_swiftly_uniffi_fn_method_legacyplayback_set_server_extracts_text(
             self.uniffiCloneHandle(),
         FfiConverterBool.lower(on),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The video decoders of the device, asked once: a title none of them decodes is planned as a server transcode. An empty
+     * list says the device decodes none of the codecs the core knows.
+     */
+open func setVideoDecoders(decoders: [LegacyVideoDecoder])  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_legacyplayback_set_video_decoders(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeLegacyVideoDecoder.lower(decoders),uniffiCallStatus
     )
 }
 }
@@ -11830,6 +12321,12 @@ public protocol LibraryVmProtocol: AnyObject, Sendable {
     func alphabet()  -> AlphabetPart
     
     /**
+     * The strip when it is known without a fetch (the whole list's or the one remembered from the last visit);
+     * `None` while only the loaded titles could build it. Remembered for `key_of` and `jump_target`.
+     */
+    func alphabetKnown()  -> AlphabetPart?
+    
+    /**
      * Returns at once when newer than `seen`, else waits. Cancelling the Swift `Task` drops it.
      */
     func changed(seen: UInt64) async throws  -> Change
@@ -11846,8 +12343,8 @@ public protocol LibraryVmProtocol: AnyObject, Sendable {
     func grid()  -> GridPart
     
     /**
-     * Position among the loaded titles of the first one under `key`; `None`: not loaded yet (load more, ask
-     * again).
+     * Position in the list of the first title under `key` (the strip's own position, so it may lie past the
+     * loaded tiles: load more, ask again); a letter without titles gives the next one that has some.
      */
     func jumpTarget(key: String)  -> UInt64?
     
@@ -11968,6 +12465,19 @@ open func alphabet() -> AlphabetPart  {
 }
     
     /**
+     * The strip when it is known without a fetch (the whole list's or the one remembered from the last visit);
+     * `None` while only the loaded titles could build it. Remembered for `key_of` and `jump_target`.
+     */
+open func alphabetKnown() -> AlphabetPart?  {
+    return try!  FfiConverterOptionTypeAlphabetPart.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_libraryvm_alphabet_known(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Returns at once when newer than `seen`, else waits. Cancelling the Swift `Task` drops it.
      */
 open func changed(seen: UInt64)async throws  -> Change  {
@@ -12014,8 +12524,8 @@ open func grid() -> GridPart  {
 }
     
     /**
-     * Position among the loaded titles of the first one under `key`; `None`: not loaded yet (load more, ask
-     * again).
+     * Position in the list of the first title under `key` (the strip's own position, so it may lie past the
+     * loaded tiles: load more, ask again); a letter without titles gives the next one that has some.
      */
 open func jumpTarget(key: String) -> UInt64?  {
     return try!  FfiConverterOptionUInt64.lift(try! rustCall() {
@@ -18017,6 +18527,253 @@ public func FfiConverterTypeRemoteListener_lower(_ value: RemoteListener) -> UIn
 
 
 /**
+ * The report flow of one hub.
+ */
+public protocol ReportIssueFlowProtocol: AnyObject, Sendable {
+    
+    /**
+     * The sheet went away (not `close`: that name is the generated object's own `close()` in Kotlin).
+     */
+    func dismiss() 
+    
+    /**
+     * What the sheet draws.
+     */
+    func info()  -> ReportIssueInfo
+    
+    /**
+     * Sends the report; answers the phase it ended in.
+     */
+    func send() async throws  -> ReportIssuePhase
+    
+    /**
+     * The kind chosen.
+     */
+    func setKind(kind: IssueKind) 
+    
+    /**
+     * The words written.
+     */
+    func setMessage(text: String) 
+    
+    /**
+     * Starts a fresh report for an episode (by the series' TMDB id).
+     */
+    func startEpisode(tmdb: Int64, series: String, season: Int64, episode: Int64, seconds: Double?) 
+    
+    /**
+     * Starts a fresh report for a film or a whole series (`art`: `movie` / `tv`); `seconds` is the player's
+     * position when it comes from the player.
+     */
+    func startTitle(art: String, tmdb: Int64, title: String, seconds: Double?) 
+    
+}
+/**
+ * The report flow of one hub.
+ */
+open class ReportIssueFlow: ReportIssueFlowProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_swiftly_uniffi_fn_clone_reportissueflow(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_swiftly_uniffi_fn_free_reportissueflow(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * The sheet went away (not `close`: that name is the generated object's own `close()` in Kotlin).
+     */
+open func dismiss()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_reportissueflow_dismiss(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * What the sheet draws.
+     */
+open func info() -> ReportIssueInfo  {
+    return try!  FfiConverterTypeReportIssueInfo_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_reportissueflow_info(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Sends the report; answers the phase it ended in.
+     */
+open func send()async throws  -> ReportIssuePhase  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_swiftly_uniffi_fn_method_reportissueflow_send(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_swiftly_uniffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_swiftly_uniffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_swiftly_uniffi_rust_future_free_rust_buffer,
+            cancelFunc: ffi_swiftly_uniffi_rust_future_cancel_rust_buffer,
+            liftFunc: FfiConverterTypeReportIssuePhase_lift,
+            errorHandler: FfiConverterTypeCoreError_lift
+        )
+}
+    
+    /**
+     * The kind chosen.
+     */
+open func setKind(kind: IssueKind)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_reportissueflow_set_kind(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeIssueKind_lower(kind),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The words written.
+     */
+open func setMessage(text: String)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_reportissueflow_set_message(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(text),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Starts a fresh report for an episode (by the series' TMDB id).
+     */
+open func startEpisode(tmdb: Int64, series: String, season: Int64, episode: Int64, seconds: Double?)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_reportissueflow_start_episode(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(tmdb),
+        FfiConverterString.lower(series),
+        FfiConverterInt64.lower(season),
+        FfiConverterInt64.lower(episode),
+        FfiConverterOptionDouble.lower(seconds),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Starts a fresh report for a film or a whole series (`art`: `movie` / `tv`); `seconds` is the player's
+     * position when it comes from the player.
+     */
+open func startTitle(art: String, tmdb: Int64, title: String, seconds: Double?)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_reportissueflow_start_title(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(art),
+        FfiConverterInt64.lower(tmdb),
+        FfiConverterString.lower(title),
+        FfiConverterOptionDouble.lower(seconds),uniffiCallStatus
+    )
+}
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeReportIssueFlow: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = ReportIssueFlow
+
+    public static func lift(_ handle: UInt64) throws -> ReportIssueFlow {
+        return ReportIssueFlow(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: ReportIssueFlow) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReportIssueFlow {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: ReportIssueFlow, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReportIssueFlow_lift(_ handle: UInt64) throws -> ReportIssueFlow {
+    return try FfiConverterTypeReportIssueFlow.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReportIssueFlow_lower(_ value: ReportIssueFlow) -> UInt64 {
+    return FfiConverterTypeReportIssueFlow.lower(value)
+}
+
+
+
+
+
+
+/**
  * Search with debounce, result groups and recent terms.
  */
 public protocol SearchVmProtocol: AnyObject, Sendable {
@@ -18611,6 +19368,16 @@ public protocol SeerrAdminScreenProtocol: AnyObject, Sendable {
     func deleteRun(lanes: [Bool]) async throws  -> SeerrDeleteInfo
     
     /**
+     * Deletes the ticked versions: like `delete_run` with the core's own selection.
+     */
+    func deleteRunChosen() async throws  -> SeerrDeleteInfo
+    
+    /**
+     * Ticks or unticks one version (`true` = 4K) on the confirm sheet; returns the sheet.
+     */
+    func deleteToggle(is4k: Bool)  -> SeerrDeleteInfo
+    
+    /**
      * The first tab to show (`None`: nothing to administer).
      */
     func firstTab()  -> AdminTab?
@@ -18655,6 +19422,11 @@ public protocol SeerrAdminScreenProtocol: AnyObject, Sendable {
      * Posts a reply to the open issue.
      */
     func reply(text: String) async throws  -> SeerrIssueDetail?
+    
+    /**
+     * A report flow ("Problem melden") that sends through this screen's hub.
+     */
+    func reportFlow()  -> ReportIssueFlow
     
     /**
      * Reports a problem with a title. `season` / `episode` 0 = none; `at` is the position
@@ -18904,6 +19676,39 @@ open func deleteRun(lanes: [Bool])async throws  -> SeerrDeleteInfo  {
 }
     
     /**
+     * Deletes the ticked versions: like `delete_run` with the core's own selection.
+     */
+open func deleteRunChosen()async throws  -> SeerrDeleteInfo  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_swiftly_uniffi_fn_method_seerradminscreen_delete_run_chosen(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_swiftly_uniffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_swiftly_uniffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_swiftly_uniffi_rust_future_free_rust_buffer,
+            cancelFunc: ffi_swiftly_uniffi_rust_future_cancel_rust_buffer,
+            liftFunc: FfiConverterTypeSeerrDeleteInfo_lift,
+            errorHandler: FfiConverterTypeCoreError_lift
+        )
+}
+    
+    /**
+     * Ticks or unticks one version (`true` = 4K) on the confirm sheet; returns the sheet.
+     */
+open func deleteToggle(is4k: Bool) -> SeerrDeleteInfo  {
+    return try!  FfiConverterTypeSeerrDeleteInfo_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_seerradminscreen_delete_toggle(
+            self.uniffiCloneHandle(),
+        FfiConverterBool.lower(is4k),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * The first tab to show (`None`: nothing to administer).
      */
 open func firstTab() -> AdminTab?  {
@@ -19059,6 +19864,18 @@ open func reply(text: String)async throws  -> SeerrIssueDetail?  {
             liftFunc: FfiConverterOptionTypeSeerrIssueDetail.lift,
             errorHandler: FfiConverterTypeCoreError_lift
         )
+}
+    
+    /**
+     * A report flow ("Problem melden") that sends through this screen's hub.
+     */
+open func reportFlow() -> ReportIssueFlow  {
+    return try!  FfiConverterTypeReportIssueFlow_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_seerradminscreen_report_flow(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
 }
     
     /**
@@ -19909,6 +20726,12 @@ public protocol SeerrLibrary: AnyObject, Sendable {
     func find(art: String, tmdb: Int64) async throws  -> String?
     
     /**
+     * The address of the library item's own cover picture; `None` when the item has none. The "ist da" banner shows it
+     * before the TMDB poster.
+     */
+    func cover(id: String) async throws  -> String?
+    
+    /**
      * Asks Jellyfin to scan its libraries again; fails when it does not answer or refuses.
      */
     func refresh() async throws 
@@ -19992,6 +20815,27 @@ open func find(art: String, tmdb: Int64)async throws  -> String?  {
 }
     
     /**
+     * The address of the library item's own cover picture; `None` when the item has none. The "ist da" banner shows it
+     * before the TMDB poster.
+     */
+open func cover(id: String)async throws  -> String?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_swiftly_uniffi_fn_method_seerrlibrary_cover(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(id)
+                )
+            },
+            pollFunc: ffi_swiftly_uniffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_swiftly_uniffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_swiftly_uniffi_rust_future_free_rust_buffer,
+            cancelFunc: ffi_swiftly_uniffi_rust_future_cancel_rust_buffer,
+            liftFunc: FfiConverterOptionString.lift,
+            errorHandler: FfiConverterTypeLibraryFailure_lift
+        )
+}
+    
+    /**
      * Asks Jellyfin to scan its libraries again; fails when it does not answer or refuses.
      */
 open func refresh()async throws   {
@@ -20055,6 +20899,49 @@ fileprivate struct UniffiCallbackInterfaceSeerrLibrary {
                 return try await uniffiObj.find(
                      art: try FfiConverterString.lift(art),
                      tmdb: try FfiConverterInt64.lift(tmdb)
+                )
+            }
+
+            let uniffiHandleSuccess = { (returnValue: String?) in
+                uniffiFutureCallback(
+                    uniffiCallbackData,
+                    UniffiForeignFutureResultRustBuffer(
+                        returnValue: FfiConverterOptionString.lower(returnValue),
+                        callStatus: RustCallStatus()
+                    )
+                )
+            }
+            let uniffiHandleError = { (statusCode, errorBuf) in
+                uniffiFutureCallback(
+                    uniffiCallbackData,
+                    UniffiForeignFutureResultRustBuffer(
+                        returnValue: RustBuffer.empty(),
+                        callStatus: RustCallStatus(code: statusCode, errorBuf: errorBuf)
+                    )
+                )
+            }
+            uniffiTraitInterfaceCallAsyncWithError(
+                makeCall: makeCall,
+                handleSuccess: uniffiHandleSuccess,
+                handleError: uniffiHandleError,
+                lowerError: FfiConverterTypeLibraryFailure_lower,
+                droppedCallback: uniffiOutDroppedCallback
+            )
+        },
+        cover: { (
+            uniffiHandle: UInt64,
+            id: RustBuffer,
+            uniffiFutureCallback: @escaping UniffiForeignFutureCompleteRustBuffer,
+            uniffiCallbackData: UInt64,
+            uniffiOutDroppedCallback: UnsafeMutablePointer<UniffiForeignFutureDroppedCallbackStruct>
+        ) in
+            let makeCall = {
+                () async throws -> String? in
+                guard let uniffiObj = try? FfiConverterTypeSeerrLibrary.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try await uniffiObj.cover(
+                     id: try FfiConverterString.lift(id)
                 )
             }
 
@@ -30415,6 +31302,214 @@ public func FfiConverterTypeFoundServerInfo_lower(_ value: FoundServerInfo) -> R
 }
 
 
+/**
+ * What one evaluation looks at; the flow's own state (sheet open, session ask) and the looks' (owned, offered) are added.
+ */
+public struct GiftEvalInput: Equatable, Hashable {
+    /**
+     * The clock, unix seconds.
+     */
+    public var now: Double
+    /**
+     * Seconds east of UTC at `now`.
+     */
+    public var utcOffset: Int64
+    /**
+     * Signed in, loaded, and the home page in view.
+     */
+    public var homeReady: Bool
+    /**
+     * The player, another sheet or a card that asks something is up.
+     */
+    public var blocked: Bool
+    /**
+     * How long the home page has been standing.
+     */
+    public var secondsOnHome: Double
+    /**
+     * The version whose "What's new" was seen last.
+     */
+    public var lastSeen: String?
+    /**
+     * The app was used before this launch.
+     */
+    public var usedBefore: Bool
+    /**
+     * The current app version.
+     */
+    public var current: String
+    /**
+     * The "What's new" file for the current version, if the app has one.
+     */
+    public var entryJson: Data?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The clock, unix seconds.
+         */now: Double, 
+        /**
+         * Seconds east of UTC at `now`.
+         */utcOffset: Int64, 
+        /**
+         * Signed in, loaded, and the home page in view.
+         */homeReady: Bool, 
+        /**
+         * The player, another sheet or a card that asks something is up.
+         */blocked: Bool, 
+        /**
+         * How long the home page has been standing.
+         */secondsOnHome: Double, 
+        /**
+         * The version whose "What's new" was seen last.
+         */lastSeen: String?, 
+        /**
+         * The app was used before this launch.
+         */usedBefore: Bool, 
+        /**
+         * The current app version.
+         */current: String, 
+        /**
+         * The "What's new" file for the current version, if the app has one.
+         */entryJson: Data?) {
+        self.now = now
+        self.utcOffset = utcOffset
+        self.homeReady = homeReady
+        self.blocked = blocked
+        self.secondsOnHome = secondsOnHome
+        self.lastSeen = lastSeen
+        self.usedBefore = usedBefore
+        self.current = current
+        self.entryJson = entryJson
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GiftEvalInput: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGiftEvalInput: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GiftEvalInput {
+        return
+            try GiftEvalInput(
+                now: FfiConverterDouble.read(from: &buf), 
+                utcOffset: FfiConverterInt64.read(from: &buf), 
+                homeReady: FfiConverterBool.read(from: &buf), 
+                blocked: FfiConverterBool.read(from: &buf), 
+                secondsOnHome: FfiConverterDouble.read(from: &buf), 
+                lastSeen: FfiConverterOptionString.read(from: &buf), 
+                usedBefore: FfiConverterBool.read(from: &buf), 
+                current: FfiConverterString.read(from: &buf), 
+                entryJson: FfiConverterOptionData.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GiftEvalInput, into buf: inout [UInt8]) {
+        FfiConverterDouble.write(value.now, into: &buf)
+        FfiConverterInt64.write(value.utcOffset, into: &buf)
+        FfiConverterBool.write(value.homeReady, into: &buf)
+        FfiConverterBool.write(value.blocked, into: &buf)
+        FfiConverterDouble.write(value.secondsOnHome, into: &buf)
+        FfiConverterOptionString.write(value.lastSeen, into: &buf)
+        FfiConverterBool.write(value.usedBefore, into: &buf)
+        FfiConverterString.write(value.current, into: &buf)
+        FfiConverterOptionData.write(value.entryJson, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGiftEvalInput_lift(_ buf: RustBuffer) throws -> GiftEvalInput {
+    return try FfiConverterTypeGiftEvalInput.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGiftEvalInput_lower(_ value: GiftEvalInput) -> RustBuffer {
+    return FfiConverterTypeGiftEvalInput.lower(value)
+}
+
+
+/**
+ * The result of one evaluation. The offer is already stored in the looks; the host stores the "version seen".
+ */
+public struct GiftEvaluationInfo: Equatable, Hashable {
+    /**
+     * Store the current version as seen.
+     */
+    public var markSeen: Bool
+    /**
+     * The sheet the flow now shows.
+     */
+    public var outcome: GiftOutcomeInfo
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Store the current version as seen.
+         */markSeen: Bool, 
+        /**
+         * The sheet the flow now shows.
+         */outcome: GiftOutcomeInfo) {
+        self.markSeen = markSeen
+        self.outcome = outcome
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GiftEvaluationInfo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGiftEvaluationInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GiftEvaluationInfo {
+        return
+            try GiftEvaluationInfo(
+                markSeen: FfiConverterBool.read(from: &buf), 
+                outcome: FfiConverterTypeGiftOutcomeInfo.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GiftEvaluationInfo, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.markSeen, into: &buf)
+        FfiConverterTypeGiftOutcomeInfo.write(value.outcome, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGiftEvaluationInfo_lift(_ buf: RustBuffer) throws -> GiftEvaluationInfo {
+    return try FfiConverterTypeGiftEvaluationInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGiftEvaluationInfo_lower(_ value: GiftEvaluationInfo) -> RustBuffer {
+    return FfiConverterTypeGiftEvaluationInfo.lower(value)
+}
+
+
 public struct GridPart: Equatable, Hashable {
     public var version: UInt64
     public var tiles: [Tile]
@@ -31602,6 +32697,72 @@ public func FfiConverterTypeLegacyStopped_lift(_ buf: RustBuffer) throws -> Lega
 #endif
 public func FfiConverterTypeLegacyStopped_lower(_ value: LegacyStopped) -> RustBuffer {
     return FfiConverterTypeLegacyStopped.lower(value)
+}
+
+
+/**
+ * One video decoder of the device (`MediaCodecList`): the codec (`h264`, `hevc`, `av1`, `vp9`), whether it takes 10 bits per
+ * channel, and the largest picture it takes.
+ */
+public struct LegacyVideoDecoder: Equatable, Hashable {
+    public var codec: String
+    public var tenBit: Bool
+    public var width: UInt32
+    public var height: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(codec: String, tenBit: Bool, width: UInt32, height: UInt32) {
+        self.codec = codec
+        self.tenBit = tenBit
+        self.width = width
+        self.height = height
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension LegacyVideoDecoder: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLegacyVideoDecoder: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LegacyVideoDecoder {
+        return
+            try LegacyVideoDecoder(
+                codec: FfiConverterString.read(from: &buf), 
+                tenBit: FfiConverterBool.read(from: &buf), 
+                width: FfiConverterUInt32.read(from: &buf), 
+                height: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LegacyVideoDecoder, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.codec, into: &buf)
+        FfiConverterBool.write(value.tenBit, into: &buf)
+        FfiConverterUInt32.write(value.width, into: &buf)
+        FfiConverterUInt32.write(value.height, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLegacyVideoDecoder_lift(_ buf: RustBuffer) throws -> LegacyVideoDecoder {
+    return try FfiConverterTypeLegacyVideoDecoder.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLegacyVideoDecoder_lower(_ value: LegacyVideoDecoder) -> RustBuffer {
+    return FfiConverterTypeLegacyVideoDecoder.lower(value)
 }
 
 
@@ -33735,6 +34896,115 @@ public func FfiConverterTypeMoodPoint_lift(_ buf: RustBuffer) throws -> MoodPoin
 #endif
 public func FfiConverterTypeMoodPoint_lower(_ value: MoodPoint) -> RustBuffer {
     return FfiConverterTypeMoodPoint.lower(value)
+}
+
+
+/**
+ * What a host without a detail view model (Android TV) knows about the title in front of it, to get the core's "More" list.
+ */
+public struct MoreFactsInput: Equatable, Hashable {
+    /**
+     * A series page.
+     */
+    public var series: Bool
+    /**
+     * Movie: the playback plan is known. Series: an episode to continue with exists.
+     */
+    public var planKnown: Bool
+    /**
+     * Movie: the viewer has begun it.
+     */
+    public var begun: Bool
+    /**
+     * Watching together is possible.
+     */
+    public var together: Bool
+    /**
+     * The download button is offered (a series then also offers its trailer).
+     */
+    public var downloadButton: Bool
+    /**
+     * Devices in reach to start on.
+     */
+    public var playOn: [PlayOnDevice]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * A series page.
+         */series: Bool, 
+        /**
+         * Movie: the playback plan is known. Series: an episode to continue with exists.
+         */planKnown: Bool, 
+        /**
+         * Movie: the viewer has begun it.
+         */begun: Bool, 
+        /**
+         * Watching together is possible.
+         */together: Bool, 
+        /**
+         * The download button is offered (a series then also offers its trailer).
+         */downloadButton: Bool, 
+        /**
+         * Devices in reach to start on.
+         */playOn: [PlayOnDevice]) {
+        self.series = series
+        self.planKnown = planKnown
+        self.begun = begun
+        self.together = together
+        self.downloadButton = downloadButton
+        self.playOn = playOn
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MoreFactsInput: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMoreFactsInput: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MoreFactsInput {
+        return
+            try MoreFactsInput(
+                series: FfiConverterBool.read(from: &buf), 
+                planKnown: FfiConverterBool.read(from: &buf), 
+                begun: FfiConverterBool.read(from: &buf), 
+                together: FfiConverterBool.read(from: &buf), 
+                downloadButton: FfiConverterBool.read(from: &buf), 
+                playOn: FfiConverterSequenceTypePlayOnDevice.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MoreFactsInput, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.series, into: &buf)
+        FfiConverterBool.write(value.planKnown, into: &buf)
+        FfiConverterBool.write(value.begun, into: &buf)
+        FfiConverterBool.write(value.together, into: &buf)
+        FfiConverterBool.write(value.downloadButton, into: &buf)
+        FfiConverterSequenceTypePlayOnDevice.write(value.playOn, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMoreFactsInput_lift(_ buf: RustBuffer) throws -> MoreFactsInput {
+    return try FfiConverterTypeMoreFactsInput.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMoreFactsInput_lower(_ value: MoreFactsInput) -> RustBuffer {
+    return FfiConverterTypeMoreFactsInput.lower(value)
 }
 
 
@@ -40735,6 +42005,264 @@ public func FfiConverterTypeRemotePlayOrder_lower(_ value: RemotePlayOrder) -> R
 
 
 /**
+ * Everything the sheet draws.
+ */
+public struct ReportIssueInfo: Equatable, Hashable {
+    /**
+     * A report is open.
+     */
+    public var `open`: Bool
+    /**
+     * "Problem melden".
+     */
+    public var heading: String
+    /**
+     * The title.
+     */
+    public var title: String
+    /**
+     * "Staffel 2 · Folge 3 · bei 23:14".
+     */
+    public var line: String?
+    /**
+     * The four kinds.
+     */
+    public var kinds: [ReportIssueKindRow]
+    /**
+     * The words so far.
+     */
+    public var message: String
+    /**
+     * "Was stimmt nicht?".
+     */
+    public var placeholder: String
+    /**
+     * The phase.
+     */
+    public var phase: ReportIssuePhase
+    /**
+     * The send button is live.
+     */
+    public var canSend: Bool
+    /**
+     * "Melden" / "Wird gemeldet …".
+     */
+    public var sendLabel: String
+    /**
+     * "Gemeldet. Danke.".
+     */
+    public var sentText: String
+    /**
+     * "Fertig".
+     */
+    public var doneText: String
+    /**
+     * "Abbrechen".
+     */
+    public var cancelText: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * A report is open.
+         */`open`: Bool, 
+        /**
+         * "Problem melden".
+         */heading: String, 
+        /**
+         * The title.
+         */title: String, 
+        /**
+         * "Staffel 2 · Folge 3 · bei 23:14".
+         */line: String?, 
+        /**
+         * The four kinds.
+         */kinds: [ReportIssueKindRow], 
+        /**
+         * The words so far.
+         */message: String, 
+        /**
+         * "Was stimmt nicht?".
+         */placeholder: String, 
+        /**
+         * The phase.
+         */phase: ReportIssuePhase, 
+        /**
+         * The send button is live.
+         */canSend: Bool, 
+        /**
+         * "Melden" / "Wird gemeldet …".
+         */sendLabel: String, 
+        /**
+         * "Gemeldet. Danke.".
+         */sentText: String, 
+        /**
+         * "Fertig".
+         */doneText: String, 
+        /**
+         * "Abbrechen".
+         */cancelText: String) {
+        self.`open` = `open`
+        self.heading = heading
+        self.title = title
+        self.line = line
+        self.kinds = kinds
+        self.message = message
+        self.placeholder = placeholder
+        self.phase = phase
+        self.canSend = canSend
+        self.sendLabel = sendLabel
+        self.sentText = sentText
+        self.doneText = doneText
+        self.cancelText = cancelText
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ReportIssueInfo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeReportIssueInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReportIssueInfo {
+        return
+            try ReportIssueInfo(
+                open: FfiConverterBool.read(from: &buf), 
+                heading: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                line: FfiConverterOptionString.read(from: &buf), 
+                kinds: FfiConverterSequenceTypeReportIssueKindRow.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf), 
+                placeholder: FfiConverterString.read(from: &buf), 
+                phase: FfiConverterTypeReportIssuePhase.read(from: &buf), 
+                canSend: FfiConverterBool.read(from: &buf), 
+                sendLabel: FfiConverterString.read(from: &buf), 
+                sentText: FfiConverterString.read(from: &buf), 
+                doneText: FfiConverterString.read(from: &buf), 
+                cancelText: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ReportIssueInfo, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.`open`, into: &buf)
+        FfiConverterString.write(value.heading, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.line, into: &buf)
+        FfiConverterSequenceTypeReportIssueKindRow.write(value.kinds, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+        FfiConverterString.write(value.placeholder, into: &buf)
+        FfiConverterTypeReportIssuePhase.write(value.phase, into: &buf)
+        FfiConverterBool.write(value.canSend, into: &buf)
+        FfiConverterString.write(value.sendLabel, into: &buf)
+        FfiConverterString.write(value.sentText, into: &buf)
+        FfiConverterString.write(value.doneText, into: &buf)
+        FfiConverterString.write(value.cancelText, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReportIssueInfo_lift(_ buf: RustBuffer) throws -> ReportIssueInfo {
+    return try FfiConverterTypeReportIssueInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReportIssueInfo_lower(_ value: ReportIssueInfo) -> RustBuffer {
+    return FfiConverterTypeReportIssueInfo.lower(value)
+}
+
+
+/**
+ * One kind of problem as a row.
+ */
+public struct ReportIssueKindRow: Equatable, Hashable {
+    /**
+     * The kind.
+     */
+    public var kind: IssueKind
+    /**
+     * "Bild", "Ton", "Untertitel", "Sonstiges".
+     */
+    public var text: String
+    /**
+     * Chosen.
+     */
+    public var selected: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The kind.
+         */kind: IssueKind, 
+        /**
+         * "Bild", "Ton", "Untertitel", "Sonstiges".
+         */text: String, 
+        /**
+         * Chosen.
+         */selected: Bool) {
+        self.kind = kind
+        self.text = text
+        self.selected = selected
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ReportIssueKindRow: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeReportIssueKindRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReportIssueKindRow {
+        return
+            try ReportIssueKindRow(
+                kind: FfiConverterTypeIssueKind.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf), 
+                selected: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ReportIssueKindRow, into buf: inout [UInt8]) {
+        FfiConverterTypeIssueKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterBool.write(value.selected, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReportIssueKindRow_lift(_ buf: RustBuffer) throws -> ReportIssueKindRow {
+    return try FfiConverterTypeReportIssueKindRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReportIssueKindRow_lower(_ value: ReportIssueKindRow) -> RustBuffer {
+    return FfiConverterTypeReportIssueKindRow.lower(value)
+}
+
+
+/**
  * What a revoked account switched to.
  */
 public struct RevokedInfo: Equatable, Hashable {
@@ -41936,13 +43464,15 @@ public struct SeerrDeleteVersion: Equatable, Hashable {
     public var is4k: Bool
     public var label: String
     public var size: String?
+    public var chosen: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(is4k: Bool, label: String, size: String?) {
+    public init(is4k: Bool, label: String, size: String?, chosen: Bool) {
         self.is4k = is4k
         self.label = label
         self.size = size
+        self.chosen = chosen
     }
 
     
@@ -41963,7 +43493,8 @@ public struct FfiConverterTypeSeerrDeleteVersion: FfiConverterRustBuffer {
             try SeerrDeleteVersion(
                 is4k: FfiConverterBool.read(from: &buf), 
                 label: FfiConverterString.read(from: &buf), 
-                size: FfiConverterOptionString.read(from: &buf)
+                size: FfiConverterOptionString.read(from: &buf), 
+                chosen: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -41971,6 +43502,7 @@ public struct FfiConverterTypeSeerrDeleteVersion: FfiConverterRustBuffer {
         FfiConverterBool.write(value.is4k, into: &buf)
         FfiConverterString.write(value.label, into: &buf)
         FfiConverterOptionString.write(value.size, into: &buf)
+        FfiConverterBool.write(value.chosen, into: &buf)
     }
 }
 
@@ -53305,6 +54837,204 @@ public func FfiConverterTypeForwardNext_lower(_ value: ForwardNext) -> RustBuffe
 
 
 /**
+ * What to show.
+ */
+
+public enum GiftOutcomeInfo: Equatable, Hashable {
+    
+    /**
+     * Nothing now.
+     */
+    case nothing
+    /**
+     * The "What's new" sheet; the look is the gift on its card, if it can still be picked up.
+     */
+    case whatsNew(giftLookId: String?
+    )
+    /**
+     * The offer "A look for you".
+     */
+    case offer(lookId: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension GiftOutcomeInfo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGiftOutcomeInfo: FfiConverterRustBuffer {
+    typealias SwiftType = GiftOutcomeInfo
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GiftOutcomeInfo {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .nothing
+        
+        case 2: return .whatsNew(giftLookId: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 3: return .offer(lookId: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: GiftOutcomeInfo, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .nothing:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .whatsNew(giftLookId):
+            writeInt(&buf, Int32(2))
+            FfiConverterOptionString.write(giftLookId, into: &buf)
+            
+        
+        case let .offer(lookId):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(lookId, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGiftOutcomeInfo_lift(_ buf: RustBuffer) throws -> GiftOutcomeInfo {
+    return try FfiConverterTypeGiftOutcomeInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGiftOutcomeInfo_lower(_ value: GiftOutcomeInfo) -> RustBuffer {
+    return FfiConverterTypeGiftOutcomeInfo.lower(value)
+}
+
+
+
+/**
+ * The step the sheet is on.
+ */
+
+public enum GiftStageInfo: Equatable, Hashable {
+    
+    /**
+     * "What's new"; the look is the gift on its card, if it can still be picked up.
+     */
+    case whatsNew(giftLookId: String?
+    )
+    /**
+     * "A look for you".
+     */
+    case offer(lookId: String
+    )
+    /**
+     * "Grab it" was pressed: the short animation before the looks panel.
+     */
+    case claiming(lookId: String
+    )
+    /**
+     * The looks panel; `from_gift`: the icon lands in its row.
+     */
+    case choosing(fromGift: Bool
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension GiftStageInfo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGiftStageInfo: FfiConverterRustBuffer {
+    typealias SwiftType = GiftStageInfo
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GiftStageInfo {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .whatsNew(giftLookId: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 2: return .offer(lookId: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .claiming(lookId: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .choosing(fromGift: try FfiConverterBool.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: GiftStageInfo, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .whatsNew(giftLookId):
+            writeInt(&buf, Int32(1))
+            FfiConverterOptionString.write(giftLookId, into: &buf)
+            
+        
+        case let .offer(lookId):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(lookId, into: &buf)
+            
+        
+        case let .claiming(lookId):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(lookId, into: &buf)
+            
+        
+        case let .choosing(fromGift):
+            writeInt(&buf, Int32(4))
+            FfiConverterBool.write(fromGift, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGiftStageInfo_lift(_ buf: RustBuffer) throws -> GiftStageInfo {
+    return try FfiConverterTypeGiftStageInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGiftStageInfo_lower(_ value: GiftStageInfo) -> RustBuffer {
+    return FfiConverterTypeGiftStageInfo.lower(value)
+}
+
+
+
+/**
  * What the host does next.
  */
 
@@ -60014,6 +61744,165 @@ public func FfiConverterTypePlayerStageState_lower(_ value: PlayerStageState) ->
 
 
 
+/**
+ * Where a start stands for a host with its own engine (see `swiftly_vm::StartVeil`).
+ */
+
+public enum PlayerStartVeil: Equatable, Hashable {
+    
+    case opening
+    case shown
+    case failed
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PlayerStartVeil: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerStartVeil: FfiConverterRustBuffer {
+    typealias SwiftType = PlayerStartVeil
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerStartVeil {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .opening
+        
+        case 2: return .shown
+        
+        case 3: return .failed
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PlayerStartVeil, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .opening:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .shown:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerStartVeil_lift(_ buf: RustBuffer) throws -> PlayerStartVeil {
+    return try FfiConverterTypePlayerStartVeil.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerStartVeil_lower(_ value: PlayerStartVeil) -> RustBuffer {
+    return FfiConverterTypePlayerStartVeil.lower(value)
+}
+
+
+
+/**
+ * What moves a [`PlayerStartVeil`].
+ */
+
+public enum PlayerStartVeilEvent: Equatable, Hashable {
+    
+    case picture
+    case engineError
+    case timedOut
+    case retry
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PlayerStartVeilEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerStartVeilEvent: FfiConverterRustBuffer {
+    typealias SwiftType = PlayerStartVeilEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerStartVeilEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .picture
+        
+        case 2: return .engineError
+        
+        case 3: return .timedOut
+        
+        case 4: return .retry
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PlayerStartVeilEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .picture:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .engineError:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .timedOut:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .retry:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerStartVeilEvent_lift(_ buf: RustBuffer) throws -> PlayerStartVeilEvent {
+    return try FfiConverterTypePlayerStartVeilEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerStartVeilEvent_lower(_ value: PlayerStartVeilEvent) -> RustBuffer {
+    return FfiConverterTypePlayerStartVeilEvent.lower(value)
+}
+
+
+
 
 public enum PlayerSubtitleRoute: Equatable, Hashable {
     
@@ -61830,6 +63719,107 @@ public func FfiConverterTypeRemoteEvent_lift(_ buf: RustBuffer) throws -> Remote
 #endif
 public func FfiConverterTypeRemoteEvent_lower(_ value: RemoteEvent) -> RustBuffer {
     return FfiConverterTypeRemoteEvent.lower(value)
+}
+
+
+
+/**
+ * Where the report is.
+ */
+
+public enum ReportIssuePhase: Equatable, Hashable {
+    
+    /**
+     * The form is open.
+     */
+    case editing
+    /**
+     * On its way to Seerr.
+     */
+    case sending
+    /**
+     * Seerr took it ("Gemeldet. Danke.").
+     */
+    case sent
+    /**
+     * Refused, in Seerr's own words.
+     */
+    case failed(
+        /**
+         * The text.
+         */text: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ReportIssuePhase: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeReportIssuePhase: FfiConverterRustBuffer {
+    typealias SwiftType = ReportIssuePhase
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReportIssuePhase {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .editing
+        
+        case 2: return .sending
+        
+        case 3: return .sent
+        
+        case 4: return .failed(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ReportIssuePhase, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .editing:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .sending:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .sent:
+            writeInt(&buf, Int32(3))
+        
+        
+        case let .failed(text):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(text, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReportIssuePhase_lift(_ buf: RustBuffer) throws -> ReportIssuePhase {
+    return try FfiConverterTypeReportIssuePhase.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReportIssuePhase_lower(_ value: ReportIssuePhase) -> RustBuffer {
+    return FfiConverterTypeReportIssuePhase.lower(value)
 }
 
 
@@ -67794,6 +69784,30 @@ fileprivate struct FfiConverterOptionTypeAirPlayVerdict: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeAlphabetPart: FfiConverterRustBuffer {
+    typealias SwiftType = AlphabetPart?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAlphabetPart.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAlphabetPart.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeBlurPixels: FfiConverterRustBuffer {
     typealias SwiftType = BlurPixels?
 
@@ -69378,6 +71392,30 @@ fileprivate struct FfiConverterOptionTypeFilterPick: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeGiftStageInfo: FfiConverterRustBuffer {
+    typealias SwiftType = GiftStageInfo?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGiftStageInfo.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGiftStageInfo.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeLoadFailure: FfiConverterRustBuffer {
     typealias SwiftType = LoadFailure?
 
@@ -70488,6 +72526,31 @@ fileprivate struct FfiConverterSequenceTypeLegacyStopped: FfiConverterRustBuffer
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeLegacyVideoDecoder: FfiConverterRustBuffer {
+    typealias SwiftType = [LegacyVideoDecoder]
+
+    public static func write(_ value: [LegacyVideoDecoder], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLegacyVideoDecoder.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LegacyVideoDecoder] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LegacyVideoDecoder]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLegacyVideoDecoder.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeLicenseEntry: FfiConverterRustBuffer {
     typealias SwiftType = [LicenseEntry]
 
@@ -71430,6 +73493,31 @@ fileprivate struct FfiConverterSequenceTypeRail: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeRail.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeReportIssueKindRow: FfiConverterRustBuffer {
+    typealias SwiftType = [ReportIssueKindRow]
+
+    public static func write(_ value: [ReportIssueKindRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeReportIssueKindRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ReportIssueKindRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ReportIssueKindRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeReportIssueKindRow.read(from: &buf))
         }
         return seq
     }
@@ -73304,6 +75392,19 @@ public func blurPixels(hash: String, width: UInt32, height: UInt32) -> BlurPixel
 })
 }
 /**
+ * The "More" panel as the core builds it for a movie or a series, in the given language (`DetailVm::more_menu` without
+ * the view model): the same entries and order as on Apple TV.
+ */
+public func detailMoreMenu(language: String, facts: MoreFactsInput) -> [MenuEntry]  {
+    return try!  FfiConverterSequenceTypeMenuEntry.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_func_detail_more_menu(
+        FfiConverterString.lower(language),
+        FfiConverterTypeMoreFactsInput_lower(facts),uniffiCallStatus
+    )
+})
+}
+/**
  * Bit of `Change.parts`: buttons and toggles.
  */
 public func partDetailActions() -> UInt32  {
@@ -73895,8 +75996,18 @@ public func forwardSectionRead(header: String?) -> ForwardRange?  {
 })
 }
 /**
+ * How long the pick-up animation runs before the looks panel comes, in milliseconds.
+ */
+public func giftClaimMs() -> Double  {
+    return try!  FfiConverterDouble.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_func_gift_claim_ms(uniffiCallStatus
+    )
+})
+}
+/**
  * The effective combined row order for the settings list: `stored` healed against the fixed rows that exist and
- * the chosen libraries and, with `seerr` (Seerr connected), the sections of `seerr:arrival` and `seerr:requests` that `form` shows (handheld both, desktop only the banner, TV none). Save the result (after a move) under the per-server setting `startReihenfolge`.
+ * the chosen libraries and, with `seerr` (Seerr connected), the sections of `seerr:arrival` and `seerr:requests` that `form` shows (handheld both, desktop only "Meine Anfragen", TV none). Save the result (after a move) under the per-server setting `startReihenfolge`.
  */
 public func homeRowOrder(stored: [String], disconnected: Bool, libraries: [HomeLibraryChoice], seerr: Bool, form: HomeForm) -> [String]  {
     return try!  FfiConverterSequenceString.lift(try! rustCall() {
@@ -74783,6 +76894,16 @@ public func legacyCollectionCountText(art: String, count: Int64, locale: String)
         FfiConverterString.lower(art),
         FfiConverterInt64.lower(count),
         FfiConverterString.lower(locale),uniffiCallStatus
+    )
+})
+}
+/**
+ * The order a collection page starts on (premiere year, raw value): one rule for every host.
+ */
+public func legacyCollectionPageSorting() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_func_legacy_collection_page_sorting(uniffiCallStatus
     )
 })
 }
@@ -76009,6 +78130,75 @@ public func partPlayerTransport() -> UInt32  {
 })
 }
 /**
+ * The centre (play/pause, jumps) and the timeline are up: controls wanted and no start veil (`ControlsPart::middle_up`).
+ */
+public func playerMiddleUp(controlsWanted: Bool, veilUp: Bool) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_func_player_middle_up(
+        FfiConverterBool.lower(controlsWanted),
+        FfiConverterBool.lower(veilUp),uniffiCallStatus
+    )
+})
+}
+/**
+ * The words of a failed start ("Das startet nicht", the text, "Erneut versuchen", "Schließen"), German keys of the catalogue.
+ */
+public func playerStartFailure() -> PlayerFailure  {
+    return try!  FfiConverterTypePlayerFailure_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_func_player_start_failure(uniffiCallStatus
+    )
+})
+}
+/**
+ * Seconds without a picture before a start counts as failed (the core's one start timeout).
+ */
+public func playerStartTimeoutSeconds() -> Double  {
+    return try!  FfiConverterDouble.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_func_player_start_timeout_seconds(uniffiCallStatus
+    )
+})
+}
+/**
+ * The one transition table of the start veil.
+ */
+public func playerStartVeilStep(state: PlayerStartVeil, event: PlayerStartVeilEvent) -> PlayerStartVeil  {
+    return try!  FfiConverterTypePlayerStartVeil_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_func_player_start_veil_step(
+        FfiConverterTypePlayerStartVeil_lower(state),
+        FfiConverterTypePlayerStartVeilEvent_lower(event),uniffiCallStatus
+    )
+})
+}
+/**
+ * The top bar (title, capsule, close button) is up: whenever the controls are wanted, also under the start veil
+ * (`ControlsPart::top_bar_up`).
+ */
+public func playerTopBarUp(controlsWanted: Bool) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_func_player_top_bar_up(
+        FfiConverterBool.lower(controlsWanted),uniffiCallStatus
+    )
+})
+}
+/**
+ * The start veil is up (no picture yet, no failed start to show instead). Same rule as `TransportPart::veil_up`, for
+ * screens that keep the two facts themselves.
+ */
+public func playerVeilUp(pictureShown: Bool, failed: Bool) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_func_player_veil_up(
+        FfiConverterBool.lower(pictureShown),
+        FfiConverterBool.lower(failed),uniffiCallStatus
+    )
+})
+}
+/**
  * Every menu for a host-run player: `state` is what the player shows now, `inputs` what only the host knows.
  */
 public func playerMenusFor(state: PlayerMenusState, inputs: PlayerMenusInputs) -> PlayerMenus  {
@@ -76723,6 +78913,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_func_blur_pixels() != 7273) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_swiftly_uniffi_checksum_func_detail_more_menu() != 20986) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_swiftly_uniffi_checksum_func_part_detail_actions() != 20857) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -76876,7 +79069,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_func_forward_section_read() != 38573) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_swiftly_uniffi_checksum_func_home_row_order() != 16318) {
+    if (uniffi_swiftly_uniffi_checksum_func_gift_claim_ms() != 63020) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_func_home_row_order() != 37479) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_func_home_row_order_carried() != 31642) {
@@ -77102,6 +79298,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_func_legacy_collection_count_text() != 12188) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_func_legacy_collection_page_sorting() != 7278) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_func_legacy_default_page_sorting() != 39131) {
@@ -77398,6 +79597,24 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_func_part_player_transport() != 15749) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_swiftly_uniffi_checksum_func_player_middle_up() != 22232) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_func_player_start_failure() != 27847) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_func_player_start_timeout_seconds() != 65531) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_func_player_start_veil_step() != 35224) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_func_player_top_bar_up() != 51196) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_func_player_veil_up() != 55240) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_swiftly_uniffi_checksum_func_player_menus_for() != 24841) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -77644,6 +79861,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_method_core_cache_size_bytes() != 14185) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_swiftly_uniffi_checksum_method_core_delete_prepare_item() != 65299) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_swiftly_uniffi_checksum_method_core_detail_vm() != 8258) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -77719,6 +79939,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_method_core_library_vm() != 22153) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_swiftly_uniffi_checksum_method_core_lists_stale_after() != 54244) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_core_lists_stale_version() != 31974) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_swiftly_uniffi_checksum_method_core_login_model() != 38334) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -77780,6 +80006,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_core_report_capabilities() != 20084) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_core_report_start_item() != 24767) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_core_search_vm() != 4940) {
@@ -78076,6 +80305,39 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_method_streamforwarder_target_for() != 4086) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_swiftly_uniffi_checksum_method_giftflowmodel_big_ask_shown() != 15394) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_giftflowmodel_dismiss() != 35389) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_giftflowmodel_evaluate() != 9864) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_giftflowmodel_grab() != 48604) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_giftflowmodel_land() != 32230) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_giftflowmodel_looks_open() != 36873) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_giftflowmodel_note_big_ask() != 11960) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_giftflowmodel_open_looks() != 23416) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_giftflowmodel_reset() != 22936) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_giftflowmodel_show() != 10550) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_giftflowmodel_stage() != 51833) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_swiftly_uniffi_checksum_method_hellovm_changed() != 65371) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -78230,6 +80492,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_legacydetail_plan() != 9028) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_legacydetail_play_seed() != 40584) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_legacydetail_playback_selection() != 11370) {
@@ -78412,6 +80677,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_method_legacyplayback_controls_changed() != 18997) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_swiftly_uniffi_checksum_method_legacyplayback_decoder_retry() != 6984) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_swiftly_uniffi_checksum_method_legacyplayback_display_time() != 38346) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -78500,6 +80768,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_legacyplayback_set_server_extracts_text() != 18942) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_legacyplayback_set_video_decoders() != 48804) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_legacyplayback_set_without_next() != 31797) {
@@ -78631,6 +80902,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_method_libraryvm_alphabet() != 16595) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_swiftly_uniffi_checksum_method_libraryvm_alphabet_known() != 49277) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_swiftly_uniffi_checksum_method_libraryvm_changed() != 3578) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -78640,7 +80914,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_method_libraryvm_grid() != 21304) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_swiftly_uniffi_checksum_method_libraryvm_jump_target() != 15375) {
+    if (uniffi_swiftly_uniffi_checksum_method_libraryvm_jump_target() != 16777) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_libraryvm_key_of() != 26284) {
@@ -79198,6 +81472,27 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_method_websocketlink_close() != 40710) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_swiftly_uniffi_checksum_method_reportissueflow_dismiss() != 36711) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_reportissueflow_info() != 28637) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_reportissueflow_send() != 23618) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_reportissueflow_set_kind() != 17955) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_reportissueflow_set_message() != 59620) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_reportissueflow_start_episode() != 33422) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_reportissueflow_start_title() != 29549) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_swiftly_uniffi_checksum_method_subtitlecueindex_count() != 8928) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -79279,6 +81574,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_method_seerradminscreen_delete_run() != 37263) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_swiftly_uniffi_checksum_method_seerradminscreen_delete_run_chosen() != 38890) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_seerradminscreen_delete_toggle() != 26417) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_swiftly_uniffi_checksum_method_seerradminscreen_first_tab() != 23189) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -79304,6 +81605,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_seerradminscreen_reply() != 26192) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_seerradminscreen_report_flow() != 5757) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_seerradminscreen_report_issue() != 59908) {
@@ -79369,7 +81673,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_method_seerrlibrary_find() != 19045) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_swiftly_uniffi_checksum_method_seerrlibrary_refresh() != 57011) {
+    if (uniffi_swiftly_uniffi_checksum_method_seerrlibrary_cover() != 39659) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_seerrlibrary_refresh() != 25065) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_seerrlistsscreen_begin_home() != 62579) {
@@ -79769,6 +82076,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_constructor_streamforwarder_new() != 35224) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_constructor_giftflowmodel_new() != 3092) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_constructor_legacyholdcounters_new() != 24879) {

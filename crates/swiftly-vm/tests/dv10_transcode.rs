@@ -62,6 +62,8 @@ fn request(flavour: Flavour) -> StartRequest {
         flavour,
         hardware_av1: false,
         no_dolby_vision_decoder: false,
+        video_decoders: swiftly_playback::video_decoders::VideoDecoders::default(),
+        decoder_refused: false,
         ask_versions: false,
         downloaded: None,
         ordered: None,
@@ -210,6 +212,8 @@ fn every_other_title_keeps_its_one_request_and_direct_play() {
 fn dolby_vision_5_is_transcoded_only_on_a_device_without_a_dolby_vision_decoder() {
     let none = |flavour| StartRequest {
         no_dolby_vision_decoder: true,
+        video_decoders: swiftly_playback::video_decoders::VideoDecoders::default(),
+        decoder_refused: false,
         ..request(flavour)
     };
     let net = server(video("hevc", 5, 0), true);

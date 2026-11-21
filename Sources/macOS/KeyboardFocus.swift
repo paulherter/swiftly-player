@@ -40,10 +40,10 @@ enum KeyboardFocus: Equatable, Sendable {
     }
 
     /// Hidden views must not hold focus: the sidebar and the pages lie *under* the player
-    /// overlay and under the launch curtain, still in the focus chain, so their first row took
-    /// the focus and its ring was drawn through the overlay as an empty box.
-    static func isReachable(playerOpen: Bool, curtainShown: Bool) -> Bool {
-        !playerOpen && !curtainShown
+    /// overlay, still in the focus chain, so their first row took the focus and its ring was
+    /// drawn through the overlay as an empty box.
+    static func isReachable(playerOpen: Bool) -> Bool {
+        !playerOpen
     }
 }
 

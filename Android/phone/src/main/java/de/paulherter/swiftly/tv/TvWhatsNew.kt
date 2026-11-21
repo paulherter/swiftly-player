@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,6 +34,7 @@ import de.paulherter.swiftly.BuildConfig
 import de.paulherter.swiftly.SwiftlyApplication
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import de.paulherter.swiftly.support.LookTileView
 import de.paulherter.swiftly.support.localized
@@ -56,13 +56,14 @@ import org.json.JSONObject
 
 /**
  * **Asks once, calmly:** a few seconds after the home page is up (`LookGift.quietAfterHome`),
- * never during playback, never on top of another page. Stores the version when it shows or when
- * there is nothing to show, so a fresh install stays quiet.
+ * never during playback, never on top of another page, and only while Start is bare (Start in
+ * view, nothing opened above it). Leaving Start or opening a page restarts the quiet seconds.
+ * Stores the version when it shows or when there is nothing to show, so a fresh install stays quiet.
  */
 @Composable
-private fun TvWhatsNewWatcher(app: SwiftlyApplication) {
+private fun TvWhatsNewWatcher(app: SwiftlyApplication, startBare: Boolean) {
     val context = LocalContext.current
-    val idle = app.play.value == null && app.support.tvPanel.value == null && !app.looks.tvPage.value
+    val idle = app.play.value == null && app.support.tvPanel.value == null && !app.looks.tvPage.value && startBare
     LaunchedEffect(idle) {
         if (!idle) return@LaunchedEffect
         delay(3_000)
@@ -86,10 +87,10 @@ private fun TvWhatsNewWatcher(app: SwiftlyApplication) {
     }
 }
 
-/** The watcher and the page, once at the root next to `TvLooksLayer`. */
+/** The watcher and the page, once at the root next to `TvLooksLayer`. `startBare`: Start is the section in view with no page above it. */
 @Composable
-fun TvWhatsNewLayer(app: SwiftlyApplication) {
-    TvWhatsNewWatcher(app)
+fun TvWhatsNewLayer(app: SwiftlyApplication, startBare: Boolean) {
+    TvWhatsNewWatcher(app, startBare)
     val entry = app.looks.tvWhatsNew.value ?: return
     TvWhatsNewPage(app, entry)
 }
@@ -154,7 +155,7 @@ private fun TvWhatsNewPage(app: SwiftlyApplication, entry: JSONObject) {
 
                 if (gift != null) {
                     Row(Modifier.padding(top = 18.dp).widthIn(max = 550.dp).fillMaxWidth()
-                            .clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.groupsArea).padding(12.dp),
+                            .clip(smoothRoundedShape(TvTheme.cornerArea)).background(TvTheme.groupsArea).padding(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         LookTileView(looks.tileIcon(gift), 44.dp)
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

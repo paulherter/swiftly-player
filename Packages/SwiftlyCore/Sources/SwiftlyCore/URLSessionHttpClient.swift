@@ -4,6 +4,16 @@ import Foundation
 /// gets the system's trust (user-installed CAs, profiles), proxies, gzip, HTTP/2 and the local
 /// network prompt (`waitsForConnectivity`) for free.
 ///
+/// **A connection that cannot be made fails after ``waitGrace``, not after the resource timeout.** With
+/// `waitsForConnectivity` a refused connection (server down, nothing listens) or an unknown host does not
+/// fail: the task "waits" until `timeoutIntervalForResource` (measured on a Mac with this configuration:
+/// 20.9 s per call, against 0.0 s without it), and the core's two retries made that 60 to 85 s of skeleton
+/// rows before "Server ist abgetaucht". The wait is kept for the system's local-network prompt, but only
+/// for `waitGrace`; then the call fails with `notConnectedToInternet`, the code `URLSession` itself gives
+/// when it does not wait. The core does not retry that code (a retry would wait the grace again, three
+/// times per call, and a page makes several calls in a row: 15 s measured with `cannotConnectToHost`). A
+/// server that is reachable but slow never enters the waiting state and keeps the full 15 s / 20 s.
+///
 /// Behaves like the old reqwest transport: 15 s without data, 20 s for the whole call, a request's
 /// own timeout replaces both, redirects are followed and keep the token on the server it was meant
 /// for (see ``RedirectGuard``), no response cache. Cookies use the shared jar, as the Swift app
@@ -28,7 +38,10 @@ public final class URLSessionHttpClient: HttpClient {
         self.observe = observe
     }
 
-    /// 15 s / 20 s, waits for connectivity (local network permission), no cache.
+    /// How long a task may stay in the system's waiting state ("no connection yet") before it fails.
+    public static let waitGrace: Duration = .milliseconds(1500)
+
+    /// 15 s / 20 s, waits for connectivity (local network permission) for ``waitGrace``, no cache.
     public static func defaultConfiguration() -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = true
@@ -56,8 +69,9 @@ public final class URLSessionHttpClient: HttpClient {
             // The per-request timeout also ends the wait for connectivity.
             urlRequest.timeoutInterval = Double(ms) / 1000
         }
+        let guardian = RedirectGuard(keepMethod: request.keepMethod)
         do {
-            let (data, response) = try await session.data(for: urlRequest, delegate: RedirectGuard(keepMethod: request.keepMethod))
+            let (data, response) = try await session.data(for: urlRequest, delegate: guardian)
             guard let http = response as? HTTPURLResponse else {
                 throw HttpFailure.Other(message: "no HTTP response")
             }
@@ -74,6 +88,12 @@ public final class URLSessionHttpClient: HttpClient {
         } catch let failure as HttpFailure {
             throw failure
         } catch {
+            if guardian.gaveUpWaiting {
+                // Our own cancel: it must not look like the user's (`.Cancelled` ends a load without a message).
+                let offline = URLError(.notConnectedToInternet)
+                NetworkMemory.shared.set(code: Int32(offline.errorCode), text: offline.localizedDescription)
+                throw HttpFailure.Network(code: Int32(offline.errorCode))
+            }
             throw Self.failure(error)
         }
     }
@@ -127,10 +147,39 @@ public final class NetworkMemory: @unchecked Sendable {
 ///
 /// With `keepMethod` (the Seerr sign-in, `KeepPostRedirects` in the old code) a redirect that would turn the
 /// POST into a GET is refused: the 3xx answer comes back as the result instead of a misleading 405.
-final class RedirectGuard: NSObject, URLSessionTaskDelegate {
+///
+/// It also ends the system's wait for a connection after ``URLSessionHttpClient/waitGrace`` (see there).
+final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let keepMethod: Bool
+    private let lock = NSLock()
+    private var gaveUp = false
 
     init(keepMethod: Bool = false) { self.keepMethod = keepMethod }
+
+    /// The call was cancelled because the connection could not be made within the grace time.
+    var gaveUpWaiting: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return gaveUp
+    }
+
+    private func giveUp() {
+        lock.lock()
+        gaveUp = true
+        lock.unlock()
+    }
+
+    func urlSession(_ session: URLSession, taskIsWaitingForConnectivity task: URLSessionTask) {
+        Task {
+            try? await Task.sleep(for: URLSessionHttpClient.waitGrace)
+            // Still running after the grace: the system is still waiting for a connection that does not come
+            // (the local-network prompt open, a refused connection, no route). A task that has connected
+            // meanwhile and is merely slow is not cut off if it already has an answer.
+            guard task.state == .running, task.response == nil else { return }
+            giveUp()
+            task.cancel()
+        }
+    }
 
     /// `KeepPostRedirects.keepsMethod`: a missing method counts as GET.
     static func keepsMethod(original: String?, redirected: String?) -> Bool {

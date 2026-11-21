@@ -4,6 +4,8 @@
 //! tvOS, tvOS simulator and macOS (arm64), generates the Swift bindings in library mode and
 //! assembles `Packages/SwiftlyCore` with `SwiftlyCoreFFI.xcframework`.
 //!
+//! `swift-bindings --check|--write [--release]` generates `Generated.swift` from the host build of `swiftly-uniffi` (runs on Linux) and compares with or writes the committed file.
+//!
 //! `apple-ui [ios|tvos]` builds the Rust UI comparison apps (`ios.rs`, bundle id de.paulherter.swiftly.rustui).
 //! `android [--release]` builds the Rust UI shell for Android and Android TV into a debug APK (`android.rs`).
 //!
@@ -30,10 +32,12 @@ mod components;
 mod desktop;
 mod fixture_admin;
 mod fixture_big;
+mod fixture_extreme;
 mod fixture_hls;
 mod fixture_media;
 mod fixture_modes;
 mod fixture_plex;
+mod fixture_push;
 mod fixture_seerr;
 mod fixture_server;
 mod fixture_sessions;
@@ -102,6 +106,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("apple") => apple(&args[1..]),
+        Some("swift-bindings") => swift_bindings(&args[1..]),
         Some("apple-ui") => root().and_then(|r| ios::run(&r, &args[1..])),
         Some("android") => root().and_then(|r| android::run(&r, &args[1..])),
         Some("swiftui-parity") => root().and_then(|r| parity::run(&r, &args[1..])),
@@ -144,6 +149,98 @@ fn run(cmd: &mut Command) -> Result<(), Fail> {
     } else {
         Err(format!("failed ({status}): {shown}"))
     }
+}
+
+/// Runs `uniffi-bindgen generate <lib> --language swift --no-format` (library mode) into `out_dir`. Shared by
+/// `apple` (macOS slice) and `swift-bindings` (host library) so both always generate the same way.
+fn generate_swift(root: &Path, lib: &Path, out_dir: &Path) -> Result<(), Fail> {
+    run(Command::new("cargo")
+        .args([
+            "run",
+            "-q",
+            "-p",
+            "xtask",
+            "--bin",
+            "uniffi-bindgen",
+            "--",
+            "generate",
+        ])
+        .arg(lib)
+        .args(["--language", "swift", "--no-format"])
+        .arg("--out-dir")
+        .arg(out_dir)
+        .current_dir(root))
+}
+
+/// The post-processing every generated `Generated.swift` goes through before it is committed.
+fn patch_generated_swift(text: &str) -> Result<String, Fail> {
+    Ok(patch_foreign_futures(&patch_async_cancellation(text)?))
+}
+
+/// `swift-bindings --check|--write [--release]`: generates the Swift bindings from the HOST build of
+/// `swiftly-uniffi` (Linux or macOS, no Apple toolchain needed), patches them like `apple` does and compares
+/// with (or writes) the committed `Packages/SwiftlyCore/Sources/SwiftlyCore/Generated.swift`. `--check` exits
+/// non-zero when the committed file is stale, so Linux CI can guard what only the Mac checked before.
+fn swift_bindings(args: &[String]) -> Result<(), Fail> {
+    let mut check = false;
+    let mut write = false;
+    let mut release = false;
+    for arg in args {
+        match arg.as_str() {
+            "--check" => check = true,
+            "--write" => write = true,
+            "--release" => release = true,
+            other => return Err(format!("unknown option {other}")),
+        }
+    }
+    if check == write {
+        return Err("swift-bindings needs exactly one of --check or --write".into());
+    }
+    let root = root()?;
+    let profile = if release { "release" } else { "debug" };
+    let mut build = Command::new("cargo");
+    build.args(["build", "-q", "-p", CRATE]).current_dir(&root);
+    if release {
+        build.arg("--release");
+    }
+    eprintln!("xtask: building {CRATE} for the host ({profile})");
+    run(&mut build)?;
+    // Library mode reads the UniFFI metadata from the static library (the same kind the Apple slices use).
+    // CI builders set CARGO_TARGET_DIR; fall back to the workspace's own `target`.
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|d| if d.is_absolute() { d } else { root.join(d) })
+        .unwrap_or_else(|| root.join("target"));
+    let lib = target_dir.join(profile).join(LIB);
+    let generated = target_dir.join("uniffi-swift-host");
+    let _ = fs::remove_dir_all(&generated);
+    fs::create_dir_all(&generated).map_err(|e| e.to_string())?;
+    generate_swift(&root, &lib, &generated)?;
+    let mut fresh = None;
+    for entry in fs::read_dir(&generated).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path.extension().is_some_and(|e| e == "swift") {
+            let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+            fresh = Some(patch_generated_swift(&text)?);
+        }
+    }
+    let fresh = fresh.ok_or("uniffi-bindgen wrote no .swift file")?;
+    let target = root.join("Packages/SwiftlyCore/Sources/SwiftlyCore/Generated.swift");
+    if write {
+        fs::write(&target, fresh).map_err(|e| e.to_string())?;
+        eprintln!("xtask: wrote {}", target.display());
+        return Ok(());
+    }
+    let committed = fs::read_to_string(&target).unwrap_or_default();
+    if committed != fresh {
+        return Err(
+            "Packages/SwiftlyCore/Sources/SwiftlyCore/Generated.swift is stale: run \
+             `cargo run -p xtask -- swift-bindings --write` and commit it"
+                .into(),
+        );
+    }
+    eprintln!("xtask: Generated.swift matches a fresh generation");
+    Ok(())
 }
 
 fn apple(args: &[String]) -> Result<(), Fail> {
@@ -231,22 +328,7 @@ fn apple(args: &[String]) -> Result<(), Fail> {
         .iter()
         .find(|s| s.name == "macos")
         .ok_or("no macos slice")?;
-    run(Command::new("cargo")
-        .args([
-            "run",
-            "-q",
-            "-p",
-            "xtask",
-            "--bin",
-            "uniffi-bindgen",
-            "--",
-            "generate",
-        ])
-        .arg(lib(macos))
-        .args(["--language", "swift", "--no-format"])
-        .arg("--out-dir")
-        .arg(&generated)
-        .current_dir(&root))?;
+    generate_swift(&root, &lib(macos), &generated)?;
 
     // Sources/SwiftlyCore gets the Swift file; the headers and the modulemap go into the xcframework.
     let sources = package.join("Sources/SwiftlyCore");
@@ -266,7 +348,7 @@ fn apple(args: &[String]) -> Result<(), Fail> {
             .to_owned();
         if name.ends_with(".swift") {
             let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-            let patched = patch_foreign_futures(&patch_async_cancellation(&text)?);
+            let patched = patch_generated_swift(&text)?;
             if check_bindings {
                 let committed =
                     fs::read_to_string(sources.join("Generated.swift")).unwrap_or_default();

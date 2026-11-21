@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,7 +27,7 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
-import de.paulherter.swiftly.shared.Wordmark
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 
 /**
@@ -52,9 +51,7 @@ fun TvServerKindPicker(purpose: PickerPurpose, pick: (ServerKind) -> Unit, back:
         Column(Modifier.width(TvSpec.messageWidth)) {
             when (purpose) {
                 PickerPurpose.FirstStart -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Wordmark(height = TvSpec.serverWordmark)
-                    Text(translated("Was läuft bei dir?"), style = TvTheme.titleLarge, color = Theme.font,
-                         modifier = Modifier.padding(top = TvSpec.pickerHeadlineTop))
+                    Text(translated("Was läuft bei dir?"), style = TvTheme.titleLarge, color = Theme.font)
                     Text(translated("Weitere Server kannst du später dazunehmen, auch gemischt."),
                          style = TvTheme.body, color = Theme.fontQuiet, textAlign = TextAlign.Center,
                          modifier = Modifier.padding(top = TvSpec.pickerSentenceTop))
@@ -88,7 +85,7 @@ private fun TvKindCard(kind: ServerKind, modifier: Modifier = Modifier, released
     FocusArea(modifier.fillMaxWidth(), magnifier = TvTheme.focusMagnifierWide, perform = { if (released) perform() }) { focus ->
         Row(Modifier.fillMaxWidth()
                 .alpha(if (released) 1f else TvSpec.pickerDimWaitingOpacity)
-                .clip(RoundedCornerShape(TvTheme.corner))
+                .clip(smoothRoundedShape(TvTheme.corner))
                 .background(Theme.area)
                 .background(tvFocusSurface(focus))
                 .padding(horizontal = TvSpec.pickerCardInsetHorizontal, vertical = TvSpec.pickerCardInsetVertical),

@@ -126,7 +126,10 @@ final class LookStore: Observable, Sendable {
         model.pickerLooks(now: now.timeIntervalSince1970, utcOffset: Self.offset(at: now)).map(Look.with(id:))
     }
 
-    private static func offset(at date: Date) -> Int64 {
+    /// The core's look state, for the gift flow's evaluation (`GiftFlow`).
+    var core: LookModel { model }
+
+    static func offset(at date: Date) -> Int64 {
         Int64(Calendar.current.timeZone.secondsFromGMT(for: date))
     }
 

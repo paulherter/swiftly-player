@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -66,6 +65,7 @@ import de.paulherter.swiftly.shared.SecondaryButton
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 
 /**
@@ -261,7 +261,7 @@ private fun PlexProfiles(profiles: List<PlexProfile>, pick: (PlexProfile) -> Uni
                         // On the portrait's upper right edge, as a mark on a picture: a small field, not a
                         // circle (round is only what is a picture).
                         Box(Modifier.align(Alignment.TopEnd).padding(end = 6.dp).size(22.dp)
-                                .background(Theme.raised, RoundedCornerShape(Theme.cornerSmall)),
+                                .background(Theme.raised, smoothRoundedShape(Theme.cornerSmall)),
                             contentAlignment = Alignment.Center) {
                             Symbol(Glyph.Padlock, 10.dp, color = Theme.font, strength = Strength.Semibold)
                         }
@@ -323,7 +323,7 @@ private fun PlexPin(profile: PlexProfile, wrong: Boolean, checking: Boolean, sub
 private fun CodeBoxes(characters: List<String>, active: Int? = null) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         characters.forEachIndexed { index, c ->
-            val shape = RoundedCornerShape(Theme.cornerField)
+            val shape = smoothRoundedShape(Theme.cornerField)
             Box(Modifier.size(46.dp, 60.dp).clip(shape).background(Theme.area)
                     .then(if (active == index) Modifier.border(2.dp, Theme.margin, shape) else Modifier),
                 contentAlignment = Alignment.Center) {
@@ -339,7 +339,7 @@ private fun PlexServers(servers: List<PlexServer>, connecting: String?, unreacha
                         pick: (PlexServer) -> Unit) {
     Column {
         PlexHeading(translated("Deine Server"))
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(Theme.cornerCard)).background(Theme.groupsArea)) {
+        Column(Modifier.fillMaxWidth().clip(smoothRoundedShape(Theme.cornerCard)).background(Theme.groupsArea)) {
             servers.forEachIndexed { index, server ->
                 if (index > 0) Box(Modifier.padding(start = 34.dp)) { SeparatorLine() }
                 PlexServerRow(server, busy = connecting == server.id, failed = server.id in unreachable,

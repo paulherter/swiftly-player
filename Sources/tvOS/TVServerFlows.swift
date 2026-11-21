@@ -71,6 +71,7 @@ struct TVEmbyFlowPage: View {
         ZStack {
             if let page { TVEmbySignInView(model: page) } else { Theme.reason.ignoresSafeArea() }
         }
+        .tvFocusStart()
         .onAppear {
             guard page == nil else { return }
             page = app.embySignInModel(address: address, finished: finished, back: back,
@@ -90,6 +91,7 @@ struct TVPlexFlowPage: View {
         ZStack {
             if let page { TVPlexSignInView(model: page) } else { Theme.reason.ignoresSafeArea() }
         }
+        .tvFocusStart()
         .onAppear {
             guard page == nil else { return }
             page = app.plexSignInModel(finished: finished, back: back)

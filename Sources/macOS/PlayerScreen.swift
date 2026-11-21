@@ -392,10 +392,10 @@ struct PlayerScreen: View {
                 TechBadge(plan: plan, values: playValues, area: area)
                     .padding(.leading, mass.titleLeft)
                     .padding(.top, mass.titleTop + mass.titleBlock + Theme.tileSpacing)
-                    .offset(y: controlsPresent && openLayer == nil ? 0 : -(mass.titleTop + mass.titleBlock + Theme.tileSpacing))
+                    .offset(y: topBarPresent ? 0 : -(mass.titleTop + mass.titleBlock + Theme.tileSpacing))
                     .animation(Theme.motionReduced ? nil
                                : controlsPresent ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
-                               value: controlsPresent && openLayer == nil)
+                               value: topBarPresent)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .allowsHitTesting(false)
                     .transition(.opacity)
@@ -408,18 +408,29 @@ struct PlayerScreen: View {
                         .allowsHitTesting(!atSlider)
                         .animation(.easeOut(duration: 0.2), value: menu.isOpen)
                     VStack(spacing: 0) {
-                        header
                         Spacer(minLength: 0)
                         footer
                             .opacity(menu.isOpen ? 0.3 : 1)
                             .animation(.easeOut(duration: 0.2), value: menu.isOpen)
                     }
                 }
-                .opacity(controlsPresent && openLayer == nil ? 1 : 0)
-                .allowsHitTesting(controlsPresent && openLayer == nil)
+                .opacity(middlePresent ? 1 : 0)
+                .allowsHitTesting(middlePresent)
                 .animation(controlsPresent ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
                            value: controlsPresent)
             }
+
+            // **The top bar (title, context line, capsules) is one thing from the first frame to playback** (as on iOS).
+            // Everything in it is known before the stream answers, so it is up over the start veil and simply stays when
+            // the picture arrives: no fade out and in, no move. Only the centre (spinner, then play/pause) and the footer
+            // wait for the picture (`screenDistance`). Once playing, the pointer rules hide it as before.
+            VStack(spacing: 0) {
+                header
+                Spacer(minLength: 0)
+            }
+            .opacity(topBarPresent ? 1 : 0)
+            .allowsHitTesting(topBarPresent)
+            .animation(controlsPresent ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34), value: topBarPresent)
 
             // **The skip pill sits in the same place whether or not the controls are open**
             // (as on iOS). The footer only reserves its space. Skip stays for six seconds on
@@ -508,7 +519,7 @@ struct PlayerScreen: View {
                 // leftover.
                 pointerLast = nil
                 holder.setPointerTop(false)
-                if state.running, !atSlider { controlsImmediateDistance() }
+                if state.running, screenDistance, !atSlider { controlsImmediateDistance() }
                 return
             }
             defer { pointerLast = spot }
@@ -596,7 +607,7 @@ struct PlayerScreen: View {
         // card needs it in the first frame (``Uebergabeabgang``).
         .task(id: title.id) { await HandoffExit.preload(title, model: model) }
         // The Folgen box opens with its list already there.
-        .task(id: title.id) { if title.type == "Episode" { await EpisodesBox.preload(model: model, item: title) } }
+        .task(id: title.id) { if title.type == "Episode" { await EpisodesLoader.preload(model: model, item: title) } }
         .onDisappear {
             HandoffStage.shared.playerDistance(title.id)
             idleTask?.cancel()
@@ -720,6 +731,20 @@ struct PlayerScreen: View {
             .disabled(sheetOpen)
             .opacity(0)
         }
+    }
+
+    /// The top bar's presence: up the whole time the start veil is up (no hover-hide while loading), afterwards
+    /// the controls' rule. A layer in front of it takes it over as before. The veil and the bar rule are the core's
+    /// (`playerVeilUp`, `playerTopBarUp`); the pointer-driven `controlsPresent` and the open layer stay this screen's.
+    private var topBarPresent: Bool {
+        (playerVeilUp(pictureShown: screenDistance, failed: false) || playerTopBarUp(controlsWanted: controlsPresent))
+            && openLayer == nil
+    }
+
+    /// Centre controls and timeline: controls wanted and the picture there (the core's `playerMiddleUp`).
+    private var middlePresent: Bool {
+        playerMiddleUp(controlsWanted: controlsPresent, veilUp: playerVeilUp(pictureShown: screenDistance, failed: false))
+            && openLayer == nil
     }
 
     private var startScrim: some View {
@@ -866,6 +891,8 @@ struct PlayerScreen: View {
         switch name {
         case "controls", "volume": break
         case "settings": openMenu(.settings)
+        // `-SwiftlyOpenPlayer`: paused, with the settings menu open (the comparison shot).
+        case "pausemenu": area?.pause(); openMenu(.settings)
         case "tracks": openMenu(.tracks)
         case "time": menu.press(.open(level: .timeAdjust(tab: .subtitles)))
         case "sleep": menu.press(.open(level: .sleep))
@@ -875,6 +902,8 @@ struct PlayerScreen: View {
         case "together": menu.press(.open(level: .together))
         case "scroll": NotificationCenter.default.post(name: Notification.Name("swiftly.debug.menuScrollEnd"), object: nil)
         case "episodes", "pill": openMenu(.folgen, panel: .episodes)
+        // The offer chip ("Intro überspringen" / "Nächste Folge") pressed, as a click on it does.
+        case "offer": offeringRun()
         case "kapitel": openMenu(.folgen, panel: hasEpisodes ? .chapters : .episodes)
         case "seasons": openMenu(.seasons)
         case "season2":
@@ -1002,7 +1031,7 @@ struct PlayerScreen: View {
     /// with the controls and back in inside the layer, flickering. Same as
     /// `stateTitle` on iOS.
     private var stateTitle: some View {
-        let present = controlsPresent && openLayer == nil
+        let present = topBarPresent
         return HStack(alignment: .top, spacing: 12) {
             Text(verbatim: titleLine)
                 .font(.app(size: mass.title, weight: .bold))
@@ -1657,7 +1686,7 @@ struct PlayerScreen: View {
             //
             // The timer restarts after closing (see below). This latch sits after the sleep,
             // so the task ends here without starting a new one.
-            guard !Task.isCancelled, state.running, !atSlider, !volumePulls, openLayer == nil, !menu.isOpen else { return }
+            guard !Task.isCancelled, state.running, screenDistance, !atSlider, !volumePulls, openLayer == nil, !menu.isOpen else { return }
             withAnimation(.easeInOut(duration: 0.34)) {
                 controlsPresent = false
                 holder.setControls(false)
@@ -2020,6 +2049,7 @@ struct PlayerScreen: View {
 
             if job.loadingScreenGone {
                 StartMeasurement.shared.mark("Ladeschirm weicht")
+                AppLog.writeOut("[Player] Ladeschirm weicht")
                 // If the card is zooming into the picture, it now hands over to the new episode
                 // (as iOS).
                 if let k = cardsSwitch, k.imageSince == nil {
@@ -2030,6 +2060,8 @@ struct PlayerScreen: View {
                 withAnimation(.easeOut(duration: 0.3)) { screenDistance = true } completion: {
                     StartMeasurement.shared.mark("Ladeschirm ausgeblendet")
                 }
+                // The controls' four seconds start with the picture (the bar does not hide while loading).
+                controlsShow(through: .beside)
                 // From a handoff: the card now zooms onto the picture.
                 HandoffStage.shared.imagePresent(title.id)
             }

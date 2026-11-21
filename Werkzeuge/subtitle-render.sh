@@ -43,4 +43,4 @@ TEST_RUNNER_SUBTITLE_OUT="$out" TEST_RUNNER_SUBTITLE_FONT="$work/Inter-SemiBold.
   xcodebuild test -scheme RenderKit -destination "${DEST:-platform=macOS}" -jobs 4 > "$work/log.txt" 2>&1 || true
 grep -E "error:|Test run|TEST |XCTAssert|failed" "$work/log.txt" | grep -v "failed with exit code 0" | head -20
 cat "$out/numbers.txt" 2>/dev/null
-rm -rf "$work"
+rm -rf "${work:?}"

@@ -369,6 +369,53 @@ fn every_text_the_core_looks_up_has_german_english_and_russian() {
     );
 }
 
+/// The Play core is built without the direct-only texts (`swiftly-l10n/direct-only.txt`, the supporter key and the
+/// website link): no crate it links may look one up, or Play would show the German key in English and Russian.
+/// `swiftly-desktop`, `swiftly-android` and `swiftly-ios` use their own copy of the catalogue with the feature on.
+#[test]
+fn the_play_core_looks_up_no_direct_only_text() {
+    let list = std::fs::read_to_string(crates_dir().join("swiftly-l10n/direct-only.txt")).unwrap();
+    let keys: Vec<&str> = list
+        .lines()
+        .skip_while(|l| l.trim() != "[keys]")
+        .skip(1)
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        .collect();
+    assert!(keys.len() > 10, "read only {} direct-only keys", keys.len());
+    let mut problems = Vec::new();
+    for entry in std::fs::read_dir(crates_dir()).unwrap().flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if [
+            "swiftly-l10n",
+            "swiftly-desktop",
+            "swiftly-android",
+            "swiftly-ios",
+        ]
+        .contains(&name.as_str())
+        {
+            continue;
+        }
+        let mut files = Vec::new();
+        rust_files(&entry.path().join("src"), &mut files);
+        for file in files {
+            let text = std::fs::read_to_string(&file).unwrap();
+            for (key, line) in keys_in(&text, false) {
+                if keys.contains(&key.as_str()) {
+                    problems.push(format!(
+                        "crates/{name}/{}:{line}: {key:?}",
+                        file.file_name().unwrap().to_string_lossy()
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "the Play core looks up direct-only texts:\n{}",
+        problems.join("\n")
+    );
+}
+
 #[test]
 fn the_scanner_reads_literals_and_tables() {
     let src = "fn f(t: &T) {\n    t.t_args(\n        \"Noch %lld \\\"x\\\"\",\n        &[]);\n    Words::Pair(\"A\", \"B\");\n    const MONTHS: [&str; 2] = [\"Jan.\", \"Mai\"];\n}\n#[cfg(test)]\nmod t { fn g() { t.t(\"Ignored\"); } }";

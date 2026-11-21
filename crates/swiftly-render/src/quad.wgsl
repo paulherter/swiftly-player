@@ -115,9 +115,37 @@ fn radius_at(p: vec2<f32>, r: vec4<f32>) -> f32 {
     return r.z;
 }
 
-fn sd_round_box(p: vec2<f32>, hs: vec2<f32>, r: f32) -> f32 {
+// Signed distance to a box with circular corners of radius `r` (negative inside, in pixels).
+fn sd_circle_box(p: vec2<f32>, hs: vec2<f32>, r: f32) -> f32 {
     let q = abs(p) - hs + vec2<f32>(r);
     return length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - r;
+}
+
+// Corner smoothing of 60 % (Figma "iOS", Apple's continuous corner): the corner is a superellipse of exponent 3 whose zone
+// reaches SMOOTH_REACH * radius along each edge (at most half the short side), joined tangentially to the straight edges.
+// A capsule (radius within half a pixel of half the short side) and a radius under one pixel keep the circular formula,
+// so pills and circles stay round. Mirrored by `sd_round_box` in software.rs.
+const SMOOTH_REACH: f32 = 1.4;
+
+// Signed distance to a box whose corners have radius `r` and are smoothed (first-order estimate: the superellipse norm
+// divided by its gradient length, good for one pixel of anti-aliasing).
+fn sd_round_box(p: vec2<f32>, hs: vec2<f32>, r: f32) -> f32 {
+    let m = min(hs.x, hs.y);
+    if r < 1.0 || r >= m - 0.5 {
+        return sd_circle_box(p, hs, r);
+    }
+    let k = min(r * SMOOTH_REACH, m);
+    let q = abs(p) - hs + vec2<f32>(k);
+    let inside = min(max(q.x, q.y), 0.0);
+    let u = max(q, vec2<f32>(0.0));
+    let c = u * u * u;
+    let total = c.x + c.y;
+    if total <= 1e-9 {
+        return inside - k;
+    }
+    let n = pow(total, 1.0 / 3.0);
+    let grad = sqrt(u.x * c.x + u.y * c.y) / (n * n);
+    return (n - k) / grad + inside;
 }
 
 // Gaussian-blurred rounded box along x for one scan line at offset y (closed form with erf).
@@ -151,12 +179,13 @@ fn premul(c: vec4<f32>) -> vec4<f32> {
     return vec4<f32>(c.rgb * c.a, c.a);
 }
 
+// The window outline stays circular: it continues the decoration's own corners (a fitted circle, see `window_corner_px`).
 fn window_mask(p: vec2<f32>) -> f32 {
     if g.window_corner <= 0.0 {
         return 1.0;
     }
     let hs = g.target_px * 0.5;
-    return clamp(0.5 - sd_round_box(p - hs, hs, min(g.window_corner, min(hs.x, hs.y))), 0.0, 1.0);
+    return clamp(0.5 - sd_circle_box(p - hs, hs, min(g.window_corner, min(hs.x, hs.y))), 0.0, 1.0);
 }
 
 // Interleaved gradient noise in [0, 1): one 8-bit level of dither for ramps (mirrored by `dither_noise` in software.rs).

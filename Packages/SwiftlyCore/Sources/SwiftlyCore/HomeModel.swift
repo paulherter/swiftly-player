@@ -58,8 +58,10 @@ public final class HomeModel {
     }
 
     /// Calls `show` once for every hint the core raises by itself (a refused removal), after the rails it changed were
-    /// re-read, and clears the hint. Returns when the calling Task is cancelled; the core keeps running.
-    public func watchNotices(_ show: @MainActor (String) -> Void) async {
+    /// re-read, and clears the hint. `changed` follows every other change of the rails or the status, also the loads
+    /// the core starts by itself (a delete, another device, the socket marking the lists stale). Returns when the
+    /// calling Task is cancelled; the core keeps running.
+    public func watchNotices(changed: @MainActor () -> Void = {}, _ show: @MainActor (String) -> Void) async {
         let noticeBit = partNotice()
         let railsBit = partRails()
         let statusBit = partStatus()
@@ -73,6 +75,8 @@ public final class HomeModel {
                 if change.parts & noticeBit != 0, let message = vm.notice().message {
                     show(message)
                     vm.send(intent: .dismissNotice)
+                } else if change.parts & (railsBit | statusBit) != 0 {
+                    changed()
                 }
             } catch {
                 return  // cancelled

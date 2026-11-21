@@ -26,6 +26,10 @@ pub enum Entry {
     PlayOn,
     /// "Gemeinsam schauen".
     Together,
+    /// Mac: "Problem melden" (what Seerr adds for an account that may report; the core decides who sees it).
+    Report,
+    /// Mac: "Vom Server löschen" (Seerr, for an account that manages requests and a device without the delete lock).
+    Delete,
     /// Mac: "Zur Serie" (episodes).
     ToSeries,
     /// Mac: "Info".
@@ -113,6 +117,12 @@ pub fn entries(form: Form, cx: &Cx, tile: Option<&Tile>) -> Vec<Entry> {
     if !series && !player && cx.host.together {
         v.push(Entry::Together);
     }
+    if mac && !player && crate::desk::report_offered() {
+        v.push(Entry::Report);
+    }
+    if mac && !player && crate::desk::delete_offered() {
+        v.push(Entry::Delete);
+    }
     if mac && !player {
         if kind(tile).is_some_and(|k| k.eq_ignore_ascii_case("episode"))
             && tile.is_some_and(|t| t.facts.series_id.is_some())
@@ -141,6 +151,8 @@ pub fn icon(e: &Entry, cx: &Cx) -> &'static str {
         Entry::Load => "arrow-circle-down",
         Entry::PlayOn | Entry::ToSeries => "television",
         Entry::Together => "users",
+        Entry::Report => "warning",
+        Entry::Delete => "trash",
         Entry::Remove => "minus-circle",
     }
 }
@@ -182,6 +194,8 @@ pub fn label(e: &Entry, cx: &Cx, tile: Option<&Tile>) -> &'static str {
         Entry::Load => "Laden",
         Entry::PlayOn => "Abspielen auf \u{2026}",
         Entry::Together => "Gemeinsam schauen",
+        Entry::Report => "Problem melden",
+        Entry::Delete => "Vom Server löschen",
         Entry::ToSeries => "Zur Serie",
         Entry::Info => "Info",
         Entry::Remove => "Aus Weiterschauen entfernen",
@@ -355,7 +369,28 @@ pub fn run(
             keep,
             swiftly_vm::DetailIntent::SetWatchlist { on: !cx.favourite },
         ),
+        // The suite reads the title's place and opens the report sheet over the page.
+        Entry::Report => {
+            crate::desk::request_report(&tile.id, None);
+            Outcome::Nothing
+        }
+        // The suite reads the title and opens the confirm sheet over the page.
+        Entry::Delete => {
+            crate::desk::request_delete(&tile.id, false);
+            Outcome::Nothing
+        }
         Entry::Load | Entry::PlayOn | Entry::Together | Entry::Remove => Outcome::Nothing,
+    }
+}
+
+/// The entry a shortcut command of an open tile menu stands for (the Mac's `keyboardShortcut` on its rows: Cmd+D,
+/// Cmd+Shift+G, Cmd+I; Ctrl instead of Cmd on Windows and Linux).
+pub fn shortcut_entry(command: &str) -> Option<Entry> {
+    match command {
+        "tile.remember" => Some(Entry::Remember),
+        "tile.watched" => Some(Entry::Watched),
+        "tile.info" => Some(Entry::Info),
+        _ => None,
     }
 }
 
@@ -416,7 +451,7 @@ mod round2_tests {
         );
     }
 
-    fn tile_for_test() -> Tile {
+    pub(super) fn tile_for_test() -> Tile {
         Tile {
             id: "m1".into(),
             title: "Nordlicht".into(),
@@ -660,5 +695,280 @@ mod writers_tests {
         assert!(favourite_of_request(None, &tile));
         tile.badges.clear();
         assert!(!favourite_of_request(None, &tile));
+    }
+
+    #[test]
+    fn the_report_entry_comes_only_where_seerr_offers_it_and_only_on_the_desktop_form() {
+        let tile = super::round2_tests::tile_for_test();
+        let cx = demo_cx(false);
+        crate::desk::set_report_offered(false);
+        assert!(!entries(Form::Desktop, &cx, Some(&tile)).contains(&Entry::Report));
+        crate::desk::set_report_offered(true);
+        let with = entries(Form::Desktop, &cx, Some(&tile));
+        assert!(with.contains(&Entry::Report));
+        assert!(!entries(Form::Touch, &cx, Some(&tile)).contains(&Entry::Report));
+        assert_eq!(label(&Entry::Report, &cx, Some(&tile)), "Problem melden");
+        // Picking it asks the suite to open the sheet for the tile's title, without a position.
+        let mut keep = Vec::new();
+        assert_eq!(run(&Entry::Report, &tile, &cx, &mut keep), Outcome::Nothing);
+        assert_eq!(
+            crate::desk::take_report_requests(),
+            vec![("m1".to_owned(), None)]
+        );
+        crate::desk::set_report_offered(false);
+    }
+
+    #[test]
+    fn the_delete_entry_comes_only_where_the_core_offers_it_and_picks_ask_the_suite() {
+        let tile = super::round2_tests::tile_for_test();
+        let cx = demo_cx(false);
+        crate::desk::set_delete_offered(false);
+        assert!(!entries(Form::Desktop, &cx, Some(&tile)).contains(&Entry::Delete));
+        crate::desk::set_delete_offered(true);
+        assert!(entries(Form::Desktop, &cx, Some(&tile)).contains(&Entry::Delete));
+        assert!(!entries(Form::Touch, &cx, Some(&tile)).contains(&Entry::Delete));
+        assert_eq!(
+            label(&Entry::Delete, &cx, Some(&tile)),
+            "Vom Server löschen"
+        );
+        assert_eq!(icon(&Entry::Delete, &cx), "trash");
+        // A tile menu does not send the page back; the sheet is the only thing that opens.
+        let mut keep = Vec::new();
+        assert_eq!(run(&Entry::Delete, &tile, &cx, &mut keep), Outcome::Nothing);
+        assert_eq!(
+            crate::desk::take_delete_requests(),
+            vec![("m1".to_owned(), false)]
+        );
+        crate::desk::set_delete_offered(false);
+    }
+}
+
+/// One rule per entry, against `TileMenuMac.swift`: the entries, their order and their conditions on the desktop form.
+#[cfg(test)]
+mod mac_rule_tests {
+    use super::*;
+
+    fn tile(kind: &str, progress: Option<f32>, watched: bool, series_id: Option<&str>) -> Tile {
+        Tile {
+            id: "t1".into(),
+            title: "Titel".into(),
+            subtitle: None,
+            progress,
+            image: None,
+            badges: if watched {
+                vec![Badge::Watched]
+            } else {
+                Vec::new()
+            },
+            remaining: None,
+            facts: swiftly_vm::TileFacts {
+                kind: Some(kind.into()),
+                series_id: series_id.map(Into::into),
+                ..swiftly_vm::TileFacts::default()
+            },
+        }
+    }
+
+    /// The entries without the two that depend on a process-wide Seerr flag other tests set.
+    fn list(cx: &Cx, t: &Tile) -> Vec<Entry> {
+        entries(Form::Desktop, cx, Some(t))
+            .into_iter()
+            .filter(|e| !matches!(e, Entry::Report | Entry::Delete))
+            .collect()
+    }
+
+    fn cx(cw: bool) -> Cx {
+        let mut c = demo_cx(cw);
+        c.host.download_button = false;
+        c
+    }
+
+    #[test]
+    fn a_film_in_weiterschauen_has_the_macs_entries_in_the_macs_order() {
+        let t = tile("Movie", Some(0.4), false, None);
+        assert_eq!(
+            list(&cx(true), &t),
+            vec![
+                Entry::Play,
+                Entry::FromStart,
+                Entry::Overview,
+                Entry::Remember,
+                Entry::Watched,
+                Entry::Unwatched,
+                Entry::PlayOn,
+                Entry::Together,
+                Entry::Info,
+                Entry::Remove,
+            ]
+        );
+        assert_eq!(label(&Entry::Play, &cx(true), Some(&t)), "Fortsetzen");
+    }
+
+    #[test]
+    fn overview_and_remove_come_only_from_the_weiterschauen_rail() {
+        let t = tile("Movie", None, false, None);
+        let rail = list(&cx(false), &t);
+        assert!(!rail.contains(&Entry::Overview) && !rail.contains(&Entry::Remove));
+        let cw = list(&cx(true), &t);
+        assert!(cw.contains(&Entry::Overview) && cw.last() == Some(&Entry::Remove));
+        // "Zur Übersicht" sits right after the play entries, "Aus Weiterschauen entfernen" is last.
+        let at = |e: Entry| cw.iter().position(|x| *x == e).unwrap();
+        assert_eq!(at(Entry::Overview), at(Entry::Play) + 1);
+    }
+
+    #[test]
+    fn from_start_needs_a_begun_title_that_is_no_series() {
+        assert!(!list(&cx(false), &tile("Movie", None, false, None)).contains(&Entry::FromStart));
+        assert!(
+            list(&cx(false), &tile("Episode", Some(0.2), false, Some("s")))
+                .contains(&Entry::FromStart)
+        );
+        assert!(
+            !list(&cx(false), &tile("Series", Some(0.2), false, None)).contains(&Entry::FromStart)
+        );
+    }
+
+    #[test]
+    fn watched_and_unwatched_are_offered_only_where_they_have_an_effect() {
+        let fresh = list(&cx(false), &tile("Movie", None, false, None));
+        assert!(fresh.contains(&Entry::Watched) && !fresh.contains(&Entry::Unwatched));
+        let seen = list(&cx(false), &tile("Movie", None, true, None));
+        assert!(!seen.contains(&Entry::Watched) && seen.contains(&Entry::Unwatched));
+        // Begun counts as unwatched-able, a series carries both.
+        let begun = list(&cx(false), &tile("Movie", Some(0.3), false, None));
+        assert!(begun.contains(&Entry::Watched) && begun.contains(&Entry::Unwatched));
+        let series = list(&cx(false), &tile("Series", None, true, None));
+        assert!(series.contains(&Entry::Watched) && series.contains(&Entry::Unwatched));
+    }
+
+    #[test]
+    fn remember_needs_the_watchlist_and_flips_its_wording() {
+        let t = tile("Movie", None, false, None);
+        let mut c = cx(false);
+        assert!(list(&c, &t).contains(&Entry::Remember));
+        assert_eq!(label(&Entry::Remember, &c, Some(&t)), "Merken");
+        c.favourite = true;
+        assert_eq!(label(&Entry::Remember, &c, Some(&t)), "Nicht mehr merken");
+        c.watchlist_shown = false;
+        assert!(!list(&c, &t).contains(&Entry::Remember));
+    }
+
+    #[test]
+    fn play_on_needs_a_device_in_reach_and_no_series() {
+        let t = tile("Movie", None, false, None);
+        let mut c = cx(false);
+        assert!(list(&c, &t).contains(&Entry::PlayOn));
+        assert!(!list(&c, &tile("Series", None, false, None)).contains(&Entry::PlayOn));
+        c.host.play_on.clear();
+        assert!(!list(&c, &t).contains(&Entry::PlayOn));
+    }
+
+    #[test]
+    fn watch_together_needs_the_right_and_no_series() {
+        let t = tile("Episode", None, false, Some("s"));
+        let mut c = cx(false);
+        assert!(list(&c, &t).contains(&Entry::Together));
+        assert!(!list(&c, &tile("Series", None, false, None)).contains(&Entry::Together));
+        c.host.together = false;
+        assert!(!list(&c, &t).contains(&Entry::Together));
+    }
+
+    #[test]
+    fn to_series_is_for_an_episode_with_a_series_and_comes_before_info() {
+        let ep = list(&cx(false), &tile("Episode", None, false, Some("s")));
+        let at = |e: Entry| ep.iter().position(|x| *x == e).unwrap();
+        assert_eq!(at(Entry::ToSeries) + 1, at(Entry::Info));
+        assert!(!list(&cx(false), &tile("Episode", None, false, None)).contains(&Entry::ToSeries));
+        assert!(
+            !list(&cx(false), &tile("Movie", None, false, Some("s"))).contains(&Entry::ToSeries)
+        );
+        assert!(!list(&cx(false), &tile("Series", None, false, None)).contains(&Entry::ToSeries));
+    }
+
+    #[test]
+    fn the_player_menu_has_only_the_watched_entries() {
+        let mut c = cx(false);
+        c.host.in_player = true;
+        let t = tile("Episode", Some(0.5), false, Some("s"));
+        assert_eq!(list(&c, &t), vec![Entry::Watched, Entry::Unwatched]);
+    }
+
+    #[test]
+    fn other_kinds_get_no_menu() {
+        assert!(
+            entries(
+                Form::Desktop,
+                &cx(false),
+                Some(&tile("Person", None, false, None))
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn the_picks_navigate_remove_or_hand_off() {
+        let t = tile("Episode", None, false, Some("s"));
+        let c = cx(true);
+        let mut keep = Vec::new();
+        // "Zur Serie", "Zur Übersicht" and "Info" open the page (an episode leads to its series).
+        for e in [Entry::ToSeries, Entry::Overview, Entry::Info] {
+            assert_eq!(run(&e, &t, &c, &mut keep), Outcome::Open);
+        }
+        // "Abspielen" starts from the resume point.
+        assert!(matches!(run(&Entry::Play, &t, &c, &mut keep), Outcome::Play(r) if r.since < 0.0));
+    }
+
+    #[test]
+    fn the_shortcuts_are_the_macs_with_ctrl() {
+        let t = tile("Movie", Some(0.3), false, None);
+        let c = cx(true);
+        let rows = crate::desk::tile_rows(&list(&c, &t), &t, &c, "x");
+        let shortcut = |label: &str| {
+            rows.iter().find_map(|r| match r {
+                swiftly_ui::popover::MenuEntry::Item(i) if i.label == label => {
+                    Some(i.shortcut.clone())
+                }
+                _ => None,
+            })
+        };
+        assert!(shortcut("Fortsetzen").flatten().is_some());
+        assert!(shortcut("Merken").flatten().is_some());
+        assert!(shortcut("Als gesehen markieren").flatten().is_some());
+        assert!(shortcut("Info").flatten().is_some());
+        assert_eq!(shortcut("Zur Übersicht"), Some(None));
+    }
+
+    #[test]
+    fn the_shortcut_commands_stand_for_the_macs_rows() {
+        assert_eq!(shortcut_entry("tile.remember"), Some(Entry::Remember));
+        assert_eq!(shortcut_entry("tile.watched"), Some(Entry::Watched));
+        assert_eq!(shortcut_entry("tile.info"), Some(Entry::Info));
+        assert_eq!(shortcut_entry("cmd.back"), None);
+    }
+
+    #[test]
+    fn a_shortcut_chooses_its_row_of_the_open_menu_once() {
+        use swiftly_layout::Point;
+        let t = tile("Movie", None, false, None);
+        let c = cx(false);
+        let mut menu = crate::desk::TileMenu::default();
+        // Closed: nothing happens.
+        assert_eq!(menu.pick_entry(&Entry::Info), None);
+        assert!(menu.open(&t, &c, Point::new(10.0, 10.0), false));
+        let want = entries(Form::Desktop, &c, Some(&t))
+            .iter()
+            .position(|e| *e == Entry::Info)
+            .unwrap();
+        assert_eq!(
+            menu.pick_entry(&Entry::Info),
+            Some(crate::desk::Pick::Row("t1".into(), want))
+        );
+        // The pick closed it; a second press does nothing.
+        assert!(!menu.is_open());
+        assert_eq!(menu.pick_entry(&Entry::Info), None);
+        // A row the menu does not have: no pick, the menu stays.
+        assert!(menu.open(&t, &c, Point::new(10.0, 10.0), false));
+        assert_eq!(menu.pick_entry(&Entry::Remove), None);
+        assert!(menu.is_open());
     }
 }

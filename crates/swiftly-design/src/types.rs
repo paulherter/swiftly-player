@@ -110,6 +110,8 @@ pub enum Curve {
     Smooth(f32),
     /// SwiftUI `.snappy`.
     Snappy(f32),
+    /// The design system's drawer curve, bezier (0.32, 0.72, 0, 1): sheets and page pushes, no spring.
+    Drawer(f32),
     /// Spring with response (seconds) and damping fraction.
     Spring {
         /// Time of one period in seconds.

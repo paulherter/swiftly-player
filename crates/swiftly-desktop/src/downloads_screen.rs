@@ -9,7 +9,8 @@ use crate::home::{Form, ins, rgba, text};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use swiftly_design::tokens::{colour, touch};
+use swiftly_design::tokens::touch;
+use swiftly_design::tokens_generated::color;
 use swiftly_downloads::{
     Art, DownloadItem, DownloadManagerState, DownloadRules, DownloadState, DownloadTransport,
     Effect, Intent, ProgressEstimator, RunningTransfer, TaskParts,
@@ -398,9 +399,9 @@ fn line(cx: &Cx, ctx: &Ctx, f: &Fm, env: &Env, l: &Line) -> Node {
     let edit_w = if l.picked.is_some() { 18.0 + 16.0 } else { 0.0 };
     let text_w = (col_w(env, f) - 20.0 - edit_w - iw - 16.0 - 16.0 - 36.0).max(80.0);
     let sub_colour = match l.state {
-        RowState::Loading => colour::MARK_ACCENT,
-        RowState::Failed => colour::ORIGINAL_WARNING,
-        _ => colour::FONT_QUIET,
+        RowState::Loading => crate::look_glow::accent(),
+        RowState::Failed => color::STATE_WARNING,
+        _ => color::TEXT_SECONDARY,
     };
     let sub_style = swiftly_text::TextStyle::from(st(12.0, 400)).with_tabular();
     let mut col = vec![
@@ -408,7 +409,7 @@ fn line(cx: &Cx, ctx: &Ctx, f: &Fm, env: &Env, l: &Line) -> Node {
             cx,
             &l.title,
             st(15.0, 600),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         ),
@@ -432,9 +433,9 @@ fn line(cx: &Cx, ctx: &Ctx, f: &Fm, env: &Env, l: &Line) -> Node {
                 18.0,
                 !on,
                 color(if on {
-                    colour::MARK_ACCENT
+                    crate::look_glow::accent()
                 } else {
-                    colour::FONT_VERY_QUIET
+                    color::TEXT_TERTIARY
                 }),
             )
             .a11y_hidden();
@@ -461,11 +462,11 @@ fn line(cx: &Cx, ctx: &Ctx, f: &Fm, env: &Env, l: &Line) -> Node {
                 },
                 22.0,
                 true,
-                color(colour::FONT),
+                color(color::TEXT_PRIMARY),
             )
             .frame(Some(iw), Some(ih), Alignment::CENTER)
             .background(
-                Node::rect(color(colour::AREA), touch::CORNER_TILE),
+                Node::rect(color(color::SURFACE_CONTROL), touch::CORNER_TILE),
                 Alignment::CENTER,
             ),
     };
@@ -477,10 +478,10 @@ fn line(cx: &Cx, ctx: &Ctx, f: &Fm, env: &Env, l: &Line) -> Node {
             touch::CORNER_TILE,
         );
         let check = icons
-            .node("check", 11.0, true, color(colour::FONT))
+            .node("check", 11.0, true, color(color::TEXT_PRIMARY))
             .frame(Some(20.0), Some(20.0), Alignment::CENTER)
             .background(
-                Node::rect(rgba(colour::REASON, 0.78), 10.0),
+                Node::rect(rgba(color::SURFACE_BASE, 0.78), 10.0),
                 Alignment::CENTER,
             )
             .padding(ins(6.0, 6.0, 0.0, 0.0));
@@ -490,7 +491,7 @@ fn line(cx: &Cx, ctx: &Ctx, f: &Fm, env: &Env, l: &Line) -> Node {
         pic
     };
     inner.push(pic.paint(Paint::Stroke {
-        color: color(colour::TILE_BORDER),
+        color: color(color::BORDER_TILE),
         width: 1.0,
         radius: touch::CORNER_TILE,
     }));
@@ -546,7 +547,7 @@ fn line(cx: &Cx, ctx: &Ctx, f: &Fm, env: &Env, l: &Line) -> Node {
     if l.group {
         parts.push(
             icons
-                .node("caret-right", 13.0, true, color(colour::FONT_VERY_QUIET))
+                .node("caret-right", 13.0, true, color(color::TEXT_TERTIARY))
                 .frame(Some(36.0), None, Alignment::CENTER)
                 .a11y_hidden(),
         );
@@ -566,7 +567,7 @@ fn line(cx: &Cx, ctx: &Ctx, f: &Fm, env: &Env, l: &Line) -> Node {
     let mut row =
         Node::hstack(Align::Center, Some(16.0), parts).padding(ins(12.0, 10.0, 12.0, 10.0));
     if l.picked.is_some() {
-        row = row.hover_surface(color(colour::AREA), 12.0);
+        row = row.hover_surface(color(color::SURFACE_CONTROL), 12.0);
     }
     if let Some(id) = &l.menu_id {
         row = row.on_secondary(Action::from(format!("ctx:{id}").as_str()));
@@ -620,7 +621,7 @@ fn item_line(p: &Parts, d: &DownloadItem, pick: Option<bool>, menu: bool) -> Lin
 /// The 1 px hairline between two rows (`Theme.line`).
 fn hairline() -> Node {
     browse::wide(
-        Node::rect(color(colour::LINE), 0.0).frame(None, Some(1.0), Alignment::CENTER),
+        Node::rect(color(color::BORDER_HAIRLINE), 0.0).frame(None, Some(1.0), Alignment::CENTER),
         Alignment::CENTER,
     )
 }
@@ -631,7 +632,7 @@ fn heading(cx: &Cx, s: &str) -> Node {
             cx,
             s,
             st(20.0, 600),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         )
@@ -647,7 +648,7 @@ fn empty_state(cx: &Cx, ctx: &Ctx) -> Node {
             "arrow-circle-down",
             touch::EMPTY_SYMBOL,
             true,
-            color(colour::FONT),
+            color(color::TEXT_PRIMARY),
         )
         .frame(
             Some(touch::EMPTY_DISC),
@@ -655,7 +656,7 @@ fn empty_state(cx: &Cx, ctx: &Ctx) -> Node {
             Alignment::CENTER,
         )
         .background(
-            Node::rect(color(colour::AREA), touch::EMPTY_DISC / 2.0),
+            Node::rect(color(color::SURFACE_CONTROL), touch::EMPTY_DISC / 2.0),
             Alignment::CENTER,
         );
     browse::wide(
@@ -668,7 +669,7 @@ fn empty_state(cx: &Cx, ctx: &Ctx) -> Node {
                     cx,
                     "Noch nichts geladen",
                     st(20.0, 600),
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(1),
                     swiftly_text::Align::Center,
                 ),
@@ -676,7 +677,7 @@ fn empty_state(cx: &Cx, ctx: &Ctx) -> Node {
                     cx,
                     "Lad was runter, bevor der Zug ins Funkloch f\u{00E4}hrt.",
                     st(15.0, 400),
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(3),
                     swiftly_text::Align::Center,
                 )
@@ -693,9 +694,17 @@ fn empty_state(cx: &Cx, ctx: &Ctx) -> Node {
 fn mac_empty_state(cx: &Cx, ctx: &Ctx) -> Node {
     let disc = ctx
         .icons
-        .node("arrow-circle-down", 44.0, true, color(colour::FONT_QUIET))
+        .node(
+            "arrow-circle-down",
+            44.0,
+            true,
+            color(color::TEXT_SECONDARY),
+        )
         .frame(Some(78.0), Some(78.0), Alignment::CENTER)
-        .background(Node::rect(color(colour::AREA), 39.0), Alignment::CENTER);
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 39.0),
+            Alignment::CENTER,
+        );
     let block = Node::vstack(
         Align::Center,
         Some(0.0),
@@ -705,7 +714,7 @@ fn mac_empty_state(cx: &Cx, ctx: &Ctx) -> Node {
                 cx,
                 "Noch nichts geladen",
                 st(20.0, 600),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Center,
             )
@@ -714,7 +723,7 @@ fn mac_empty_state(cx: &Cx, ctx: &Ctx) -> Node {
                 cx,
                 "Lad was runter, bevor der Zug ins Funkloch f\u{00E4}hrt.",
                 st(15.0, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(3),
                 swiftly_text::Align::Center,
             )
@@ -882,7 +891,7 @@ fn series_body(cx: &Cx, env: &Env, f: &Fm, p: &Parts, ctx: &Ctx, id: &str) -> Ve
                     cx,
                     &format!("Staffel {n}"),
                     t,
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 )
@@ -966,7 +975,7 @@ fn fade(horizontal: bool, len: f32, bands: usize) -> Node {
     let strips: Vec<Node> = (0..bands)
         .map(|i| {
             let a = 1.0 - i as f32 / bands as f32;
-            let r = Node::rect(rgba(colour::REASON, a * a), 0.0);
+            let r = Node::rect(rgba(color::SURFACE_BASE, a * a), 0.0);
             if horizontal {
                 r.frame(Some(len / bands as f32), None, Alignment::CENTER)
             } else {
@@ -989,7 +998,11 @@ fn series_hero(cx: &Cx, env: &Env, f: &Fm, p: &Parts, ctx: &Ctx, id: &str, title
     let next = DownloadRules::next_episode(&owned);
     let backdrop_w = (hero_h * 1.62_f32).min(env.size.w);
     let mut base = browse::wide(
-        Node::rect(color(colour::REASON), 0.0).frame(None, Some(hero_h), Alignment::TOP_LEADING),
+        Node::rect(color(color::SURFACE_BASE), 0.0).frame(
+            None,
+            Some(hero_h),
+            Alignment::TOP_LEADING,
+        ),
         Alignment::TOP_LEADING,
     );
     let account = eps.first().map(|d| d.account.as_str()).unwrap_or_default();
@@ -1030,7 +1043,7 @@ fn series_hero(cx: &Cx, env: &Env, f: &Fm, p: &Parts, ctx: &Ctx, id: &str, title
                 cx,
                 title,
                 t,
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Start,
             )
@@ -1043,7 +1056,7 @@ fn series_hero(cx: &Cx, env: &Env, f: &Fm, p: &Parts, ctx: &Ctx, id: &str, title
                     DownloadRules::size(total, widgets::SEP)
                 ),
                 &sub_style,
-                color(colour::FONT_QUIET),
+                color(color::TEXT_SECONDARY),
                 Some(1),
                 swiftly_text::Align::Start,
             )
@@ -1148,7 +1161,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
                     cx,
                     "Downloads",
                     t,
-                    colour::FONT,
+                    color::TEXT_PRIMARY,
                     Some(1),
                     swiftly_text::Align::Start,
                 ),

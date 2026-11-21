@@ -644,10 +644,21 @@ impl ImageHub {
     }
 
     /// Mood-colour hues of a loaded picture (`ImageTone`); `None` until it is loaded.
+    ///
+    /// The picture is held under the address it was drawn with (`sized_for_device` raises its size), not under the core's
+    /// own address: the tone is read from that sized address, else every page's mood colour stayed empty.
     pub fn tones(&self, image: &ImageRef) -> Option<Vec<f64>> {
-        self.backend
+        let drawn = self
+            .state
             .borrow()
-            .tones(&Url::parse(&image.address).ok()?)
+            .shown
+            .get(&image.address)
+            .map(|(url, ..)| url.clone());
+        let url = match drawn {
+            Some(url) => url,
+            None => Url::parse(&image.address).ok()?,
+        };
+        self.backend.borrow().tones(&url)
     }
 
     /// A finished picture node: the tile ground, then the picture (fading in) or the symbol when it failed.
@@ -664,17 +675,18 @@ impl ImageHub {
         radius: f32,
         symbol: &str,
     ) -> Node {
-        use swiftly_design::tokens::colour;
+        use swiftly_design::tokens_generated::color;
         use swiftly_ui::components::color;
         // The ground, the picture and the border (painted on this node by the caller) share one pixel rectangle.
-        let ground = Node::rect(color(colour::AREA), radius)
+        let ground = Node::rect(color(color::SURFACE_CONTROL), radius)
             .pixel_snapped()
             .frame(Some(w), Some(h), Alignment::CENTER);
         let slot = self.slot(image, w, h, Priority::Visible);
         ground
             .overlay(
                 remote_node(slot, w, h, radius, || {
-                    self.icons.node(symbol, 22.0, true, color(colour::FONT))
+                    self.icons
+                        .node(symbol, 22.0, true, color(color::TEXT_PRIMARY))
                 }),
                 Alignment::CENTER,
             )
@@ -827,13 +839,11 @@ impl ImageHub {
         w: f32,
         h: f32,
     ) -> Node {
-        use swiftly_design::tokens::colour;
+        use swiftly_design::tokens_generated::color;
         use swiftly_ui::components::color;
-        let ground = Node::rect(color(colour::AREA), 0.0).pixel_snapped().frame(
-            Some(w),
-            Some(h),
-            Alignment::CENTER,
-        );
+        let ground = Node::rect(color(color::SURFACE_CONTROL), 0.0)
+            .pixel_snapped()
+            .frame(Some(w), Some(h), Alignment::CENTER);
         let same = image.is_some_and(|i| stand.iter().any(|s| same_source(s, i)));
         let fade = if same { 0.0 } else { HERO_SWAP_MS };
         let slot = image.map(|i| self.slot_with(Some(i), w, h, Priority::Visible, fade));
@@ -846,7 +856,7 @@ impl ImageHub {
             n = n.overlay(
                 remote_node(slot, w, h, 0.0, || {
                     self.icons
-                        .node("film-strip", 22.0, true, color(colour::FONT))
+                        .node("film-strip", 22.0, true, color(color::TEXT_PRIMARY))
                 }),
                 Alignment::CENTER,
             );
@@ -863,9 +873,9 @@ impl ImageHub {
         h: f32,
         radius: f32,
     ) -> Node {
-        use swiftly_design::tokens::colour;
+        use swiftly_design::tokens_generated::color;
         use swiftly_ui::components::color;
-        let ground = Node::rect(color(colour::AREA), radius)
+        let ground = Node::rect(color(color::SURFACE_CONTROL), radius)
             .pixel_snapped()
             .frame(Some(w), Some(h), Alignment::CENTER);
         let slot = self.slot(image, w, h, Priority::Visible);
@@ -886,7 +896,7 @@ impl ImageHub {
         n.overlay(
             remote_node(slot, w, h, radius, || {
                 self.icons
-                    .node("film-strip", 22.0, true, color(colour::FONT))
+                    .node("film-strip", 22.0, true, color(color::TEXT_PRIMARY))
             }),
             Alignment::CENTER,
         )

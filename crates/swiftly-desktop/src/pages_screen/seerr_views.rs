@@ -37,10 +37,12 @@ pub(crate) fn hit_of(c: &SeerrTileCard) -> SeerrHit {
 
 fn badge_colour(kind: BadgeKind) -> swiftly_design::Colour {
     match kind {
-        BadgeKind::Waits | BadgeKind::Failed | BadgeKind::Declined => colour::ORIGINAL_WARNING,
-        BadgeKind::Fetching | BadgeKind::Partial | BadgeKind::Searching => colour::MARK_ACCENT,
-        BadgeKind::Available => colour::FONT,
-        BadgeKind::Requestable | BadgeKind::Soon | BadgeKind::Blocked => colour::FONT_QUIET,
+        BadgeKind::Waits | BadgeKind::Failed | BadgeKind::Declined => color::STATE_WARNING,
+        BadgeKind::Fetching | BadgeKind::Partial | BadgeKind::Searching => {
+            crate::look_glow::accent()
+        }
+        BadgeKind::Available => color::TEXT_PRIMARY,
+        BadgeKind::Requestable | BadgeKind::Soon | BadgeKind::Blocked => color::TEXT_SECONDARY,
     }
 }
 
@@ -59,7 +61,7 @@ pub(crate) fn seerr_mark(k: &Kit, b: &SeerrBadge) -> Node {
                 tracking: 1.0,
                 ..k.lk.small
             },
-            colour::REASON,
+            color::SURFACE_BASE,
             Some(1),
         )],
     )
@@ -69,12 +71,12 @@ pub(crate) fn seerr_mark(k: &Kit, b: &SeerrBadge) -> Node {
 
 /// A bar for a running download (0...1).
 fn progress_bar(p: f32, w: f32) -> Node {
-    let fill = Node::rect(color(colour::MARK_ACCENT), 2.0).frame(
+    let fill = Node::rect(color(crate::look_glow::accent()), 2.0).frame(
         Some((w * p.clamp(0.0, 1.0)).max(2.0)),
         Some(4.0),
         Alignment::LEADING,
     );
-    Node::rect(color(colour::AREA), 2.0)
+    Node::rect(color(color::SURFACE_CONTROL), 2.0)
         .frame(Some(w), Some(4.0), Alignment::LEADING)
         .overlay(fill, Alignment::LEADING)
 }
@@ -122,7 +124,7 @@ pub(crate) fn seerr_tile_card(k: &Kit, t: &SeerrTileCard, key: &str) -> Node {
                         k.cx,
                         &t.title,
                         weight(k.lk.tile, 13.0, 500),
-                        colour::FONT_QUIET,
+                        color::TEXT_SECONDARY,
                         Some(1),
                     )
                     .frame(Some(w), None, Alignment::LEADING),
@@ -130,7 +132,7 @@ pub(crate) fn seerr_tile_card(k: &Kit, t: &SeerrTileCard, key: &str) -> Node {
                         k.cx,
                         &sub,
                         weight(k.lk.small, 12.0, 400),
-                        colour::FONT_VERY_QUIET,
+                        color::TEXT_TERTIARY,
                         Some(1),
                     )
                     .frame(Some(w), None, Alignment::LEADING),
@@ -174,7 +176,7 @@ fn sub_heading(k: &Kit, text: &str) -> Node {
         k.cx,
         text,
         weight(k.lk.body, 15.0, 600),
-        colour::FONT_QUIET,
+        color::TEXT_SECONDARY,
         Some(1),
     )
 }
@@ -200,7 +202,7 @@ pub(crate) fn search_block(
                         k.cx,
                         &info.block_title,
                         weight(k.lk.rail, 22.0, 700),
-                        colour::FONT,
+                        color::TEXT_PRIMARY,
                         Some(1),
                     ),
                     Node::spacer(),
@@ -208,7 +210,7 @@ pub(crate) fn search_block(
                         k.cx,
                         &info.count.to_string(),
                         weight(k.lk.small, 13.0, 500),
-                        colour::FONT_VERY_QUIET,
+                        color::TEXT_TERTIARY,
                         Some(1),
                     ),
                 ],
@@ -230,23 +232,29 @@ pub(crate) fn search_block(
             );
         }
     } else if let Some(e) = &info.error {
+        // One calm box, one way out (`SearchView.offlineBox`): the line, then the retry under it.
         kids.push(
-            Node::hstack(
-                Align::Center,
-                Some(14.0),
+            Node::vstack(
+                Align::Start,
+                Some(12.0),
                 vec![
                     txt(
                         k.cx,
                         e,
                         weight(k.lk.body, 15.0, 400),
-                        colour::FONT_QUIET,
-                        Some(2),
+                        color::TEXT_SECONDARY,
+                        Some(3),
+                    )
+                    .padding(ins(13.0, 14.0, 13.0, 14.0))
+                    .background(
+                        Node::rect(color(color::SURFACE_CONTROL), 12.0),
+                        Alignment::CENTER,
                     ),
                     txt(
                         k.cx,
                         "Erneut versuchen",
                         weight(k.lk.body, 15.0, 500),
-                        colour::MARK_ACCENT,
+                        crate::look_glow::accent(),
                         Some(1),
                     )
                     .key("seerr-retry")
@@ -261,7 +269,7 @@ pub(crate) fn search_block(
                 k.cx,
                 line,
                 weight(k.lk.body, 15.0, 400),
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 Some(2),
             )
             .padding(ins(top, edge, 0.0, edge)),
@@ -311,12 +319,13 @@ fn head_button(k: &Kit, p: &SeerrPrimary) -> Option<Node> {
                 Align::Center,
                 Some(10.0),
                 vec![
-                    k.icons.node("plus", 18.0, false, color(colour::REASON)),
+                    k.icons
+                        .node("plus", 18.0, false, color(color::SURFACE_BASE)),
                     txt(
                         k.cx,
                         &p.text,
                         weight(k.lk.body, 17.0, 600),
-                        colour::REASON,
+                        color::SURFACE_BASE,
                         Some(1),
                     ),
                 ],
@@ -326,11 +335,14 @@ fn head_button(k: &Kit, p: &SeerrPrimary) -> Option<Node> {
                 Some(desktop::DETAIL_BUTTON_HEIGHT),
                 Alignment::CENTER,
             )
-            .background(Node::rect(color(colour::FONT), 10.0), Alignment::CENTER)
+            .background(
+                Node::rect(color(color::TEXT_PRIMARY), 10.0),
+                Alignment::CENTER,
+            )
             .key("primary");
             Some(if on {
                 row.on_tap(Action::from("primary"))
-                    .hover_surface(rgba(colour::REASON, 0.12), 10.0)
+                    .hover_surface(rgba(color::SURFACE_BASE, 0.12), 10.0)
                     .press_style(PressStyle::Button)
             } else {
                 row.opacity(0.5, swiftly_ui::Motion::Instant)
@@ -341,11 +353,14 @@ fn head_button(k: &Kit, p: &SeerrPrimary) -> Option<Node> {
                 k.cx,
                 &p.text,
                 weight(k.lk.body, 15.0, 400),
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
                 Some(2),
             )
             .padding(ins(13.0, 14.0, 13.0, 14.0))
-            .background(Node::rect(color(colour::AREA), 10.0), Alignment::CENTER),
+            .background(
+                Node::rect(color(color::SURFACE_CONTROL), 10.0),
+                Alignment::CENTER,
+            ),
         ),
     }
 }
@@ -354,9 +369,9 @@ fn head_button(k: &Kit, p: &SeerrPrimary) -> Option<Node> {
 /// be asked for) or its state in a word (already there, waiting, ...). A season that cannot be asked for stays quiet.
 fn season_picker_row(k: &Kit, r: &SeerrSeasonRowInfo, key: &str) -> Node {
     let fg = if r.selectable {
-        colour::FONT
+        color::TEXT_PRIMARY
     } else {
-        colour::FONT_VERY_QUIET
+        color::TEXT_TERTIARY
     };
     let mut kids = vec![txt(
         k.cx,
@@ -370,16 +385,16 @@ fn season_picker_row(k: &Kit, r: &SeerrSeasonRowInfo, key: &str) -> Node {
             k.cx,
             &format!("\u{b7} {e}"),
             weight(k.lk.small, 13.0, 400),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(1),
         ));
     }
     kids.push(Node::spacer());
     if r.selectable {
         let (glyph, tint) = if r.selected {
-            ("check-square.fill", colour::MARK_ACCENT)
+            ("check-square.fill", crate::look_glow::accent())
         } else {
-            ("square", colour::FONT_VERY_QUIET)
+            ("square", color::TEXT_TERTIARY)
         };
         kids.push(k.icons.node(glyph, 17.0, !r.selected, color(tint)));
     } else {
@@ -392,7 +407,7 @@ fn season_picker_row(k: &Kit, r: &SeerrSeasonRowInfo, key: &str) -> Node {
             k.cx,
             word,
             weight(k.lk.small, 13.0, 400),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(1),
         ));
     }
@@ -423,7 +438,11 @@ fn sheet_fade(on: bool, top: bool) -> Node {
         .map(|i| {
             // `top`: the first strip is at the edge and opaque; the bottom edge is the same list upside down.
             let a = 1.0 - i as f32 / BANDS as f32;
-            Node::rect(rgba(colour::AREA, if on { a * a } else { 0.0 }), 0.0).frame(
+            Node::rect(
+                rgba(color::SURFACE_CONTROL, if on { a * a } else { 0.0 }),
+                0.0,
+            )
+            .frame(
                 Some(SHEET_WIDTH),
                 Some(SHEET_FADE / BANDS as f32),
                 Alignment::CENTER,
@@ -444,7 +463,7 @@ fn sheet_line(k: &Kit, label: &str, end: Vec<Node>, key: &str) -> Node {
         k.cx,
         label,
         weight(k.lk.body, 15.0, 400),
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(1),
     )];
     kids.push(Node::spacer());
@@ -467,7 +486,7 @@ fn request_sheet(k: &Kit, s: &SeerrSheetInfo, list_scroll: (bool, bool)) -> Node
             k.cx,
             &s.title,
             weight(k.lk.rail, 20.0, 600),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(2),
         )
         .frame(
@@ -516,11 +535,11 @@ fn request_sheet(k: &Kit, s: &SeerrSheetInfo, list_scroll: (bool, bool)) -> Node
                     k.cx,
                     &c.value,
                     weight(k.lk.small, 13.0, 400),
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(1),
                 ),
                 k.icons
-                    .node("caret-up-down", 11.0, false, color(colour::FONT_VERY_QUIET)),
+                    .node("caret-up-down", 11.0, false, color(color::TEXT_TERTIARY)),
             ];
             let n = sheet_line(k, &c.label, end, key);
             kids.push(if c.options.is_empty() {
@@ -538,9 +557,9 @@ fn request_sheet(k: &Kit, s: &SeerrSheetInfo, list_scroll: (bool, bool)) -> Node
             s.quota_line.as_deref().unwrap_or(" "),
             weight(k.lk.small, 13.0, 500),
             if s.quota_warning {
-                colour::ORIGINAL_WARNING
+                color::STATE_WARNING
             } else {
-                colour::FONT_VERY_QUIET
+                color::TEXT_TERTIARY
             },
             Some(2),
         )
@@ -556,7 +575,7 @@ fn request_sheet(k: &Kit, s: &SeerrSheetInfo, list_scroll: (bool, bool)) -> Node
                 k.cx,
                 e,
                 weight(k.lk.small, 13.0, 500),
-                colour::ORIGINAL_WARNING,
+                color::STATE_WARNING,
                 Some(3),
             )
             .frame(
@@ -576,14 +595,17 @@ fn request_sheet(k: &Kit, s: &SeerrSheetInfo, list_scroll: (bool, bool)) -> Node
         k.cx,
         "Abbrechen",
         weight(k.lk.body, 14.0, 500),
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(1),
     )
     .frame(Some(half), Some(44.0), Alignment::CENTER)
-    .background(Node::rect(color(colour::RAISED), 10.0), Alignment::CENTER)
+    .background(
+        Node::rect(color(color::SURFACE_RAISED), 10.0),
+        Alignment::CENTER,
+    )
     .key("sheet-close-button")
     .on_tap(Action::from("sheet-close"))
-    .hover_surface(rgba(colour::FONT, 0.08), 10.0)
+    .hover_surface(rgba(color::TEXT_PRIMARY, 0.08), 10.0)
     .press_style(PressStyle::Button);
     let on = s.primary.enabled && s.primary.kind != PrimaryKind::Busy;
     let confirm = txt(
@@ -591,22 +613,29 @@ fn request_sheet(k: &Kit, s: &SeerrSheetInfo, list_scroll: (bool, bool)) -> Node
         &s.primary.text,
         weight(k.lk.body, 15.0, 600),
         if on {
-            colour::REASON
+            color::SURFACE_BASE
         } else {
-            colour::FONT_VERY_QUIET
+            color::TEXT_TERTIARY
         },
         Some(1),
     )
     .frame(Some(half), Some(44.0), Alignment::CENTER)
     .background(
-        Node::rect(color(if on { colour::FONT } else { colour::RAISED }), 10.0),
+        Node::rect(
+            color(if on {
+                color::TEXT_PRIMARY
+            } else {
+                color::SURFACE_RAISED
+            }),
+            10.0,
+        ),
         Alignment::CENTER,
     )
     .key("sheet:confirm");
     let confirm = if on {
         confirm
             .on_tap(Action::from("sheet:confirm"))
-            .hover_surface(rgba(colour::REASON, 0.12), 10.0)
+            .hover_surface(rgba(color::SURFACE_BASE, 0.12), 10.0)
             .press_style(PressStyle::Button)
     } else {
         confirm
@@ -621,11 +650,11 @@ fn request_sheet(k: &Kit, s: &SeerrSheetInfo, list_scroll: (bool, bool)) -> Node
         .background(
             Node::flexible()
                 .paint(Paint::Fill {
-                    color: color(colour::AREA),
+                    color: color(color::SURFACE_CONTROL),
                     radius: 16.0,
                 })
                 .paint(Paint::Stroke {
-                    color: color(colour::MARGIN),
+                    color: color(color::SURFACE_FOCUS),
                     width: 1.0,
                     radius: 16.0,
                 }),
@@ -645,7 +674,7 @@ fn season_status_row(k: &Kit, r: &SeerrSeasonRowInfo) -> Node {
         k.cx,
         &r.title,
         weight(k.lk.body, 14.0, 500),
-        colour::FONT,
+        color::TEXT_PRIMARY,
         Some(1),
     )];
     if let Some(e) = &r.episodes {
@@ -653,7 +682,7 @@ fn season_status_row(k: &Kit, r: &SeerrSeasonRowInfo) -> Node {
             k.cx,
             &format!("\u{b7} {e}"),
             weight(k.lk.small, 12.0, 400),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(1),
         ));
     }
@@ -662,11 +691,14 @@ fn season_status_row(k: &Kit, r: &SeerrSeasonRowInfo) -> Node {
     let n = Node::hstack(Align::Center, Some(10.0), kids)
         .padding(ins(0.0, 14.0, 0.0, 14.0))
         .frame(Some(520.0), Some(40.0), Alignment::LEADING)
-        .background(Node::rect(color(colour::AREA), 10.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 10.0),
+            Alignment::CENTER,
+        )
         .key(key.as_str());
     if r.missing || r.selectable {
         n.on_tap(Action::from(key.as_str()))
-            .hover_surface(rgba(colour::FONT, 0.08), 10.0)
+            .hover_surface(rgba(color::TEXT_PRIMARY, 0.08), 10.0)
     } else {
         n
     }
@@ -699,9 +731,9 @@ fn episodes_block(k: &Kit, i: &SeerrTitleInfo, picked: Option<i64>) -> Option<No
             .map(|s| {
                 let key = format!("eps-season:{}", s.number);
                 let (fg, bg) = if s.number == current.number {
-                    (colour::REASON, colour::FONT)
+                    (color::SURFACE_BASE, color::TEXT_PRIMARY)
                 } else {
-                    (colour::FONT_QUIET, colour::AREA)
+                    (color::TEXT_SECONDARY, color::SURFACE_CONTROL)
                 };
                 txt(k.cx, &s.title, weight(k.lk.small, 13.0, 600), fg, Some(1))
                     .padding(ins(7.0, 14.0, 7.0, 14.0))
@@ -730,7 +762,7 @@ fn episodes_block(k: &Kit, i: &SeerrTitleInfo, picked: Option<i64>) -> Option<No
                     90.0,
                     10.0,
                 ),
-                None => Node::rect(color(colour::AREA), 10.0).frame(
+                None => Node::rect(color(color::SURFACE_CONTROL), 10.0).frame(
                     Some(160.0),
                     Some(90.0),
                     Alignment::CENTER,
@@ -774,7 +806,7 @@ pub(crate) fn title_page(
                             k.cx,
                             &i.title,
                             weight(k.lk.rail, 30.0, 700),
-                            colour::FONT_QUIET,
+                            color::TEXT_SECONDARY,
                             Some(1),
                         )
                         .padding(ins(150.0, edge, 0.0, edge)),
@@ -826,9 +858,9 @@ pub(crate) fn title_page(
     if let Some(r) = i.rating.filter(|r| *r > 0.0) {
         chips.push(crate::detail_screen::mark(
             k,
-            Some(("star.fill", color(colour::FONT))),
+            Some(("star.fill", color(color::TEXT_PRIMARY))),
             &format!("{r:.1}"),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             600,
             Color::new(1.0, 1.0, 1.0, 0.08),
         ));
@@ -967,7 +999,7 @@ fn request_row(k: &Kit, r: &SeerrRequestRow, index: usize, admin: bool) -> Node 
             k.cx,
             &head,
             weight(k.lk.body, 16.0, 600),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
         ),
         txt(
@@ -996,7 +1028,7 @@ fn request_row(k: &Kit, r: &SeerrRequestRow, index: usize, admin: bool) -> Node 
             k.cx,
             d,
             weight(k.lk.small, 12.0, 400),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(2),
         ));
     }
@@ -1006,9 +1038,9 @@ fn request_row(k: &Kit, r: &SeerrRequestRow, index: usize, admin: bool) -> Node 
             t,
             weight(k.lk.small, 12.0, 400),
             if r.work == RowWork::Failed {
-                colour::ORIGINAL_WARNING
+                color::STATE_WARNING
             } else {
-                colour::FONT_QUIET
+                color::TEXT_SECONDARY
             },
             Some(2),
         ));
@@ -1036,7 +1068,7 @@ fn request_row(k: &Kit, r: &SeerrRequestRow, index: usize, admin: bool) -> Node 
                 k.cx,
                 "Zurückziehen",
                 weight(k.lk.body, 14.0, 500),
-                colour::MARK_ACCENT,
+                crate::look_glow::accent(),
                 Some(1),
             )
             .padding(ins(8.0, 12.0, 8.0, 12.0))
@@ -1046,10 +1078,13 @@ fn request_row(k: &Kit, r: &SeerrRequestRow, index: usize, admin: bool) -> Node 
     }
     Node::hstack(Align::Center, Some(16.0), row)
         .padding(ins(10.0, 14.0, 10.0, 14.0))
-        .background(Node::rect(color(colour::AREA), 12.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 12.0),
+            Alignment::CENTER,
+        )
         .key(key.as_str())
         .on_tap(Action::from(key.as_str()))
-        .hover_surface(rgba(colour::FONT, 0.06), 12.0)
+        .hover_surface(rgba(color::TEXT_PRIMARY, 0.06), 12.0)
         .a11y_label(
             swiftly_ui::a11y::Role::Button,
             format!("{}, {}", r.title, r.badge.line),
@@ -1057,7 +1092,12 @@ fn request_row(k: &Kit, r: &SeerrRequestRow, index: usize, admin: bool) -> Node 
 }
 
 /// "Meine Anfragen" (`RequestsView`): the filter pills with counts, the rows, or the empty state.
-pub(crate) fn requests_page(k: &Kit, i: &SeerrRequestsInfo, tabs: &[HubTab]) -> Node {
+pub(crate) fn requests_page(
+    k: &Kit,
+    i: &SeerrRequestsInfo,
+    tabs: &[HubTab],
+    over: &(AdminPane, CardState),
+) -> (Node, Option<Node>) {
     let edge = k.lk.edge;
     let mut kids = vec![
         header(
@@ -1068,7 +1108,7 @@ pub(crate) fn requests_page(k: &Kit, i: &SeerrRequestsInfo, tabs: &[HubTab]) -> 
                     k.cx,
                     q,
                     weight(k.lk.small, 13.0, 500),
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(1),
                 )
             }),
@@ -1086,9 +1126,9 @@ pub(crate) fn requests_page(k: &Kit, i: &SeerrRequestsInfo, tabs: &[HubTab]) -> 
             .map(|(n, p)| {
                 let key = format!("pill:{n}");
                 let (fg, bg) = if p.selected {
-                    (colour::REASON, colour::FONT)
+                    (color::SURFACE_BASE, color::TEXT_PRIMARY)
                 } else {
-                    (colour::FONT_QUIET, colour::AREA)
+                    (color::TEXT_SECONDARY, color::SURFACE_CONTROL)
                 };
                 txt(
                     k.cx,
@@ -1113,7 +1153,7 @@ pub(crate) fn requests_page(k: &Kit, i: &SeerrRequestsInfo, tabs: &[HubTab]) -> 
                 k.cx,
                 "Lade …",
                 weight(k.lk.body, 15.0, 400),
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 Some(1),
             )
             .padding(ins(24.0, edge, 0.0, edge)),
@@ -1145,7 +1185,12 @@ pub(crate) fn requests_page(k: &Kit, i: &SeerrRequestsInfo, tabs: &[HubTab]) -> 
             .padding(ins(16.0, edge, 0.0, edge)),
         ),
     }
-    Node::vstack(Align::Start, Some(0.0), kids)
+    let sheet = match over {
+        (AdminPane::Decline { title, .. }, _) => Some(decline_sheet(k, title)),
+        (AdminPane::Request(id), card) => Some(request_card_sheet(k, card, *id)),
+        (AdminPane::List, _) => None,
+    };
+    (Node::vstack(Align::Start, Some(0.0), kids), sheet)
 }
 
 // ---- the home block -------------------------------------------------------------------------------------------------
@@ -1204,21 +1249,24 @@ pub(crate) fn home_block(
                             k.cx,
                             &a.title,
                             weight(k.lk.body, 15.0, 600),
-                            colour::FONT,
+                            color::TEXT_PRIMARY,
                             Some(1),
                         ),
                         txt(
                             k.cx,
                             &a.detail,
                             weight(k.lk.body, 14.0, 400),
-                            colour::FONT_QUIET,
+                            color::TEXT_SECONDARY,
                             Some(1),
                         ),
                     ],
                 )
                 .frame(Some((inner - 32.0).max(0.0)), None, Alignment::LEADING)
                 .padding(ins(12.0, 16.0, 12.0, 16.0))
-                .background(Node::rect(color(colour::AREA), 12.0), Alignment::CENTER)
+                .background(
+                    Node::rect(color(color::SURFACE_CONTROL), 12.0),
+                    Alignment::CENTER,
+                )
                 .padding(ins(0.0, edge, 0.0, edge)),
                 "attention",
                 12.0,
@@ -1297,7 +1345,7 @@ fn arrival_card(
     skeleton: bool,
     tv: bool,
 ) -> Node {
-    let tone = crate::detail_screen::rgba(colour::FONT, 0.10);
+    let tone = crate::detail_screen::rgba(color::TEXT_PRIMARY, 0.10);
     let bar =
         |w: f32, h: f32| Node::rect(tone, h / 2.0).frame(Some(w), Some(h), Alignment::LEADING);
     let text_w = (inner - 330.0).clamp(80.0, 520.0);
@@ -1332,7 +1380,7 @@ fn arrival_card(
             k.cx,
             &a.line,
             weight(k.lk.body, 16.0, 600),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(2),
         )
         .frame(Some(text_w), None, Alignment::LEADING);
@@ -1343,12 +1391,12 @@ fn arrival_card(
                     k.cx,
                     &n.to_string(),
                     weight(k.lk.body, 13.0, 600),
-                    colour::FONT_QUIET,
+                    color::TEXT_SECONDARY,
                     Some(1),
                 )
                 .padding(ins(4.0, 10.0, 4.0, 10.0))
                 .background(
-                    Node::rect(crate::detail_screen::rgba(colour::FONT, 0.10), 999.0),
+                    Node::rect(crate::detail_screen::rgba(color::TEXT_PRIMARY, 0.10), 999.0),
                     Alignment::CENTER,
                 ),
             );
@@ -1358,18 +1406,21 @@ fn arrival_card(
                 k.cx,
                 "Abspielen",
                 weight(k.lk.body, 14.0, 600),
-                colour::REASON,
+                color::SURFACE_BASE,
                 Some(1),
             )
             .padding(ins(8.0, 16.0, 8.0, 16.0))
-            .background(Node::rect(color(colour::FONT), 10.0), Alignment::CENTER),
+            .background(
+                Node::rect(color(color::TEXT_PRIMARY), 10.0),
+                Alignment::CENTER,
+            ),
             &format!("arrival-play:{id}"),
             10.0,
             tv,
         ));
         tail.push(arrival_control(
             k.icons
-                .node("x", 16.0, true, color(colour::FONT_QUIET))
+                .node("x", 16.0, true, color(color::TEXT_SECONDARY))
                 .frame(Some(32.0), Some(32.0), Alignment::CENTER)
                 .a11y_label(swiftly_ui::a11y::Role::Button, "Ausblenden"),
             &format!("arrival-dismiss:{id}"),
@@ -1394,7 +1445,10 @@ fn arrival_card(
     Node::hstack(Align::Center, Some(14.0), row)
         .frame(Some((inner - 28.0).max(0.0)), None, Alignment::LEADING)
         .padding(ins(12.0, 16.0, 12.0, 12.0))
-        .background(Node::rect(color(colour::AREA), 14.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_CONTROL), 14.0),
+            Alignment::CENTER,
+        )
 }
 
 /// The arrivals as the core's `ArrivalDeck` says: one card is a plain banner; several are a notification stack, closed
@@ -1447,12 +1501,12 @@ fn arrival_stack(
                         k.cx,
                         "Weniger anzeigen",
                         weight(k.lk.body, 13.0, 600),
-                        colour::FONT_QUIET,
+                        color::TEXT_SECONDARY,
                         Some(1),
                     )
                     .padding(ins(6.0, 14.0, 6.0, 14.0))
                     .background(
-                        Node::rect(crate::detail_screen::rgba(colour::FONT, 0.10), 999.0),
+                        Node::rect(crate::detail_screen::rgba(color::TEXT_PRIMARY, 0.10), 999.0),
                         Alignment::CENTER,
                     ),
                     "arrival-collapse",
@@ -1493,9 +1547,9 @@ fn arrival_stack(
             let shade = if pending { 0.06 } else { 0.10 } * depth as f32;
             let y = ARRIVAL_CARD_H + PEEK_GAP + (depth - 1) as f32 * (PEEK_HEIGHT + PEEK_GAP);
             layers.push(
-                Node::rect(color(colour::AREA), 8.0)
+                Node::rect(color(color::SURFACE_CONTROL), 8.0)
                     .overlay(
-                        Node::rect(crate::detail_screen::rgba(colour::FONT, shade), 8.0),
+                        Node::rect(crate::detail_screen::rgba(color::TEXT_PRIMARY, shade), 8.0),
                         Alignment::CENTER,
                     )
                     .frame(
@@ -1669,6 +1723,7 @@ impl PageScreen {
             _ => Body::Requests(
                 Box::new(side.desk.lists().requests()),
                 side.hub_tabs(crate::management_hub::Dest::Requests),
+                Box::new(side.admin.pane()),
             ),
         })
     }
@@ -1740,6 +1795,10 @@ impl PageScreen {
                     return true;
                 }
             }
+            // An open card (and its sure-question) takes its own taps: verbs, close, decline.
+            if side.admin.pane().0 != AdminPane::List && side.admin.tap(&desk, a) {
+                return true;
+            }
             for (n, r) in info.rows.iter().enumerate() {
                 if is(&format!("withdraw:{}", r.id)) {
                     let id = r.id;
@@ -1748,16 +1807,9 @@ impl PageScreen {
                     });
                     return true;
                 }
+                // The Mac opens the request's card here (`RequestDetailView`), not the title page.
                 if is(&format!("row:{n}")) {
-                    self.seerr_tapped = Some(SeerrHit {
-                        id: r.tmdb,
-                        art: r.art.clone(),
-                        title: r.title.clone(),
-                        year: r.year,
-                        poster_path: r.poster.clone(),
-                        backdrop_path: None,
-                        state: SeerrState::Opened,
-                    });
+                    side.admin.open_mine(&desk, r.id);
                     return true;
                 }
             }
@@ -1918,14 +1970,14 @@ impl PageScreen {
 /// A verb of a queue row ("Freigeben", "Ablehnen", "Nochmal"); `warn` paints the declining one in the warning colour.
 fn verb_pill(k: &Kit, label: &str, key: &str, warn: bool) -> Node {
     let fg = if warn {
-        colour::ORIGINAL_WARNING
+        color::STATE_WARNING
     } else {
-        colour::MARK_ACCENT
+        crate::look_glow::accent()
     };
     txt(k.cx, label, weight(k.lk.small, 13.0, 600), fg, Some(1))
         .padding(ins(7.0, 14.0, 7.0, 14.0))
         .background(
-            Node::rect(rgba(colour::FONT, 0.10), 16.0),
+            Node::rect(rgba(color::TEXT_PRIMARY, 0.10), 16.0),
             Alignment::CENTER,
         )
         .key(key)
@@ -1941,9 +1993,9 @@ fn capsules(k: &Kit, items: &[(String, bool)], prefix: &str) -> Node {
         .map(|(n, (text, on))| {
             let key = format!("{prefix}:{n}");
             let (fg, bg) = if *on {
-                (colour::REASON, colour::FONT)
+                (color::SURFACE_BASE, color::TEXT_PRIMARY)
             } else {
-                (colour::FONT_QUIET, colour::AREA)
+                (color::TEXT_SECONDARY, color::SURFACE_CONTROL)
             };
             txt(k.cx, text, weight(k.lk.small, 13.0, 600), fg, Some(1))
                 .padding(ins(7.0, 14.0, 7.0, 14.0))
@@ -1956,29 +2008,36 @@ fn capsules(k: &Kit, items: &[(String, bool)], prefix: &str) -> Node {
     Node::hstack(Align::Center, Some(8.0), pills).padding(ins(14.0, k.lk.edge, 0.0, k.lk.edge))
 }
 
+/// The surface of a dialog card: `fill` with the hairline border.
+fn modal_surface(fill: swiftly_design::Colour) -> Node {
+    Node::flexible()
+        .paint(Paint::Fill {
+            color: color(fill),
+            radius: 16.0,
+        })
+        .paint(Paint::Stroke {
+            color: color(color::SURFACE_FOCUS),
+            width: 1.0,
+            radius: 16.0,
+        })
+}
+
 /// A card in the middle of the page over a dimmed catcher (a tap outside is `sheet-close`).
-fn modal(k: &Kit, kids: Vec<Node>) -> Node {
+fn modal_over(k: &Kit, card: Node) -> Node {
     let (w, h) = (k.env.size.w, k.env.size.h);
-    let card = Node::vstack(Align::Start, Some(12.0), kids)
-        .padding(ins(20.0, 20.0, 20.0, 20.0))
-        .background(
-            Node::flexible()
-                .paint(Paint::Fill {
-                    color: color(colour::RAISED),
-                    radius: 16.0,
-                })
-                .paint(Paint::Stroke {
-                    color: color(colour::MARGIN),
-                    width: 1.0,
-                    radius: 16.0,
-                }),
-            Alignment::CENTER,
-        )
-        .key("seerr-sheet");
     let catcher = Node::rect(Color::new(0.0, 0.0, 0.0, 0.45), 0.0)
         .on_tap_silent(Action::from("sheet-close"))
         .key("sheet-catcher");
     Node::zstack(Alignment::CENTER, vec![catcher, card]).frame(Some(w), Some(h), Alignment::CENTER)
+}
+
+/// A dialog card with its kids stacked, in the middle of the page.
+fn modal(k: &Kit, kids: Vec<Node>) -> Node {
+    let card = Node::vstack(Align::Start, Some(12.0), kids)
+        .padding(ins(20.0, 20.0, 20.0, 20.0))
+        .background(modal_surface(color::SURFACE_RAISED), Alignment::CENTER)
+        .key("seerr-sheet");
+    modal_over(k, card)
 }
 
 /// The pane of the administrator page that lies over the list: nothing, a request's card or the decline question.
@@ -1988,8 +2047,27 @@ pub(crate) enum AdminPane {
     List,
     /// A request's card (its lines come from the core when they arrive).
     Request(i64),
-    /// "Anfrage ablehnen?" for this request.
-    Decline { id: i64, title: String },
+    /// "Anfrage ablehnen?" for this request; from the card it goes back to the card (the Mac's sheet lies over it).
+    Decline {
+        id: i64,
+        title: String,
+        from_card: bool,
+    },
+}
+
+/// The card of an open request: being read, read, or not readable (never "Lade ..." for a read that failed).
+#[derive(Clone, PartialEq, Default)]
+pub(crate) enum CardState {
+    #[default]
+    Loading,
+    Ready(Box<swiftly_vm::SeerrRequestCard>),
+    Failed,
+}
+
+impl From<Option<swiftly_vm::SeerrRequestCard>> for CardState {
+    fn from(read: Option<swiftly_vm::SeerrRequestCard>) -> CardState {
+        read.map_or(CardState::Failed, |c| CardState::Ready(Box::new(c)))
+    }
 }
 
 /// Everything the administrator page draws.
@@ -2002,16 +2080,48 @@ pub(crate) struct AdminBody {
     pub(crate) queue: SeerrRequestsInfo,
     pub(crate) issues: swiftly_vm::SeerrIssuesInfo,
     pub(crate) pane: AdminPane,
-    pub(crate) card: Option<swiftly_vm::SeerrRequestCard>,
+    pub(crate) card: CardState,
     /// The open problem with its thread (the core keeps which one).
     pub(crate) issue: Option<swiftly_vm::SeerrIssueDetail>,
+    /// The reply field under the thread (its text, caret and blink) and whether a reply is on its way.
+    pub(crate) reply: swiftly_ui::field::FieldView,
+    pub(crate) reply_state: ReplyState,
 }
 
-#[derive(Default)]
+/// The reply under an open problem: being written, or on its way to Seerr (the field and "Senden" wait meanwhile).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(crate) enum ReplyState {
+    #[default]
+    Writing,
+    Sending,
+}
+
 struct AdminSt {
     tab: Option<swiftly_vm::AdminTab>,
     pane: AdminPane,
-    card: Option<swiftly_vm::SeerrRequestCard>,
+    card: CardState,
+    /// The open card came from "Meine Anfragen" (its row can withdraw; the queue's cannot).
+    mine: bool,
+    /// The reply field; one editor, reset when another problem opens or the thread closes.
+    reply: swiftly_ui::field::FieldState,
+    reply_for: Option<i64>,
+    reply_state: ReplyState,
+    now: f64,
+}
+
+impl Default for AdminSt {
+    fn default() -> AdminSt {
+        AdminSt {
+            tab: None,
+            pane: AdminPane::default(),
+            card: CardState::Loading,
+            mine: false,
+            reply: swiftly_ui::field::FieldState::new(swiftly_text::TextEditor::single_line()),
+            reply_for: None,
+            reply_state: ReplyState::Writing,
+            now: 0.0,
+        }
+    }
 }
 
 /// What the page keeps besides the core's states: the tab, the pane over the list and the card of the open request.
@@ -2032,7 +2142,15 @@ impl AdminUi {
         hub: impl Fn(crate::management_hub::Dest) -> Vec<HubTab>,
     ) -> AdminBody {
         let tabs = admin.tabs();
-        let st = held(&self.st);
+        let mut st = held(&self.st);
+        let issue = admin.issue_detail(false);
+        // Another problem (or none) means a fresh, unfocused field.
+        let open = issue.as_ref().map(|d| d.row.id);
+        if st.reply_for != open {
+            st.reply_for = open;
+            st.reply = swiftly_ui::field::FieldState::new(swiftly_text::TextEditor::single_line());
+            st.reply_state = ReplyState::Writing;
+        }
         let tab = st
             .tab
             .filter(|t| tabs.iter().any(|x| x.tab == *t))
@@ -2051,8 +2169,108 @@ impl AdminUi {
             issues: admin.issues(),
             pane: st.pane.clone(),
             card: st.card.clone(),
-            issue: admin.issue_detail(false),
+            issue,
+            reply: st.reply.view("Antwort schreiben \u{2026}", false, st.now),
+            reply_state: st.reply_state,
         }
+    }
+
+    /// The clock of the caret's blink (the page's frame time).
+    pub(crate) fn set_now(&self, now: f64) {
+        held(&self.st).now = now;
+    }
+
+    /// The pane over "Meine Anfragen" (the same state the administrator page keeps: one card, one sure-question).
+    pub(crate) fn pane(&self) -> (AdminPane, CardState) {
+        let st = held(&self.st);
+        (st.pane.clone(), st.card.clone())
+    }
+
+    /// A row of "Meine Anfragen" opens its card; the card is read from the account's own list so it can withdraw.
+    pub(crate) fn open_mine(&self, desk: &crate::seerr_desk::Desk, id: i64) {
+        {
+            let mut st = held(&self.st);
+            st.pane = AdminPane::Request(id);
+            st.card = CardState::Loading;
+            st.mine = true;
+        }
+        let slot = std::sync::Arc::clone(&self.st);
+        let admin = std::sync::Arc::clone(desk.admin());
+        let lists = std::sync::Arc::clone(desk.lists());
+        desk.run(async move {
+            reread(&slot, &admin, &lists, id, true).await;
+        });
+    }
+
+    /// Whether the reply field has the keyboard.
+    pub(crate) fn wants_text(&self) -> bool {
+        let st = held(&self.st);
+        st.reply.focused && st.reply_for.is_some()
+    }
+
+    /// Takes the keyboard away from the reply field.
+    pub(crate) fn blur(&self) {
+        let mut st = held(&self.st);
+        let now = st.now;
+        st.reply.set_focused(false, now);
+    }
+
+    /// One text-input event into the reply field: `None` when it has no keyboard, else whether Return was pressed.
+    fn feed(&self, ev: &swiftly_text::TextInputEvent) -> Option<bool> {
+        let mut st = held(&self.st);
+        if !(st.reply.focused && st.reply_for.is_some()) {
+            return None;
+        }
+        if st.reply_state == ReplyState::Sending {
+            return Some(false);
+        }
+        let now = st.now;
+        let mut clip = crate::field_book::SystemClipboard;
+        Some(st.reply.apply(ev, &mut clip, now).submitted)
+    }
+
+    /// One text-input event for the reply field; Return sends. Returns whether the field took it.
+    pub(crate) fn edit(
+        &self,
+        desk: &crate::seerr_desk::Desk,
+        ev: &swiftly_text::TextInputEvent,
+    ) -> bool {
+        let Some(submitted) = self.feed(ev) else {
+            return false;
+        };
+        if submitted {
+            self.send(desk);
+        }
+        true
+    }
+
+    /// The text written so far (tests).
+    pub(crate) fn reply_text(&self) -> String {
+        held(&self.st).reply.editor.text().to_owned()
+    }
+
+    /// Posts the written reply through the core; the field clears when it went through (the core's error line shows
+    /// otherwise and the text stays for another try).
+    pub(crate) fn send(&self, desk: &crate::seerr_desk::Desk) {
+        let admin = std::sync::Arc::clone(desk.admin());
+        let text = {
+            let mut st = held(&self.st);
+            let text = st.reply.editor.text().trim().to_owned();
+            if text.is_empty() || st.reply_state == ReplyState::Sending {
+                return;
+            }
+            st.reply_state = ReplyState::Sending;
+            text
+        };
+        let slot = std::sync::Arc::clone(&self.st);
+        desk.run(async move {
+            let out = admin.reply(text).await;
+            let mut st = held(&slot);
+            st.reply_state = ReplyState::Writing;
+            if out.is_some_and(|d| d.error.is_none()) {
+                st.reply.editor.set_text("");
+            }
+        });
     }
 
     /// Chooses the tab (the management page's tab row).
@@ -2071,6 +2289,59 @@ impl AdminUi {
         let admin = std::sync::Arc::clone(desk.admin());
         let b = self.body(&admin, |_| Vec::new());
         let mut st = held(&self.st);
+        // The verbs of an open card keep the card (it reads again); "Zur\u{fc}ckziehen" is the one that leaves it.
+        if let AdminPane::Request(id) = st.pane.clone() {
+            let mine = st.mine;
+            if is(&format!("approve:{id}")) || is(&format!("retry:{id}")) {
+                let approve = is(&format!("approve:{id}"));
+                let slot = std::sync::Arc::clone(&self.st);
+                let lists = std::sync::Arc::clone(desk.lists());
+                desk.run(async move {
+                    let _ = if approve {
+                        admin.approve(id).await
+                    } else {
+                        admin.retry(id).await
+                    };
+                    reread(&slot, &admin, &lists, id, mine).await;
+                });
+                return true;
+            }
+            if is(&format!("decline:{id}")) {
+                let title = match &st.card {
+                    CardState::Ready(c) => c.row.title.clone(),
+                    _ => String::new(),
+                };
+                st.pane = AdminPane::Decline {
+                    id,
+                    title,
+                    from_card: true,
+                };
+                return true;
+            }
+            if is(&format!("withdraw:{id}")) {
+                st.pane = AdminPane::List;
+                st.card = CardState::Loading;
+                st.mine = false;
+                let lists = std::sync::Arc::clone(desk.lists());
+                desk.run(async move {
+                    let _ = lists.withdraw(id).await;
+                });
+                return true;
+            }
+        }
+        if is("reply-field") {
+            let now = st.now;
+            st.reply.set_focused(true, now);
+            return true;
+        }
+        if is("reply-send") {
+            drop(st);
+            self.send(desk);
+            return true;
+        }
+        // Any other tap takes the keyboard from the field.
+        let now = st.now;
+        st.reply.set_focused(false, now);
         if is("retry") {
             desk.run(async move {
                 let _ = admin.load_requests().await;
@@ -2079,19 +2350,42 @@ impl AdminUi {
             return true;
         }
         if is("sheet-close") {
-            if st.pane != AdminPane::List {
+            if let AdminPane::Decline {
+                id,
+                from_card: true,
+                ..
+            } = st.pane
+            {
+                // "Abbrechen" on the sure-question: back to the card under it.
+                st.pane = AdminPane::Request(id);
+            } else if st.pane != AdminPane::List {
                 st.pane = AdminPane::List;
-                st.card = None;
+                st.card = CardState::Loading;
+                if std::mem::take(&mut st.mine) {
+                    // The card may have changed the request: "Meine Anfragen" reads again (the Mac's `changed`).
+                    desk.load_requests();
+                }
             } else if b.issue.is_some() {
                 admin.close_issue();
             }
             return true;
         }
         if is("decline-confirm") {
-            if let AdminPane::Decline { id, .. } = st.pane.clone() {
-                st.pane = AdminPane::List;
+            if let AdminPane::Decline { id, from_card, .. } = st.pane.clone() {
+                // From the card the card stays and reads again; from the list the list shows the verdict.
+                let mine = st.mine;
+                st.pane = if from_card {
+                    AdminPane::Request(id)
+                } else {
+                    AdminPane::List
+                };
+                let slot = std::sync::Arc::clone(&self.st);
+                let lists = std::sync::Arc::clone(desk.lists());
                 desk.run(async move {
                     let _ = admin.decline(id).await;
+                    if from_card {
+                        reread(&slot, &admin, &lists, id, mine).await;
+                    }
                 });
             }
             return true;
@@ -2139,7 +2433,7 @@ impl AdminUi {
             if is(&format!("approve:{id}")) || is(&format!("retry:{id}")) {
                 let approve = is(&format!("approve:{id}"));
                 st.pane = AdminPane::List;
-                st.card = None;
+                st.card = CardState::Loading;
                 desk.run(async move {
                     let _ = if approve {
                         admin.approve(id).await
@@ -2153,21 +2447,63 @@ impl AdminUi {
                 st.pane = AdminPane::Decline {
                     id,
                     title: r.title.clone(),
+                    from_card: false,
                 };
                 return true;
             }
             if is(&format!("row:{n}")) {
                 st.pane = AdminPane::Request(id);
-                st.card = None;
+                st.card = CardState::Loading;
+                st.mine = false;
                 let slot = std::sync::Arc::clone(&self.st);
+                let lists = std::sync::Arc::clone(desk.lists());
                 desk.run(async move {
-                    let card = admin.request_detail(id).await;
-                    held(&slot).card = card;
+                    reread(&slot, &admin, &lists, id, false).await;
                 });
                 return true;
             }
         }
         false
+    }
+}
+
+/// "Anfrage ablehnen?": the sure-question over a request.
+fn decline_sheet(k: &Kit, title: &str) -> Node {
+    modal(
+        k,
+        vec![
+            modal_text(k, "Anfrage ablehnen?", 20.0, 700, color::TEXT_PRIMARY),
+            modal_text(k, title, 15.0, 600, color::TEXT_PRIMARY),
+            modal_text(
+                k,
+                "Wer sie gestellt hat, sieht nur \u{201e}Abgelehnt\u{201c}.",
+                13.0,
+                400,
+                color::TEXT_SECONDARY,
+            ),
+            modal_button(k, "Ablehnen", "decline-confirm", color::STATE_WARNING),
+            modal_button(k, "Abbrechen", "sheet-close", color::TEXT_SECONDARY),
+        ],
+    )
+}
+
+/// Reads the card of request `id` again (from the account's own list or the queue) and keeps it, if that card is still
+/// the open one.
+async fn reread(
+    slot: &std::sync::Mutex<AdminSt>,
+    admin: &crate::seerr_desk::Admin,
+    lists: &crate::seerr_desk::Lists,
+    id: i64,
+    mine: bool,
+) {
+    let read = if mine {
+        lists.request_detail(id).await
+    } else {
+        admin.request_detail(id).await
+    };
+    let mut st = held(slot);
+    if st.pane == AdminPane::Request(id) {
+        st.card = CardState::from(read);
     }
 }
 
@@ -2193,28 +2529,28 @@ fn issue_row(k: &Kit, r: &swiftly_vm::SeerrIssueRow) -> Node {
             k.cx,
             &r.title,
             weight(k.lk.body, 16.0, 600),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
         ),
         txt(
             k.cx,
             &place,
             weight(k.lk.small, 13.0, 500),
-            colour::MARK_ACCENT,
+            crate::look_glow::accent(),
             Some(1),
         ),
         txt(
             k.cx,
             &r.message,
             weight(k.lk.small, 12.0, 400),
-            colour::FONT_QUIET,
+            color::TEXT_SECONDARY,
             Some(2),
         ),
         txt(
             k.cx,
             &who,
             weight(k.lk.small, 12.0, 400),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(1),
         ),
     ];
@@ -2227,14 +2563,299 @@ fn issue_row(k: &Kit, r: &swiftly_vm::SeerrIssueRow) -> Node {
         ],
     )
     .padding(ins(10.0, 14.0, 10.0, 14.0))
-    .background(Node::rect(color(colour::AREA), 12.0), Alignment::CENTER)
+    .background(
+        Node::rect(color(color::SURFACE_CONTROL), 12.0),
+        Alignment::CENTER,
+    )
     .key(key.as_str())
     .on_tap(Action::from(key.as_str()))
-    .hover_surface(rgba(colour::FONT, 0.06), 12.0)
+    .hover_surface(rgba(color::TEXT_PRIMARY, 0.06), 12.0)
     .a11y_label(
         swiftly_ui::a11y::Role::Button,
         format!("{}, {}", r.title, place),
     )
+}
+
+/// The reply field with its "Senden" under the thread (as the Mac's Verwaltung): one line in a calm box, the pill
+/// quiet while there is nothing to send or a reply is on its way.
+fn reply_row(k: &Kit, b: &AdminBody) -> Node {
+    let look = swiftly_ui::field::FieldLook {
+        style: swiftly_text::TextStyle::from(weight(k.lk.body, 15.0, 400)),
+        text: color(color::TEXT_PRIMARY),
+        placeholder: color(color::TEXT_TERTIARY),
+        caret: color(color::ACCENT_SELECTION),
+        selection: color(color::ACCENT_SELECTION).with_alpha(0.30),
+        caret_height: Some(18.0),
+    };
+    let field = Node::hstack(
+        Align::Center,
+        Some(0.0),
+        vec![
+            swiftly_ui::field::field_content(k.cx, &b.reply, &look),
+            Node::spacer(),
+        ],
+    )
+    .padding(ins(10.0, 14.0, 10.0, 14.0))
+    .frame(Some(330.0), None, Alignment::LEADING)
+    .background(
+        Node::rect(color(color::SURFACE_CONTROL), 12.0),
+        Alignment::CENTER,
+    )
+    .key("reply-field")
+    .on_tap(Action::from("reply-field"))
+    .a11y(swiftly_ui::a11y::A11yNode::new(
+        "reply-field",
+        swiftly_ui::a11y::Role::TextField,
+        "Antwort schreiben \u{2026}",
+    ));
+    let ready = !b.reply.display.text.trim().is_empty() && b.reply_state == ReplyState::Writing;
+    let send = txt(
+        k.cx,
+        "Senden",
+        weight(k.lk.small, 13.0, 600),
+        if ready {
+            color::ACCENT_SELECTION
+        } else {
+            color::TEXT_TERTIARY
+        },
+        Some(1),
+    )
+    .padding(ins(7.0, 14.0, 7.0, 14.0))
+    .background(
+        Node::rect(rgba(color::TEXT_PRIMARY, 0.10), 16.0),
+        Alignment::CENTER,
+    )
+    .key("reply-send")
+    .on_tap(Action::from("reply-send"))
+    .a11y_label(swiftly_ui::a11y::Role::Button, "Senden".to_owned());
+    Node::hstack(Align::Center, Some(8.0), vec![field, send])
+}
+
+/// The width of the request card (the Mac shows `RequestDetailView` in a 480 pt window sheet).
+const CARD_WIDTH: f32 = 480.0;
+const CARD_SIDE: f32 = 20.0;
+
+/// `RequestDetailView`: the poster (80 x 120) beside the title (20 bold, up to three lines), the kind line (13) and the state
+/// line (14 medium, with the bar while it downloads), one card of label / value rows (15; 13 above and below, hairlines from 16)
+/// and the verbs the core allows, as full-width buttons. The close button sits top right, as the sheet's X on the Mac.
+fn request_card(k: &Kit, c: &swiftly_vm::SeerrRequestCard, id: i64) -> Node {
+    let r = &c.row;
+    let poster = k
+        .art
+        .node_for(
+            remote(r.poster.as_deref(), swiftly_vm::ImageKind::Poster, 185, 278).as_ref(),
+            false,
+            &r.title,
+            80.0,
+            120.0,
+            8.0,
+        )
+        .frame(Some(80.0), Some(120.0), Alignment::CENTER);
+    let text_w = CARD_WIDTH - 2.0 * CARD_SIDE - 80.0 - 14.0;
+    let art = if r.art == "tv" { "Serie" } else { "Film" };
+    let kind = [Some(art), r.detail.as_deref()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" \u{b7} ");
+    let mut col = vec![
+        txt(
+            k.cx,
+            &r.title,
+            weight(k.lk.body, 20.0, 700),
+            color::TEXT_PRIMARY,
+            Some(3),
+        )
+        .frame(Some(text_w), None, Alignment::LEADING),
+        txt(
+            k.cx,
+            &kind,
+            weight(k.lk.small, 13.0, 400),
+            color::TEXT_TERTIARY,
+            Some(1),
+        )
+        .frame(Some(text_w), None, Alignment::LEADING),
+        txt(
+            k.cx,
+            &r.badge.line,
+            weight(k.lk.body, 14.0, 500),
+            badge_colour(r.badge.kind),
+            Some(2),
+        )
+        .frame(Some(text_w), None, Alignment::LEADING)
+        .padding(ins(2.0, 0.0, 0.0, 0.0)),
+    ];
+    if let Some(p) = r.badge.progress {
+        col.push(progress_bar(p, text_w).padding(ins(4.0, 0.0, 0.0, 0.0)));
+    }
+    let head = Node::hstack(
+        Align::Start,
+        Some(14.0),
+        vec![poster, Node::vstack(Align::Start, Some(4.0), col)],
+    )
+    .padding(ins(0.0, CARD_SIDE, 0.0, CARD_SIDE));
+    let inner = CARD_WIDTH - 2.0 * CARD_SIDE;
+    let mut lines = vec![];
+    for (n, row) in c.rows.iter().enumerate() {
+        if n > 0 {
+            lines.push(
+                Node::rect(rgba(color::TEXT_PRIMARY, 0.08), 0.0)
+                    .frame(Some(inner - 16.0), Some(1.0), Alignment::CENTER)
+                    .padding(ins(0.0, 16.0, 0.0, 0.0)),
+            );
+        }
+        lines.push(
+            Node::hstack(
+                Align::Center,
+                Some(12.0),
+                vec![
+                    txt(
+                        k.cx,
+                        &row.label,
+                        weight(k.lk.body, 15.0, 400),
+                        color::TEXT_SECONDARY,
+                        Some(2),
+                    ),
+                    Node::spacer(),
+                    txt(
+                        k.cx,
+                        &row.value,
+                        weight(k.lk.body, 15.0, 400),
+                        color::TEXT_PRIMARY,
+                        Some(3),
+                    ),
+                ],
+            )
+            .padding(ins(13.0, 16.0, 13.0, 16.0))
+            .frame(Some(inner), None, Alignment::LEADING),
+        );
+    }
+    let mut kids = vec![head];
+    if !lines.is_empty() {
+        kids.push(
+            Node::vstack(Align::Start, Some(0.0), lines)
+                .frame(Some(inner), None, Alignment::LEADING)
+                .background(
+                    Node::rect(color(color::SURFACE_RAISED), 12.0),
+                    Alignment::CENTER,
+                )
+                .padding(ins(0.0, CARD_SIDE, 0.0, CARD_SIDE)),
+        );
+    }
+    let verb = |label: &str, key: String, primary: bool| {
+        txt(
+            k.cx,
+            label,
+            weight(k.lk.body, 15.0, 600),
+            if primary {
+                color::SURFACE_BASE
+            } else {
+                color::TEXT_PRIMARY
+            },
+            Some(1),
+        )
+        .frame(Some(inner), Some(44.0), Alignment::CENTER)
+        .background(
+            Node::rect(
+                color(if primary {
+                    color::TEXT_PRIMARY
+                } else {
+                    color::SURFACE_RAISED
+                }),
+                10.0,
+            ),
+            Alignment::CENTER,
+        )
+        .key(key.as_str())
+        .on_tap(Action::from(key.as_str()))
+        .hover_surface(
+            rgba(
+                if primary {
+                    color::SURFACE_BASE
+                } else {
+                    color::TEXT_PRIMARY
+                },
+                0.10,
+            ),
+            10.0,
+        )
+        .press_style(PressStyle::Button)
+        .a11y_label(swiftly_ui::a11y::Role::Button, label.to_owned())
+        .padding(ins(0.0, CARD_SIDE, 0.0, CARD_SIDE))
+    };
+    let mut verbs = vec![];
+    if r.can_approve {
+        verbs.push(verb("Freigeben", format!("approve:{id}"), true));
+    }
+    if r.can_retry {
+        verbs.push(verb("Nochmal", format!("retry:{id}"), true));
+    }
+    if r.can_decline {
+        verbs.push(verb("Ablehnen", format!("decline:{id}"), false));
+    }
+    if r.can_withdraw {
+        verbs.push(verb("Zur\u{fc}ckziehen", format!("withdraw:{id}"), false));
+    }
+    if !verbs.is_empty() {
+        kids.push(Node::vstack(Align::Start, Some(10.0), verbs));
+    }
+    Node::vstack(Align::Start, Some(18.0), kids).padding(ins(36.0, 0.0, 24.0, 0.0))
+}
+
+/// The card over a dimmed catcher: the Mac's sheet background (`area`), the 28 pt close circle top right.
+fn request_card_sheet(k: &Kit, card: &CardState, id: i64) -> Node {
+    let room = CARD_WIDTH - 2.0 * CARD_SIDE;
+    let body = match card {
+        CardState::Loading => modal_text(k, "Lade \u{2026}", 15.0, 400, color::TEXT_TERTIARY)
+            .frame(Some(room), Some(160.0), Alignment::CENTER),
+        // `RequestDetailView`: "Seerr antwortet gerade nicht" over the line that names the request.
+        CardState::Failed => Node::vstack(
+            Align::Center,
+            Some(8.0),
+            vec![
+                modal_text(
+                    k,
+                    "Seerr antwortet gerade nicht",
+                    17.0,
+                    600,
+                    color::TEXT_PRIMARY,
+                ),
+                modal_text(
+                    k,
+                    "Diese Anfrage l\u{e4}sst sich gerade nicht lesen.",
+                    14.0,
+                    400,
+                    color::TEXT_SECONDARY,
+                ),
+            ],
+        )
+        .frame(Some(room), Some(160.0), Alignment::CENTER),
+        CardState::Ready(c) => request_card(k, c, id),
+    };
+    let close = k
+        .icons
+        .node("x", 12.0, true, color(color::TEXT_SECONDARY))
+        .frame(Some(28.0), Some(28.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_RAISED), 14.0),
+            Alignment::CENTER,
+        )
+        .key("sheet-close")
+        .on_tap(Action::from("sheet-close"))
+        .hover_surface(rgba(color::TEXT_PRIMARY, 0.08), 14.0)
+        .press_style(PressStyle::Button)
+        .a11y_label(swiftly_ui::a11y::Role::Button, "Schlie\u{df}en".to_owned())
+        .padding(ins(12.0, 12.0, 12.0, 12.0));
+    let card = Node::zstack(
+        Alignment::TOP_TRAILING,
+        vec![
+            body.frame(Some(CARD_WIDTH), None, Alignment::TOP_LEADING),
+            close,
+        ],
+    )
+    .background(modal_surface(color::SURFACE_CONTROL), Alignment::CENTER)
+    .key("seerr-sheet");
+    modal_over(k, card)
 }
 
 fn modal_text(k: &Kit, text: &str, size: f32, w: u16, c: swiftly_design::Colour) -> Node {
@@ -2297,7 +2918,7 @@ pub(crate) fn admin_page(k: &Kit, b: &AdminBody) -> (Node, Option<Node>) {
                     k.cx,
                     "Lade …",
                     weight(k.lk.body, 15.0, 400),
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     Some(1),
                 )
                 .padding(ins(24.0, edge, 0.0, edge)),
@@ -2343,7 +2964,7 @@ pub(crate) fn admin_page(k: &Kit, b: &AdminBody) -> (Node, Option<Node>) {
                     k.cx,
                     "Lade …",
                     weight(k.lk.body, 15.0, 400),
-                    colour::FONT_VERY_QUIET,
+                    color::TEXT_TERTIARY,
                     Some(1),
                 )
                 .padding(ins(24.0, edge, 0.0, edge)),
@@ -2373,89 +2994,8 @@ pub(crate) fn admin_page(k: &Kit, b: &AdminBody) -> (Node, Option<Node>) {
         }
     }
     let sheet = match (&b.pane, &b.issue) {
-        (AdminPane::Decline { title, .. }, _) => Some(modal(
-            k,
-            vec![
-                modal_text(k, "Anfrage ablehnen?", 20.0, 700, colour::FONT),
-                modal_text(k, title, 15.0, 600, colour::FONT),
-                modal_text(
-                    k,
-                    "Wer sie gestellt hat, sieht nur \u{201e}Abgelehnt\u{201c}.",
-                    13.0,
-                    400,
-                    colour::FONT_QUIET,
-                ),
-                modal_button(k, "Ablehnen", "decline-confirm", colour::ORIGINAL_WARNING),
-                modal_button(k, "Abbrechen", "sheet-close", colour::FONT_QUIET),
-            ],
-        )),
-        (AdminPane::Request(id), _) => {
-            let mut sheet = vec![];
-            match &b.card {
-                None => sheet.push(modal_text(k, "Lade …", 15.0, 400, colour::FONT_VERY_QUIET)),
-                Some(c) => {
-                    sheet.push(modal_text(k, &c.row.title, 20.0, 700, colour::FONT));
-                    sheet.push(modal_text(
-                        k,
-                        &c.row.badge.line,
-                        14.0,
-                        500,
-                        badge_colour(c.row.badge.kind),
-                    ));
-                    for r in &c.rows {
-                        sheet.push(
-                            Node::hstack(
-                                Align::Center,
-                                Some(10.0),
-                                vec![
-                                    txt(
-                                        k.cx,
-                                        &r.label,
-                                        weight(k.lk.body, 14.0, 500),
-                                        colour::FONT_QUIET,
-                                        Some(1),
-                                    ),
-                                    Node::spacer(),
-                                    txt(
-                                        k.cx,
-                                        &r.value,
-                                        weight(k.lk.body, 14.0, 400),
-                                        colour::FONT,
-                                        Some(1),
-                                    ),
-                                ],
-                            )
-                            .frame(
-                                Some(420.0),
-                                Some(30.0),
-                                Alignment::LEADING,
-                            ),
-                        );
-                    }
-                    let verbs: Vec<Node> = [
-                        (c.row.can_approve, "Freigeben", "approve", false),
-                        (c.row.can_decline, "Ablehnen", "decline", true),
-                        (c.row.can_retry, "Nochmal", "retry", false),
-                    ]
-                    .into_iter()
-                    .filter(|v| v.0)
-                    .map(|(_, label, verb, warn)| {
-                        verb_pill(k, label, &format!("{verb}:{id}"), warn)
-                    })
-                    .collect();
-                    if !verbs.is_empty() {
-                        sheet.push(Node::hstack(Align::Center, Some(8.0), verbs));
-                    }
-                }
-            }
-            sheet.push(modal_button(
-                k,
-                "Schließen",
-                "sheet-close",
-                colour::FONT_QUIET,
-            ));
-            Some(modal(k, sheet))
-        }
+        (AdminPane::Decline { title, .. }, _) => Some(decline_sheet(k, title)),
+        (AdminPane::Request(id), _) => Some(request_card_sheet(k, &b.card, *id)),
         (AdminPane::List, Some(d)) => {
             let place = [
                 Some(d.row.kind_word.as_str()),
@@ -2467,13 +3007,13 @@ pub(crate) fn admin_page(k: &Kit, b: &AdminBody) -> (Node, Option<Node>) {
             .collect::<Vec<_>>()
             .join(" \u{b7} ");
             let mut sheet = vec![
-                modal_text(k, &d.row.title, 20.0, 700, colour::FONT),
+                modal_text(k, &d.row.title, 20.0, 700, color::TEXT_PRIMARY),
                 modal_text(
                     k,
                     &format!("{place} \u{b7} {}", d.row.status_word),
                     13.0,
                     500,
-                    colour::MARK_ACCENT,
+                    crate::look_glow::accent(),
                 ),
             ];
             for m in &d.messages {
@@ -2496,21 +3036,27 @@ pub(crate) fn admin_page(k: &Kit, b: &AdminBody) -> (Node, Option<Node>) {
                                 12.0,
                                 600,
                                 if m.mine {
-                                    colour::MARK_ACCENT
+                                    crate::look_glow::accent()
                                 } else {
-                                    colour::FONT_QUIET
+                                    color::TEXT_SECONDARY
                                 },
                             ),
-                            modal_text(k, &m.text, 14.0, 400, colour::FONT),
+                            modal_text(k, &m.text, 14.0, 400, color::TEXT_PRIMARY),
                         ],
                     )
                     .padding(ins(8.0, 12.0, 8.0, 12.0))
-                    .background(Node::rect(color(colour::AREA), 10.0), Alignment::CENTER)
+                    .background(
+                        Node::rect(color(color::SURFACE_CONTROL), 10.0),
+                        Alignment::CENTER,
+                    )
                     .key(format!("msg:{}", m.id).as_str()),
                 );
             }
             if let Some(e) = &d.error {
-                sheet.push(modal_text(k, e, 13.0, 400, colour::ORIGINAL_WARNING));
+                sheet.push(modal_text(k, e, 13.0, 400, color::STATE_WARNING));
+            }
+            if d.can_reply {
+                sheet.push(reply_row(k, b));
             }
             let mut verbs = vec![];
             if d.can_resolve {
@@ -2526,11 +3072,69 @@ pub(crate) fn admin_page(k: &Kit, b: &AdminBody) -> (Node, Option<Node>) {
                 k,
                 "Schließen",
                 "sheet-close",
-                colour::FONT_QUIET,
+                color::TEXT_SECONDARY,
             ));
             Some(modal(k, sheet))
         }
         _ => None,
     };
     (Node::vstack(Align::Start, Some(0.0), kids), sheet)
+}
+
+#[cfg(test)]
+mod reply_tests {
+    use super::*;
+
+    #[test]
+    fn a_card_that_could_not_be_read_is_failed_not_loading() {
+        assert!(matches!(CardState::from(None), CardState::Failed));
+        assert!(matches!(CardState::default(), CardState::Loading));
+    }
+
+    fn open_thread(ui: &AdminUi) {
+        let mut st = held(&ui.st);
+        st.reply_for = Some(7);
+        st.reply.set_focused(true, 0.0);
+    }
+
+    #[test]
+    fn typed_text_lands_in_the_reply_and_return_asks_to_send() {
+        let ui = AdminUi::default();
+        assert_eq!(
+            ui.feed(&swiftly_text::TextInputEvent::Text("x".into())),
+            None
+        );
+        open_thread(&ui);
+        assert!(ui.wants_text());
+        assert_eq!(
+            ui.feed(&swiftly_text::TextInputEvent::Text("Hallo".into())),
+            Some(false)
+        );
+        assert_eq!(ui.reply_text(), "Hallo");
+        let enter = swiftly_text::TextInputEvent::Key(
+            swiftly_text::EditKey::Enter,
+            swiftly_text::Mods::NONE,
+        );
+        assert_eq!(ui.feed(&enter), Some(true));
+    }
+
+    #[test]
+    fn nothing_is_typed_while_a_reply_is_on_its_way() {
+        let ui = AdminUi::default();
+        open_thread(&ui);
+        held(&ui.st).reply_state = ReplyState::Sending;
+        assert_eq!(
+            ui.feed(&swiftly_text::TextInputEvent::Text("x".into())),
+            Some(false)
+        );
+        assert_eq!(ui.reply_text(), "");
+    }
+
+    #[test]
+    fn blur_takes_the_keyboard() {
+        let ui = AdminUi::default();
+        open_thread(&ui);
+        ui.blur();
+        assert!(!ui.wants_text());
+    }
 }

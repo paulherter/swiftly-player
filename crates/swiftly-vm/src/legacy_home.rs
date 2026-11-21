@@ -18,6 +18,7 @@ use swiftly_rules::display_rules::{TileMark, tile_mark};
 use crate::account::AccountRef;
 use crate::home::{Source, build_source};
 use crate::host::Host;
+use crate::load_state::{FailKind, Load, LoadFailure};
 use crate::parts::{ImageKind, ImageRef};
 use crate::tile::Words;
 use crate::title_text::{TitleText, resume_from};
@@ -112,6 +113,33 @@ pub struct LegacyHome {
     pub rails: Vec<LegacyRail>,
     #[serde(rename = "gestoert")]
     pub disrupted: bool,
+    /// The page's one load state after this answer, in the words the Compose pages read (see [`home_load`]):
+    /// `inhalt`, `leer`, `offline` or `fehler`. A page that gets `offline` or `fehler` with no rows shows the
+    /// error state with a retry; a page that renders only `reihen` shows nothing at all.
+    #[serde(rename = "zustand")]
+    pub load: &'static str,
+    /// Why the page is disrupted: `offline`, `server`, `abgelehnt` or `unlesbar`; absent while it is not.
+    #[serde(rename = "ausfall", skip_serializing_if = "Option::is_none")]
+    pub failure: Option<&'static str>,
+}
+
+/// The shared [`Load`] of one finished Home answer, as the two words of [`LegacyHome::load`] and
+/// [`LegacyHome::failure`]. The decision lives in [`Load::from_facts`]; this only names the result for Kotlin.
+#[must_use]
+pub fn home_load(
+    disrupted: bool,
+    failure: Option<swiftly_net::ErrorTopic>,
+    has_rows: bool,
+) -> (&'static str, Option<&'static str>) {
+    let failure = disrupted.then(|| failure.map_or(LoadFailure::Offline, LoadFailure::from_topic));
+    match Load::from_facts(false, has_rows, failure) {
+        Load::Offline => ("offline", Some("offline")),
+        Load::Failed(FailKind::Server) => ("fehler", Some("server")),
+        Load::Failed(FailKind::Denied) => ("fehler", Some("abgelehnt")),
+        Load::Failed(FailKind::Unreadable) => ("fehler", Some("unlesbar")),
+        Load::Empty => ("leer", None),
+        Load::Idle | Load::Loading | Load::Refreshing | Load::Loaded => ("inhalt", None),
+    }
 }
 
 /// `Kern.tile(_:newAccess:withMark:_:)`.
@@ -148,8 +176,8 @@ pub fn legacy_tile(
     if let Some(year) = item.production_year {
         details.push(year.to_string());
     }
-    if let Some(seconds) = runtime.filter(|s| *s > 0.0) {
-        details.push(text.runtime(seconds));
+    if let Some(line) = text.runtime_line(runtime) {
+        details.push(line);
     }
     let episode = item.kind() == ItemKind::Episode;
     LegacyTile {
@@ -327,10 +355,17 @@ async fn home_with(
             jump_sorting: None,
         });
     }
+    let (load, failure) = home_load(
+        state.disrupted,
+        state.failure,
+        rails.iter().any(|r| !r.tiles.is_empty()),
+    );
     (
         LegacyHome {
             rails,
             disrupted: state.disrupted,
+            load,
+            failure,
         },
         shown,
     )
@@ -366,4 +401,59 @@ pub async fn legacy_home_json<T: HttpTransport + 'static>(
         crate::proof_mark::warm(transport, host, account, &shown);
     }
     serde_json::to_string(&home).map_err(|e| ErrorKind::Decoding(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swiftly_net::ErrorTopic;
+
+    #[test]
+    fn an_unreachable_server_with_no_rows_is_offline_and_a_refused_one_is_an_error() {
+        assert_eq!(home_load(true, None, false), ("offline", Some("offline")));
+        assert_eq!(
+            home_load(true, Some(ErrorTopic::Network), false),
+            ("offline", Some("offline"))
+        );
+        assert_eq!(
+            home_load(true, Some(ErrorTopic::Auth), false),
+            ("fehler", Some("abgelehnt"))
+        );
+        assert_eq!(
+            home_load(true, Some(ErrorTopic::Server), false),
+            ("fehler", Some("server"))
+        );
+        assert_eq!(
+            home_load(true, Some(ErrorTopic::Decode), false),
+            ("fehler", Some("unlesbar"))
+        );
+    }
+
+    #[test]
+    fn an_answer_is_content_or_empty_never_an_error() {
+        assert_eq!(home_load(false, None, true), ("inhalt", None));
+        assert_eq!(home_load(false, None, false), ("leer", None));
+    }
+
+    #[test]
+    fn the_json_carries_the_state_next_to_the_old_flag() {
+        let home = LegacyHome {
+            rails: Vec::new(),
+            disrupted: true,
+            load: "offline",
+            failure: Some("offline"),
+        };
+        let json: serde_json::Value = serde_json::to_value(&home).unwrap();
+        assert_eq!(json["gestoert"], true);
+        assert_eq!(json["zustand"], "offline");
+        assert_eq!(json["ausfall"], "offline");
+        let ok = LegacyHome {
+            rails: Vec::new(),
+            disrupted: false,
+            load: "leer",
+            failure: None,
+        };
+        let json = serde_json::to_value(&ok).unwrap();
+        assert!(json.get("ausfall").is_none());
+    }
 }

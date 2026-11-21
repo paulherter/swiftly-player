@@ -63,6 +63,7 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import de.paulherter.swiftly.tapOn
 import kotlinx.coroutines.delay
@@ -158,7 +159,7 @@ private fun LooksPanel(app: SwiftlyApplication, tryLook: String?, close: () -> U
 private fun Settings(app: SwiftlyApplication, shown: JSONObject, look: Looks.LookInfo, wearable: Boolean) {
     val looks = app.looks
     Column(Modifier.padding(horizontal = SheetInset).padding(top = 14.dp).fillMaxWidth()
-            .clip(RoundedCornerShape(Theme.cornerArea)).background(Theme.raised.copy(alpha = 0.6f))
+            .clip(smoothRoundedShape(Theme.cornerArea)).background(Theme.raised.copy(alpha = 0.6f))
             .alpha(if (wearable) 1f else 0.5f)) {
         val rows = Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 16.dp)
         if (looks.seasonActive(look)) {
@@ -229,7 +230,7 @@ private fun LookChoice(looks: Looks, look: Looks.LookInfo, chosen: Boolean, lock
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.size(56.dp)) {
             LookTileView(looks.tileIcon(look), 56.dp, Modifier.alpha(if (locked) 0.45f else 1f))
-            if (chosen) Box(Modifier.requiredSize(64.dp).align(Alignment.Center).border(2.dp, Theme.font, RoundedCornerShape(17.dp)))
+            if (chosen) Box(Modifier.requiredSize(64.dp).align(Alignment.Center).border(2.dp, Theme.font, smoothRoundedShape(17.dp)))
             if (locked) {
                 Box(Modifier.align(Alignment.BottomEnd).offset(4.dp, 4.dp).size(20.dp).background(Theme.raised, CircleShape),
                     contentAlignment = Alignment.Center) {
@@ -321,7 +322,7 @@ private fun WhatsNewBody(app: SwiftlyApplication, entry: JSONObject, close: () -
             }
         }
         if (gift != null) {
-            Row(Modifier.fillMaxWidth().padding(top = 24.dp).clip(RoundedCornerShape(Theme.cornerCard)).background(Theme.raised.copy(alpha = 0.6f)).padding(14.dp),
+            Row(Modifier.fillMaxWidth().padding(top = 24.dp).clip(smoothRoundedShape(Theme.cornerCard)).background(Theme.raised.copy(alpha = 0.6f)).padding(14.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 LookTileView(looks.tileIcon(gift), 44.dp)
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -356,19 +357,24 @@ internal fun whatsNewGlyph(symbol: String): Glyph = when {
     symbol.startsWith("heart") -> Glyph.Heart
     symbol.startsWith("paintpalette") -> Glyph.Palette
     symbol.startsWith("sparkle") -> Glyph.Funkeln
+    symbol.startsWith("plus") -> Glyph.PlusCircle
+    symbol.startsWith("play") -> Glyph.PlayRectangle
+    symbol.startsWith("line.3") -> Glyph.Filter
+    symbol.startsWith("trash") -> Glyph.Papierkorb
     else -> Glyph.Checkmark
 }
 
 /**
  * **Asks for the gift or the news, once per session, calmly.** A few seconds after the home page
- * is ready, never during playback, never on top of another sheet, never when another big ask came
- * first. What's new goes first (it carries the gift); else the gift once per season.
+ * is ready, only while Start is in view with nothing opened above it, never during playback, never
+ * on top of another sheet, never when another big ask came first. What's new goes first (it carries the gift); else the gift once per season.
  */
 @Composable
-fun LooksWatcher(app: SwiftlyApplication) {
+fun LooksWatcher(app: SwiftlyApplication, startBare: Boolean) {
     if (app.isTv) return
     val context = LocalContext.current
-    val idle = app.play.value == null
+    // The effect restarts (and its quiet seconds with it) whenever the person leaves or returns to a bare Start.
+    val idle = app.play.value == null && startBare
     LaunchedEffect(idle) {
         if (!idle) return@LaunchedEffect
         delay(3_000)
@@ -462,7 +468,7 @@ fun LookPreviewBar(app: SwiftlyApplication, modifier: Modifier = Modifier) {
             Text(translated("Vorschau"), style = giftFont(12f), color = Theme.fontVeryQuiet, maxLines = 1)
         }
         BarChevron(Glyph.AngleRight, translated("Nächster Look")) { move(1) }
-        Box(Modifier.padding(start = 2.dp).height(36.dp).clip(RoundedCornerShape(Theme.cornerField)).background(Color.White)
+        Box(Modifier.padding(start = 2.dp).height(36.dp).clip(smoothRoundedShape(Theme.cornerField)).background(Color.White)
                 .tapOn { if (looks.keep()) { looks.supportOpening = true; supportSheetShow(app, fromLooks = true) } }.padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center) {
             Text(translated("Freischalten"), style = giftFont(15f, FontWeight.SemiBold), color = Theme.reason, maxLines = 1)

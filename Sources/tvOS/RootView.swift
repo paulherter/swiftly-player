@@ -2,12 +2,10 @@ import JellyfinKit
 import SwiftUI
 
 /// Entry point: enter server, sign in, then the app. Same flow and state holder as
-/// on iPhone, with an interface for three metres and the same launch curtain: the
-/// mark rises as on iPhone, only larger.
+/// on iPhone, with an interface for three metres. There is no launch curtain: the
+/// real page is the first frame after the system launch screen.
 struct RootView: View {
     @State private var model = AppModel.only
-    /// The curtain covers everything until the animation is done.
-    @State private var started = false
     /// The one-time Discord hint, after the fifth title.
     @State private var discordHint = false
     /// The profile picker above the blurred home page. **Decided once, when the process
@@ -57,7 +55,7 @@ struct RootView: View {
                     .accessibilityHidden(pickerOpen)
                     .animation(nil, value: pickerOpen)
                 if pickerOpen {
-                    ProfilePicker(model: model, entered: started) {
+                    ProfilePicker(model: model) {
                         pickerNotice = String(localized: "Das Profil gibts nicht mehr. Du bist bei \(model.session?.userName ?? "").")
                         closePicker()
                     }
@@ -83,16 +81,9 @@ struct RootView: View {
         .onChange(of: model.serverName, initial: true) { _, name in
             if let name, let url = model.session?.serverURL { ServerNameCache.store(name, for: url) }
         }
-        .overlay {
-            if !started {
-                StartCurtain {
-                    withAnimation(Theme.motion(.easeOut(duration: 0.45))) { started = true }
-                }
-            }
-        }
         .animation(.default, value: model.phase)
-        // Focus may find nothing in its first pass while the curtain, picker or a sign-in screen is up; see `TVFocusGuard`.
-        .tvFocusGuard("root", key: RootFocusKey(started: started, picker: pickerOpen, phase: model.phase))
+        // Focus may find nothing in its first pass while the picker, a sign-in screen or a skeleton is up; see `TVFocusGuard`.
+        .tvFocusGuard("root", key: RootFocusKey(picker: pickerOpen, phase: model.phase))
         // Once at the root, not on every tile. A setting decides which tile shows its progress bar, and call sites that pass `progress:` should not need to know. It is read where the bar is made; see `EnvironmentValues.progressOnTiles`.
         .environment(\.progressOnTiles, model.progressOnTiles)
         .environment(\.watchlistShown, model.watchlistShown)
@@ -120,7 +111,6 @@ struct RootView: View {
 
 /// What changes which screen can take focus at the root.
 private struct RootFocusKey: Equatable {
-    let started: Bool
     let picker: Bool
     let phase: AppModel.Phase
 }
@@ -203,7 +193,7 @@ struct InputField: View {
 
 // MARK: - Server
 
-/// First step: where the server is. As on iPhone only the wordmark, no emblem beside it (two marks stacked are one too many), and one sentence instead of heading plus label plus placeholder.
+/// First step: where the server is. No mark above it (the TV icon picture carries the lettering, the home screen already shows the icon), and one sentence instead of heading plus label plus placeholder. The page is centred, so the question is the first line of the block and takes no gap above it.
 struct ServerView: View {
     let model: AppModel
     /// An address another page already knows (Emby found a Jellyfin there).
@@ -214,18 +204,17 @@ struct ServerView: View {
     /// "Advanced": custom headers for a service in front of the server.
     @State private var headers: [HeaderRow] = []
     @State private var found: [FoundServer] = []
+    /// The address field: focus starts here, the first press of the remote opens the keyboard.
+    @FocusState private var field: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            Wordmark(height: TVSpec.serverWordmark)
-
             Text("Wo steht dein Jellyfin-Server?")
                 .font(Theme.body)
                 .foregroundStyle(Theme.fontQuiet)
-                .padding(.top, TVSpec.serverQuestionTop)
 
             InputField(placeholder: "tv.beispiel.de", text: $address,
-                        content: .URL, completion: linkUp)
+                        content: .URL, outer: $field, completion: linkUp)
                 .frame(width: TVSpec.formWidth)
                 .padding(.top, TVSpec.serverFieldTop)
 
@@ -272,7 +261,10 @@ struct ServerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Changing the address during the check cancels it.
         .onChange(of: address) { _, new in model.addressChanged(new) }
+        .defaultFocus($field, true)
         .onAppear { if address.isEmpty, let presetAddress { address = presetAddress } }
+        // Arriving from the kind picker the system still holds the pressed card, not the field; see `TVFocusGuard.refocus`.
+        .tvFocusStart()
         // Menu is one step back when there is a picker before this page, else it leaves the app.
         .onExitCommand(perform: back)
         .serverSearch($found)
@@ -329,12 +321,9 @@ struct SignInView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Wordmark(height: TVSpec.loginWordmark)
-
             Text(serverName)
                 .font(Theme.rail)
                 .foregroundStyle(Theme.font)
-                .padding(.top, TVSpec.loginServerNameTop)
 
             if let version {
                 Text("Jellyfin \(version)")

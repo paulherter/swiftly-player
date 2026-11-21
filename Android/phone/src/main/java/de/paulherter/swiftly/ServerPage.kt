@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.shared.InputField
 import de.paulherter.swiftly.shared.PrimaryButton
 import de.paulherter.swiftly.shared.Theme
-import de.paulherter.swiftly.shared.Wordmark
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -49,7 +48,7 @@ import org.json.JSONObject
  * Mirrors `ConnectView` in `Sources/Shared/RootView.swift`.
  *
  * `back`: reached through the kind picker. Then a subpage with its arrow back to the picker and
- * "Mit Jellyfin anmelden" on top, and the wordmark stays on the picker where it already stood.
+ * "Mit Jellyfin anmelden" on top, and the app icon stands over the question where the wordmark stood before.
  * `presetAddress`: an address another page already knows (Emby found a Jellyfin there).
  */
 @Composable
@@ -104,7 +103,7 @@ fun ServerPage(app: SwiftlyApplication, back: (() -> Unit)? = null, presetAddres
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Column(Modifier.widthIn(max = Theme.formWidth), horizontalAlignment = Alignment.CenterHorizontally) {
-            if (back == null) Box172 { Wordmark(height = 40.dp) }
+            if (back == null) Box172 { AppIconMark(40.dp) }
             Box(Modifier.padding(top = if (back == null) 44.dp else 24.dp)) { ServerKindMark(ServerKind.Jellyfin, 44.dp) }
             Text(translated("Wo steht dein Jellyfin-Server?"), style = Theme.body, color = Theme.fontQuiet,
                  modifier = Modifier.padding(top = 14.dp))

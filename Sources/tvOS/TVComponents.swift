@@ -164,14 +164,17 @@ extension EnvironmentValues {
 /// middle one because the finger is where it points.
 struct TabStyle: ButtonStyle {
     let selected: Bool
+    /// Only for the debug focus dump (`-fokus`); never shown.
+    var name = ""
 
     func makeBody(configuration: Configuration) -> some View {
-        ContentBody(configuration: configuration, selected: selected)
+        ContentBody(configuration: configuration, selected: selected, name: name)
     }
 
     private struct ContentBody: View {
         let configuration: ButtonStyleConfiguration
         let selected: Bool
+        let name: String
         @Environment(\.isFocused) private var focus
 
         var body: some View {
@@ -204,6 +207,12 @@ struct TabStyle: ButtonStyle {
                 }
                 .scaleEffect(focus ? Theme.focusMagnifier : 1)
                 .animation(Theme.focusAnimation, value: focus)
+                #if DEBUG
+                // Focus dump for the proof: the accent line shows only on the open tab while it is NOT focused.
+                .onChange(of: focus, initial: true) { _, now in
+                    if DebugLaunch.has("-fokus") { NSLog("tabfocus tab=%@ selected=%@ focused=%@ accentLine=%@", name, "\(selected)", "\(now)", "\(selected && !now)") }
+                }
+                #endif
         }
 
         private var foreground: Color {
@@ -607,10 +616,11 @@ enum Region: Int, CaseIterable, Identifiable {
     }
 }
 
-/// Wordmark on the left, tabs next to it, profile on the right.
+/// Tabs on the left, profile (and the offer badge and heart) on the right.
 ///
 /// Deliberately left-aligned rather than centered like Apple's: the whole app is left-
-/// aligned, and the wordmark belongs at the start of the line.
+/// aligned, so the first tab starts at the page edge where the content below starts too.
+/// There is no logo in the bar; the app's name is not repeated on a page.
 struct HeaderBar: View {
     @Binding var section: Region
     let model: AppModel
@@ -639,8 +649,6 @@ struct HeaderBar: View {
 
     var body: some View {
         HStack(spacing: 48) {
-            Wordmark(height: 56)
-
             HStack(spacing: 8) {
                 // **The watchlist is a tab again.** It was briefly a round button next to
                 // the profile picture, but two circles side by side looked muddy, so it
@@ -649,7 +657,7 @@ struct HeaderBar: View {
                 // Switched off in Appearance, the watchlist has no tab.
                 ForEach(Region.allCases.filter { $0 != .watchlist || model.watchlistShown }) { b in
                     Button { section = b } label: { Text(b.name) }
-                        .buttonStyle(TabStyle(selected: section == b))
+                        .buttonStyle(TabStyle(selected: section == b, name: String(describing: b)))
                         .focused($atTab, equals: b)
                 }
             }
@@ -670,9 +678,9 @@ struct HeaderBar: View {
             // when something plays elsewhere and disappears again, so it is also not in the
             // focus path while it has nothing to offer.
             //
-            // **Its own, tighter spacing for the two on the right.** The bar uses 56 pt,
-            // right between wordmark and tabs but too much between badge and profile
-            // picture. The two belong together; apart, it looked as if the badge had not
+            // **Its own, tighter spacing for the three on the right.** The bar uses 48 pt
+            // between the tabs and this group, which is too much between badge, heart and
+            // profile picture. They belong together; apart, it looked as if the badge had not
             // found room.
             HStack(spacing: 24) {
                 if !takeover.isEmpty || !groups.isEmpty {
@@ -728,7 +736,7 @@ struct HeaderBar: View {
         .frame(height: Theme.stripHeight)
         .padding(.top, Theme.barTop)
         // Horizontal too: the bar sits above the section stack and would not inherit its
-        // edge inset otherwise. The wordmark would then sit 80 pt further in than the
+        // edge inset otherwise. The first tab would then sit 80 pt further in than the
         // content below.
         .ignoresSafeArea(edges: [.top, .horizontal])
         .animation(Theme.motion(.easeInOut(duration: 0.25)), value: takeover.map(\.id))
@@ -1296,8 +1304,8 @@ struct DetailsRail<End: View>: View {
                         ProofMark(word: Text(verbatim: String(year)), color: Theme.fontQuiet)
                             .monospacedDigit()
                     }
-                    if let seconds = title.runtimeSeconds, seconds > 0 {
-                        ProofMark(word: Text(verbatim: runtime(seconds)), color: Theme.fontQuiet)
+                    if let line = runtimeLine(title.runtimeSeconds) {
+                        ProofMark(word: Text(verbatim: line), color: Theme.fontQuiet)
                             .monospacedDigit()
                     }
                     ProofMarks(rating: title.communityRating,
@@ -1624,10 +1632,8 @@ struct SeasonPill: View {
     var body: some View {
         // Design: the same pill as the library rail (h56, pad 24, 26/600, .10, white on focus).
         Button { opened.toggle() } label: {
-            HStack(spacing: 10) {
-                Text(name)
-                Image(icon: "chevron.up.chevron.down", size: 18).accessibilityHidden(true)
-            }
+            // One chevron only: `CapsuleStyle` draws the trailing arrow itself (a second one here showed up as a doubled chevron).
+            Text(name)
         }
         .buttonStyle(CapsuleStyle())
         .accessibilityLabel(Text("Staffel wählen, \(name)"))

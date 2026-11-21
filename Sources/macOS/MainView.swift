@@ -125,29 +125,22 @@ struct MainView: View {
                          sectionSelect: { sectionSelect($0) })
             // **The title bar safe area is ignored on the left just as on the right.** Previously
             // only the content area ignored it, so the bar sat about thirty points lower than the
-            // window, taking its fill and edge with it. On top of that it reserves `signalHeight` at
+            // window, taking its fill and edge with it. On top of that it reserves `sidebarTop` at
             // the top again, so the offset was applied twice.
             .ignoresSafeArea(.container, edges: .vertical)
+            // **The gift sheet and "What's new" wait for a bare Start** (`GiftFlow.pagesAboveStart`): a page the person
+            // opened (profile, settings, a title) is not covered by a sheet that came on a timer. Hangs here and not on the
+            // window's modifier chain, which the type checker cannot take one more link on.
+            //
+            // **Every section counts on the Mac**, not only Start: Settings and the profile open over the section the person
+            // is in, and a sheet over "Einstellungen" is wrong wherever that page sits.
+            .onChange(of: Region.allCases.reduce(0) { $0 + navigator.pages($1).count }, initial: true) { _, depth in
+                GiftFlow.shared.startDepth(depth)
+            }
 
-            // **The edge is a column of its own, not an overlay.**
-            //
-            // As an `.overlay` on the bar it hung on the bar's frame and ended where that frame
-            // ended, not at the window edge. Here it is a separate full-height column that ignores
-            // the safe area.
-            Rectangle()
-                .fill(Theme.line)
-                .frame(width: 1)
-                .frame(maxHeight: .infinity)
-                .ignoresSafeArea(.container, edges: .vertical)
-            // **The bar sits on top, visually and for clicks.**
-            //
-            // In an `HStack` the later child draws over the earlier, and the bar comes first. That
-            // did not matter as long as the content stayed in its column. It does not: when a page
-            // opens, `wurzel` gets `withGait`, i.e. **minus thirty percent of the content width**,
-            // and so reached under the bar, on top of it because it is declared later. A click on
-            // a sidebar row then hit whatever poster lay beneath, and clicks on "Serien" switched
-            // nothing because the bar never received them.
-            .zIndex(1)
+            // **No edge column between sidebar and page** (design: the sidebar's own surface, `surface.group`, sets it off
+            // from the page; the prototype draws no line). A 1 pt column of `Theme.line` stood here until 21.11.2026 and
+            // measured as a lighter strip (34,35,36) between sidebar (19,19,20) and page (10,10,11).
 
             ZStack(alignment: .topLeading) {
                 Theme.reason
@@ -337,7 +330,7 @@ struct MainView: View {
         }
         // The sidebar and the page lie under the player overlay: no focus there, or the first
         // row keeps it and its ring shows through the player as an empty box.
-        .disabled(!KeyboardFocus.isReachable(playerOpen: controls.wish != nil, curtainShown: false))
+        .disabled(!KeyboardFocus.isReachable(playerOpen: controls.wish != nil))
         // **On the click in the profile page** (design D, as on iPhone) the page itself slides
         // out, profile included, and the picture flies into the sidebar. See
         // ``AccountSwitchStage``.
@@ -618,14 +611,18 @@ struct MainView: View {
                         // does not slide again.
                         guard slot >= deep(s) else { return }
                         // From now on it slides; responses wait (`InTravel`).
-                        InTravel.begins()
+                        // The slide starts a frame or three after `onAppear` (the page lays out first), so this end is only
+                        // the failsafe; the animation's completion below ends the hold exactly when the slide ends.
+                        InTravel.begins(seconds: Theme.durationPagesPush + 0.25)
                         // **Only this one write.** There used to be a second, unanimated one next to it
                         // (`ruht = false`). Both are state of the same view and land in one update pass, for
                         // which SwiftUI picks *one* transaction. If it picks the empty one, the offset is set
                         // without motion. It was the only place in the tree where a running motion could be
                         // broken.
                         DispatchQueue.main.async {
-                            withAnimation(Theme.timePagesPush) { shownDeep[s] = slot + 1 }
+                            withAnimation(Theme.timePagesPush, completionCriteria: .logicallyComplete) {
+                                shownDeep[s] = slot + 1
+                            } completion: { InTravel.ends() }
                         }
                     }
                     // **Only sliding out is a transition.** Sliding in is done by the offset above so the
@@ -799,6 +796,11 @@ struct MainView: View {
             toProfile()
             try? await Task.sleep(for: .milliseconds(800))
             navigator.openIt(.settings, in: section)
+        case "allgemein-schnell":
+            // Settings before the profile's intro sheet is due (it waits 450 ms): the sheet must stay away.
+            toProfile()
+            try? await Task.sleep(for: .milliseconds(150))
+            navigator.openIt(.settings, in: section)
         case "film":
             section = .movies
             if let item = await first(movieShelf) { navigator.openIt(.title(item), in: .movies) }
@@ -818,6 +820,26 @@ struct MainView: View {
         let arguments = ProcessInfo.processInfo.arguments
         let hub = arguments.firstIndex(of: "-SwiftlyOpenManagement")
         let presentation = arguments.contains("-SwiftlyOpenPresentation")
+        // `-SwiftlyProofSearch <term>`: the search page (`-SwiftlyOpenPage suche`) starts with that term.
+        if let i = arguments.firstIndex(of: "-SwiftlyProofSearch"), arguments.indices.contains(i + 1) {
+            WindowOffPull.searchTerm = arguments[i + 1]
+        }
+        // `-SwiftlyOpenPlayer film|serie`: opens the first title of that shelf in the player from the start, waits, pauses it
+        // and opens the settings menu (`PlayerScreen.debugOpenLayer("pausemenu")`), then takes the shot.
+        if let i = arguments.firstIndex(of: "-SwiftlyOpenPlayer"), arguments.indices.contains(i + 1) {
+            let series = arguments[i + 1] == "serie"
+            let shelf = series ? seriesShelf : movieShelf
+            section = series ? .seriesList : .movies
+            for _ in 0 ..< 40 where shelf.items.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+            if let item = shelf.items.first { controls.launch(item, since: 0) }
+            for _ in 0 ..< 80 where controls.wish == nil { try? await Task.sleep(for: .milliseconds(250)) }
+            // `-SwiftlyProofPlayerPlain`: the player as it plays, controls only, no menu on top.
+            let plain = arguments.contains("-SwiftlyProofPlayerPlain")
+            try? await Task.sleep(for: .seconds(plain ? 2 : 6))
+            if !plain { NotificationCenter.default.post(name: LiveRun.openLayer, object: "pausemenu") }
+            await proofShot(arguments)
+            return
+        }
         // `-SwiftlyOpenPage filme|serien|film|serie|...`: the same page names as the snapshot script (`play`).
         if let i = arguments.firstIndex(of: "-SwiftlyOpenPage"), arguments.indices.contains(i + 1) {
             await play(arguments[i + 1])
@@ -873,10 +895,11 @@ struct MainView: View {
         // so the capture shows what is drawn above the content.
         if let k = arguments.firstIndex(of: "-SwiftlyProofPull"), arguments.indices.contains(k + 1), let pull = Double(arguments[k + 1]),
            let root = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil })?.contentView {
+            // The topmost page: a page that was pushed away can stay in the tree with the same size, so on a tie the last one wins.
             var best: NSScrollView?
             func walk(_ view: NSView) {
                 if let sv = view as? NSScrollView, sv.documentView != nil,
-                   sv.bounds.width * sv.bounds.height > (best.map { $0.bounds.width * $0.bounds.height } ?? 0) { best = sv }
+                   sv.bounds.width * sv.bounds.height >= (best.map { $0.bounds.width * $0.bounds.height } ?? 0) { best = sv }
                 view.subviews.forEach(walk)
             }
             walk(root)
@@ -886,9 +909,37 @@ struct MainView: View {
                 sv.reflectScrolledClipView(sv.contentView)
                 FileHandle.standardError.write(Data("[proof] pulled \(pull) past the top (inset \(sv.contentInsets.top), origin \(sv.contentView.bounds.origin.y))\n".utf8))
                 try? await Task.sleep(for: .milliseconds(700))
+                FileHandle.standardError.write(Data("[proof] origin after 700 ms \(sv.contentView.bounds.origin.y)\n".utf8))
             } else {
                 FileHandle.standardError.write(Data("[proof] no scroll view found\n".utf8))
             }
+        }
+        // `-SwiftlyProofShotSeries <count> [-SwiftlyProofShotEvery <ms>]`: instead of one picture, `<count>` pictures
+        // `<path>-NN-<ms since this call>.png` (the player's load end falls somewhere in between), then exit.
+        if let k = arguments.firstIndex(of: "-SwiftlyProofShotSeries"), arguments.indices.contains(k + 1), let count = Int(arguments[k + 1]),
+           let content = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil })?.contentView {
+            let every = arguments.firstIndex(of: "-SwiftlyProofShotEvery").flatMap { arguments.indices.contains($0 + 1) ? Double(arguments[$0 + 1]) : nil } ?? 250
+            // `-SwiftlyProofShotStrip <points>`: only that many points from the top (a much faster draw, so more frames per second).
+            let strip = arguments.firstIndex(of: "-SwiftlyProofShotStrip").flatMap { arguments.indices.contains($0 + 1) ? Double(arguments[$0 + 1]) : nil }
+            let region = strip.map { NSRect(x: 0, y: content.isFlipped ? 0 : content.bounds.height - $0, width: content.bounds.width, height: $0) } ?? content.bounds
+            let base = (arguments[i + 1] as NSString).deletingPathExtension
+            for n in 0..<count {
+                let now = Date().timeIntervalSince1970
+                if let store = content.bitmapImageRepForCachingDisplay(in: region) {
+                    content.cacheDisplay(in: region, to: store)
+                    try? store.representation(using: .png, properties: [:])?
+                        .write(to: URL(fileURLWithPath: String(format: "%@-%03d-%.3f.png", base, n, now)))
+                }
+                // A window sheet is a window of its own: its picture goes next to the frame.
+                if let sheetView = content.window?.attachedSheet?.contentView,
+                   let sheetStore = sheetView.bitmapImageRepForCachingDisplay(in: sheetView.bounds) {
+                    sheetView.cacheDisplay(in: sheetView.bounds, to: sheetStore)
+                    try? sheetStore.representation(using: .png, properties: [:])?
+                        .write(to: URL(fileURLWithPath: String(format: "%@-%03d-%.3f-sheet.png", base, n, now)))
+                }
+                try? await Task.sleep(for: .milliseconds(every))
+            }
+            exit(0)
         }
         FileHandle.standardError.write(Data("[proof] shooting, windows \(NSApp.windows.map { "\($0.isVisible)/\($0.contentView != nil)" })\n".utf8))
         guard let content = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil })?.contentView,
@@ -1025,14 +1076,9 @@ struct Sidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Space for the window controls, which sit above the sidebar.
-            Color.clear.frame(height: Theme.signalHeight)
-
-            // Design: the wordmark 44 from the top, the first row at 92.
-            Wordmark(height: 26)
-                .padding(.horizontal, 20)
-                .padding(.top, 44 - Theme.signalHeight)
-                .padding(.bottom, 92 - 44 - 26)
+            // Space for the window controls, which sit above the sidebar. No logo: the first row (Start)
+            // follows directly under them.
+            Color.clear.frame(height: Theme.sidebarTop)
 
             VStack(spacing: 2) {
                 ForEach(Region.topGroup, id: \.self) { fall in
@@ -1109,7 +1155,7 @@ struct Sidebar: View {
         }
         .frame(width: Theme.sidebarWidth)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Theme.area)
+        .background(Theme.groupsArea)
         .animation(Theme.leap, value: continueWatching.map(\.id))
         .animation(Theme.leap, value: groups.map(\.id))
         .task { if model.views.isEmpty { await model.loadViews() } }

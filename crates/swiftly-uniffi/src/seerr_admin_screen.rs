@@ -1,20 +1,19 @@
 //! The admin side of Seerr over one hub, exported. The queue, the request details, the issue list
 //! with its thread and reporting a problem are `swiftly_vm::SeerrAdminScreen`, the same code the
-//! desktop runs; only the delete flow (files, Seerr, Jellyfin rescan, verify) lives here, because it
-//! needs the host's library handle.
+//! desktop runs; the delete flow (files, Seerr, Jellyfin rescan, verify) is `swiftly_vm::SeerrDeleteScreen`
+//! too, here only given the host's library handle.
 
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::Arc;
 
 use swiftly_seerr::issues::IssueKind;
 use swiftly_vm::{
-    AdminTab, DeleteAction, IssuePill, RequestPill, SeerrDeleteInfo, SeerrDeleteVm, SeerrDetailRow,
-    SeerrIssueDetail, SeerrIssuesInfo, SeerrRequestRow, SeerrRequestsInfo, SeerrTabInfo, ask_text,
+    AdminTab, IssuePill, RequestPill, SeerrDeleteInfo, SeerrDetailRow, SeerrIssueDetail,
+    SeerrIssuesInfo, SeerrRequestRow, SeerrRequestsInfo, SeerrTabInfo,
 };
 
 use crate::error::CoreError;
 use crate::seerr::JarAdapter;
-use crate::seerr_lists_screen::{SeerrHub, lock};
+use crate::seerr_lists_screen::SeerrHub;
 use crate::transport::CoreTransport;
 
 /// A request opened.
@@ -31,74 +30,24 @@ pub struct SeerrRequestDetail {
 pub struct SeerrAdminScreen {
     hub: Arc<SeerrHub>,
     core: Arc<swiftly_vm::SeerrAdminScreen<CoreTransport, JarAdapter>>,
-    delete: Mutex<Option<DeleteState>>,
+    delete: Arc<swiftly_vm::SeerrDeleteScreen<CoreTransport, JarAdapter>>,
 }
 
-struct DeleteState {
-    vm: SeerrDeleteVm,
-    art: String,
-    tmdb: i64,
-    media_id: i64,
-}
-
-impl SeerrAdminScreen {
-    async fn run_delete(&self, first: Option<DeleteAction>) -> SeerrDeleteInfo {
-        let mut next = first;
-        while let Some(action) = next {
-            let (art, tmdb, media_id) = match lock(&self.delete).as_ref() {
-                Some(d) => (d.art.clone(), d.tmdb, d.media_id),
-                None => break,
-            };
-            let result = self.do_action(action, &art, tmdb, media_id).await;
-            let mut g = lock(&self.delete);
-            let Some(d) = g.as_mut() else { break };
-            let result = result.map_err(|e| e.unwrap_or_else(|| d.vm.default_error(action)));
-            next = d.vm.finished(result);
-        }
-        self.delete_info()
-    }
-
-    /// Runs one action; `Err(None)` = failed without a text of its own.
-    async fn do_action(
-        &self,
-        action: DeleteAction,
-        art: &str,
-        tmdb: i64,
-        media_id: i64,
-    ) -> Result<(), Option<String>> {
-        let Some(c) = self.hub.client() else {
-            return Err(None);
-        };
-        let t = swiftly_l10n::Translator::new(self.hub.locale_of());
-        match action {
-            DeleteAction::DeleteFiles { is4k } => c
-                .delete_media_file(media_id, is4k)
-                .await
-                .map_err(|e| Some(ask_text(&t, &e))),
-            DeleteAction::ForgetMedia => c
-                .delete_media(media_id)
-                .await
-                .map_err(|e| Some(ask_text(&t, &e))),
-            DeleteAction::RefreshLibrary => match &self.hub.library {
-                Some(l) if l.refresh().await.is_ok() => Ok(()),
-                _ => Err(None),
-            },
-            DeleteAction::VerifyGone => {
-                let Some(l) = &self.hub.library else {
-                    return Err(None);
-                };
-                // Jellyfin needs a moment: ask every two seconds, at most 20 seconds in all.
-                for attempt in 0..10 {
-                    if l.find(art.to_string(), tmdb).await.ok().flatten().is_none() {
-                        return Ok(());
-                    }
-                    if attempt < 9 {
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-                    }
-                }
-                Err(None)
-            }
-        }
+/// The host's media server as the core's delete flow asks it.
+fn delete_library(
+    library: Arc<dyn crate::seerr_lists_screen::SeerrLibrary>,
+) -> swiftly_vm::DeleteLibrary {
+    let (find, refresh) = (Arc::clone(&library), library);
+    swiftly_vm::DeleteLibrary {
+        find: Arc::new(move |art, tmdb| {
+            let l = Arc::clone(&find);
+            Box::pin(async move { l.find(art, tmdb).await.ok().flatten() })
+        }),
+        refresh: Arc::new(move || {
+            let l = Arc::clone(&refresh);
+            Box::pin(async move { l.refresh().await.is_ok() })
+        }),
+        pause: Arc::new(|d| Box::pin(tokio::time::sleep(d))),
     }
 }
 
@@ -113,16 +62,35 @@ pub struct SeerrAdminStale {
     pub issues: Option<SeerrIssuesInfo>,
 }
 
+impl SeerrAdminScreen {
+    /// What runs once after a delete is done (see `Core::delete_prepare_item`).
+    pub(crate) fn set_on_deleted(&self, hook: Arc<dyn Fn() + Send + Sync>) {
+        self.delete.set_on_done(hook);
+    }
+}
+
 #[uniffi::export]
 impl SeerrAdminScreen {
     /// The admin screens over a hub.
     #[uniffi::constructor]
     pub fn new(hub: Arc<SeerrHub>) -> Arc<Self> {
+        let delete = swiftly_vm::SeerrDeleteScreen::new(
+            Arc::clone(&hub.core),
+            hub.library.clone().map(delete_library),
+        );
         Arc::new(Self {
             core: swiftly_vm::SeerrAdminScreen::new(Arc::clone(&hub.core)),
             hub,
-            delete: Mutex::new(None),
+            delete,
         })
+    }
+
+    /// A report flow ("Problem melden") that sends through this screen's hub.
+    pub fn report_flow(&self) -> Arc<crate::report_flow::ReportIssueFlow> {
+        crate::report_flow::ReportIssueFlow::new(swiftly_vm::SeerrReportFlow::new(
+            Arc::clone(&self.core),
+            self.hub.locale_of(),
+        ))
     }
 
     /// The tabs this account may open, with open counts (the queue needs `MANAGE_REQUESTS`, the
@@ -307,7 +275,7 @@ impl SeerrAdminScreen {
             .await)
     }
 
-    // ---- delete from the server
+    // ---- delete from the server (the core's `SeerrDeleteScreen`)
 
     /// Prepares "Vom Server löschen" for a title: reads which versions Seerr knows. `sizes` are the
     /// host's file sizes as text, standard then 4K (`None` where unknown).
@@ -320,67 +288,38 @@ impl SeerrAdminScreen {
         standard_size: Option<String>,
         four_k_size: Option<String>,
     ) -> Result<Option<SeerrDeleteInfo>, CoreError> {
-        let Some(c) = self.hub.client().filter(|_| self.hub.available()) else {
-            return Ok(None);
-        };
-        // The core's one rule: the right to manage requests and no "Löschen vom Server sperren" on this device.
-        if !swiftly_vm::delete_offered(lock(self.hub.vm()).perms().can_manage_requests()) {
-            return Ok(None);
-        }
-        let Ok(info) = c.title(&art, tmdb).await else {
-            return Ok(None);
-        };
-        let Some(media) = info.media else {
-            return Ok(None);
-        };
-        use swiftly_seerr::SeerrState as S;
-        let has = |s: S| matches!(s, S::Present | S::PartWayPresent);
-        let mut versions = Vec::new();
-        if has(media.status) {
-            versions.push((false, standard_size.clone()));
-        }
-        if has(media.status4k) {
-            versions.push((true, four_k_size));
-        }
-        if versions.is_empty() {
-            versions.push((false, standard_size));
-        }
-        *lock(&self.delete) = Some(DeleteState {
-            vm: SeerrDeleteVm::new(self.hub.locale_of(), &title, &versions),
-            art,
-            tmdb,
-            media_id: media.id,
-        });
-        Ok(Some(self.delete_info()))
+        Ok(self
+            .delete
+            .prepare(art, tmdb, title, standard_size, four_k_size)
+            .await)
     }
 
     /// The delete sheet now.
     pub fn delete_info(&self) -> SeerrDeleteInfo {
-        lock(&self.delete)
-            .as_ref()
-            .map(|d| d.vm.info())
-            .unwrap_or_else(|| SeerrDeleteVm::new(self.hub.locale_of(), "", &[]).info())
+        self.delete.info()
     }
 
     /// Deletes the chosen versions (`true` = 4K) and runs every step; returns when the flow is done
     /// or a step failed (then `delete_retry` resumes there).
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn delete_run(&self, lanes: Vec<bool>) -> Result<SeerrDeleteInfo, CoreError> {
-        // A sheet that was open when the lock went on does not run.
-        if swiftly_model::switches::server_delete_locked() {
-            return Ok(self.delete_info());
-        }
-        let first = lock(&self.delete).as_mut().and_then(|d| d.vm.start(&lanes));
-        Ok(self.run_delete(first).await)
+        Ok(self.delete.run(&lanes).await)
+    }
+
+    /// Ticks or unticks one version (`true` = 4K) on the confirm sheet; returns the sheet.
+    pub fn delete_toggle(&self, is4k: bool) -> SeerrDeleteInfo {
+        self.delete.toggle(is4k)
+    }
+
+    /// Deletes the ticked versions: like `delete_run` with the core's own selection.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn delete_run_chosen(&self) -> Result<SeerrDeleteInfo, CoreError> {
+        Ok(self.delete.run_chosen().await)
     }
 
     /// "Nochmal versuchen": resumes at the failed step.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn delete_retry(&self) -> Result<SeerrDeleteInfo, CoreError> {
-        if swiftly_model::switches::server_delete_locked() {
-            return Ok(self.delete_info());
-        }
-        let first = lock(&self.delete).as_mut().and_then(|d| d.vm.retry());
-        Ok(self.run_delete(first).await)
+        Ok(self.delete.retry().await)
     }
 }

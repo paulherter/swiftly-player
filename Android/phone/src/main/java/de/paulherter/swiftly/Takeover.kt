@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
@@ -207,7 +208,7 @@ fun TakeoverStatus(app: SwiftlyApplication) {
                     // Alpha runs faster than scale: a very small card is nearly invisible.
                     alpha = (a * 1.6f).coerceIn(0f, 1f)
                 }
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(Theme.cornerArea)).background(Theme.area)) {
+                .clip(smoothRoundedShape(Theme.cornerArea)).background(Theme.area)) {
             androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
                 Text(translated("Wo weiterschauen?"), style = Theme.listTitle, color = Theme.font)

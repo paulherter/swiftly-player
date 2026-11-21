@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -43,6 +42,7 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import org.json.JSONArray
 
@@ -86,6 +86,8 @@ internal class SearchFocus(private val st: de.paulherter.swiftly.SearchState) {
     fun hit(id: String): FocusRequester = hits.getOrPut(id) { FocusRequester() }
     /** The first row of the history card, where focus lands when the page has no hits. */
     val recent = FocusRequester()
+    /** The first tile of the Seerr discover rails (empty search page), where focus lands when there is no history. */
+    val rails = FocusRequester()
 
     /** Focus to the last key; false if the keyboard is not there (yet). */
     fun toKeys(): Boolean = runCatching { key(lastKey).requestFocus(); true }.getOrDefault(false)
@@ -108,8 +110,8 @@ internal fun TvSearchKeyboard(term: String, change: (String) -> Unit, focus: Sea
     val rows = remember(speak != null) { searchKeyRows(speech = speak != null) }
     Column(modifier
             .width(SearchLayout.keyboardWidth)
-            .clip(RoundedCornerShape(TvTheme.cornerArea))
-            .background(Theme.groupsArea)
+            .clip(smoothRoundedShape(TvTheme.cornerArea))
+            .background(TvTheme.groupsArea)
             .padding(SearchLayout.keyboardInset)
             // A hardware keyboard on the TV (or a Bluetooth one) types into the field as well. Read after
             // the focused key had its turn, so Enter and the D-pad still press the key.
@@ -162,7 +164,7 @@ internal object SearchLayout {
 private fun Field(term: String) {
     val label = translated("Titel, Serie, Person")
     Row(Modifier.fillMaxWidth().height(SearchLayout.fieldHeight)
-            .clip(RoundedCornerShape(TvTheme.cornerSmall))
+            .clip(smoothRoundedShape(TvTheme.cornerSmall))
             .background(Theme.area)
             .padding(horizontal = 8.dp)
             .semantics(mergeDescendants = true) { contentDescription = if (term.isEmpty()) label else "$label, $term" },
@@ -233,7 +235,7 @@ private fun KeyButton(key: SearchKey, term: String, change: (String) -> Unit, fo
         val surface = if (!focused) Color.Transparent else if (muted) TvTheme.focusArea else Color.White
         val character = if (focused) (if (muted) Theme.fontQuiet else Theme.reason)
                         else (if (muted) Theme.fontVeryQuiet else Theme.fontQuiet)
-        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(TvTheme.cornerSmall)).background(surface),
+        Box(Modifier.fillMaxSize().clip(smoothRoundedShape(TvTheme.cornerSmall)).background(surface),
             contentAlignment = Alignment.Center) {
             when (key.kind) {
                 "letter" -> Text(key.character, style = TvTheme.button.copy(fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = character, maxLines = 1)

@@ -13,7 +13,6 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -38,6 +37,7 @@ import androidx.compose.ui.zIndex
 import de.paulherter.swiftly.shared.Theme
 import androidx.compose.animation.core.Animatable
 import de.paulherter.swiftly.shared.Motion
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import kotlinx.coroutines.launch
 import de.paulherter.swiftly.shared.translated
 import org.json.JSONArray
@@ -163,6 +163,13 @@ class Settings(store: Store) {
     var genreChips by RememberValue(a, "genreChips", bool("genreChips", false), yesNo)
     /** Title as logo on movie and series pages (`titleAsLogo`); off by default. */
     var titleAsLogo by RememberValue(a, "titelAlsLogo", bool("titelAlsLogo", false), yesNo)
+    /**
+     * "Leere Serien ausblenden" (`leereSerienAusblenden`, device setting, **on by default**): series without episodes stay out of
+     * every list. The core applies the rule (`swiftly_model::switches`); this only stores the choice and hands it on.
+     */
+    var hideEmptySeries by RememberValue(a, "leereSerienAusblenden", bool("leereSerienAusblenden", true), yesNo)
+    /** Told after a core-owned switch changed: the app hands the stored values to the core (`applyStoredSettings`). */
+    var coreSwitchesChanged: (() -> Unit)? = null
     /** Off by default. */
     var downloadsAn by RememberValue(a, "downloadsAn", bool("downloadsAn", false), yesNo)
     /**
@@ -344,7 +351,7 @@ fun SettingPage(title: String, back: () -> Unit, trimFirstGroup: Boolean = false
  */
 @Composable
 fun CardView(content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).clip(RoundedCornerShape(Theme.cornerCard))
+    Column(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).clip(smoothRoundedShape(Theme.cornerCard))
                .background(Theme.groupsArea), content = content)
 }
 
@@ -415,8 +422,10 @@ fun ToggleSwitch(an: Boolean, change: (Boolean) -> Unit) {
  */
 @Composable
 fun RowsLayout(symbol: Glyph, title: String, under: String?, color: Color, modifier: Modifier,
-                         verticalRight: Int = 10, drawColor: Color = Theme.font, right: @Composable RowScope.() -> Unit) {
-    Row(modifier.fillMaxWidth().heightIn(min = Theme.rowHeight).padding(horizontal = Theme.edgeSpacing, vertical = verticalRight.dp),
+                         verticalRight: Int = -1, drawColor: Color = Theme.font, right: @Composable RowScope.() -> Unit) {
+    // Every row: 14 above and below, 18 left and right (`space.row-pad-v`, `space.row-pad-h`); a caller may still pass its own vertical.
+    Row(modifier.fillMaxWidth().heightIn(min = Theme.rowHeight)
+            .padding(horizontal = Theme.rowPadH, vertical = if (verticalRight >= 0) verticalRight.dp else Theme.rowPadV),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         // The icon stays white even when the title is dimmed, like `RowsLayout` on iPhone.
         Box(Modifier.width(Theme.rowIconWidth), contentAlignment = Alignment.Center) { Symbol(symbol, Theme.rowSymbolSize, color = drawColor) }

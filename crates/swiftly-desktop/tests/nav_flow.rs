@@ -380,7 +380,7 @@ fn the_downloads_page_fades_in_without_a_delay() {
 }
 
 /// The darkest content-area pixel of every frame while an area change runs: the Mac cross fades over the window ground
-/// (16), so the content area never goes darker than the ground, also between the old page leaving and the new one coming.
+/// (10), so the content area never goes darker than the ground, also between the old page leaving and the new one coming.
 fn darkest_content_pixel_during(s: &mut Suite, now: &mut f64, ms: f64) -> u8 {
     let end = *now + ms;
     let mut lowest = 255u8;
@@ -403,7 +403,7 @@ fn leaving_downloads_never_dips_below_the_page_ground() {
     assert_eq!(s.form_open(), Some("downloads"));
     assert!(tap_label(&mut s, &mut now, "Merkliste"));
     let lowest = darkest_content_pixel_during(&mut s, &mut now, 600.0);
-    assert!(lowest >= 16, "content dipped to {lowest} (ground is 16)");
+    assert!(lowest >= 10, "content dipped to {lowest} (ground is 10)");
 }
 
 #[test]
@@ -411,17 +411,17 @@ fn a_tab_change_never_dips_below_the_page_ground() {
     let (mut s, mut now) = app();
     assert!(tap_label(&mut s, &mut now, "Filme"));
     let lowest = darkest_content_pixel_during(&mut s, &mut now, 600.0);
-    assert!(lowest >= 16, "content dipped to {lowest} (ground is 16)");
+    assert!(lowest >= 10, "content dipped to {lowest} (ground is 10)");
 }
 
-/// How many samples of the content area differ from the window ground (16) by more than a hair.
+/// How many samples of the content area differ from the window ground (10) by more than a hair.
 fn drawn_samples(s: &mut Suite, list: &swiftly_render::DrawList) -> usize {
     let img = s.render_software(list);
     let mut n = 0;
     for y in (60..780).step_by(20) {
         for x in (400..1260).step_by(20) {
             let p = img.pixel(x, y);
-            if p[..3].iter().any(|c| c.abs_diff(16) > 6) {
+            if p[..3].iter().any(|c| c.abs_diff(10) > 6) {
                 n += 1;
             }
         }

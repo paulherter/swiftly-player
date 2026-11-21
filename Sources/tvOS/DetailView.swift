@@ -23,6 +23,9 @@ struct DetailHeader<Buttons: View>: View {
     let model: AppModel
     let item: Item
     let plan: PlaybackPlan?
+    /// The proof the core words (the series page): it stands from the first frame (an earlier visit's answer) and moves
+    /// with the core's own answer, so the mark never waits for the host to ask for a plan. Without it the mark follows `plan`.
+    var proof: ProofPart? = nil
     /// Whether the header contains anything focusable at all.
     /// The series page has no button row, only text. A `focusSection` without a
     /// target is harmful, not just wasted: tvOS registers a region, routes the
@@ -90,7 +93,12 @@ struct DetailHeader<Buttons: View>: View {
                 // **The mark stands in its place from frame 1.** It hangs on `plan`, which comes from the server; until
                 // then a skeleton of its size holds the place, and the real mark replaces it in the same frame: no fade,
                 // no slide, nothing next to it moves (it is the last in the line).
-                if let plan {
+                if let proof, proof.phase == .settled {
+                    if proof.visible, proof.directPlay || proof.hint != nil {
+                        ProofMarks(directPlayFlag: proof.directPlay, hint: proof.directPlay ? nil : proof.hint,
+                                   proofLast: true)
+                    }
+                } else if let plan {
                     ProofMarks(directPlayFlag: plan.isLossless,
                                 hint: plan.isLossless ? nil : plan.method.rawValue,
                                 proofLast: true)
@@ -233,7 +241,7 @@ struct DetailView: View {
     @MainActor init(model: AppModel, item: Item) {
         self.model = model
         self.item = item
-        _page = State(initialValue: DetailCore(app: model, item: item))
+        _page = State(initialValue: DetailWarm.take(item.id) ?? DetailCore(app: model, item: item))
     }
 
     private var current: Item { page?.item ?? item }
@@ -365,6 +373,7 @@ struct DetailView: View {
         let watchlist = actions?.favorite ?? false
         let hero = page?.model.hero
         return DetailHeader(model: model, item: current, plan: page?.plan(app: model),
+                            proof: actions?.proof,
                             blur: hero?.imageBlurHash,
                             stand: hero?.tileImages.compactMap { URL(string: $0.address) } ?? [],
                             proofWaiting: actions?.proof.phase != .settled) {

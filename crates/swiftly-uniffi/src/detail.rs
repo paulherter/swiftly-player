@@ -217,6 +217,43 @@ pub struct PlayOnDevice {
     pub name: String,
 }
 
+/// What a host without a detail view model (Android TV) knows about the title in front of it, to get the core's "More" list.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct MoreFactsInput {
+    /// A series page.
+    pub series: bool,
+    /// Movie: the playback plan is known. Series: an episode to continue with exists.
+    pub plan_known: bool,
+    /// Movie: the viewer has begun it.
+    pub begun: bool,
+    /// Watching together is possible.
+    pub together: bool,
+    /// The download button is offered (a series then also offers its trailer).
+    pub download_button: bool,
+    /// Devices in reach to start on.
+    pub play_on: Vec<PlayOnDevice>,
+}
+
+/// The "More" panel as the core builds it for a movie or a series, in the given language (`DetailVm::more_menu` without
+/// the view model): the same entries and order as on Apple TV.
+#[uniffi::export]
+pub fn detail_more_menu(language: String, facts: MoreFactsInput) -> Vec<MenuEntry> {
+    swiftly_vm::more_menu_for(
+        &language,
+        &swiftly_vm::MoreFacts {
+            series: facts.series,
+            plan_known: facts.plan_known,
+            begun: facts.begun,
+            cx: swiftly_vm::MenuContext {
+                download_button: facts.download_button,
+                together: facts.together,
+                play_on: facts.play_on.into_iter().map(|d| (d.id, d.name)).collect(),
+                ..Default::default()
+            },
+        },
+    )
+}
+
 /// What the page needs to know about the host (settings, capabilities, menu context).
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct DetailOptions {

@@ -115,6 +115,36 @@ pub enum WhatsNewDecision {
     Nothing,
 }
 
+/// The files shipped with the app, one per version (the same JSON the Apple apps bundle:
+/// `Packages/JellyfinKit/Sources/JellyfinKit/Resources/whatsnew/<version>.json`).
+const BUNDLED: &[(&str, &str)] = &[
+    (
+        "1.0.8",
+        include_str!(
+            "../../../Packages/JellyfinKit/Sources/JellyfinKit/Resources/whatsnew/1.0.8.json"
+        ),
+    ),
+    (
+        "1.1.0",
+        include_str!(
+            "../../../Packages/JellyfinKit/Sources/JellyfinKit/Resources/whatsnew/1.1.0.json"
+        ),
+    ),
+];
+
+/// The raw file shipped for `version` (`WhatsNewEntry.bundledData`), or `None`.
+pub fn bundled_json(version: &str) -> Option<&'static [u8]> {
+    BUNDLED
+        .iter()
+        .find(|(v, _)| *v == version)
+        .map(|(_, json)| json.as_bytes())
+}
+
+/// The decoded entry shipped for `version`: `None` without a file, for a draft or a broken file.
+pub fn bundled(version: &str) -> Option<WhatsNewEntry> {
+    WhatsNewEntry::decoded(bundled_json(version)?)
+}
+
 /// Where the last seen version is stored.
 pub const LAST_SEEN_KEY: &str = "whatsnew.lastSeen";
 
@@ -194,6 +224,48 @@ mod tests {
         assert!(!is_newer("1.1", "1.1.0"));
         assert!(is_newer("1.1.1", "1.1"));
         assert!(is_newer("2", "1.9.9"));
+    }
+
+    #[test]
+    fn the_shipped_file_is_found_by_version() {
+        let e = bundled("1.0.8").expect("1.0.8 ships");
+        assert_eq!(e.version, "1.0.8");
+        assert!(bundled_json("0.0.1").is_none());
+        assert!(bundled("0.0.1").is_none());
+    }
+
+    #[test]
+    fn the_1_1_0_file_ships_and_reads_clean() {
+        let e = bundled("1.1.0").expect("1.1.0 ships");
+        assert_eq!(e.version, "1.1.0");
+        assert_eq!(e.variant, WhatsNewVariant::Standard);
+        assert!(e.module.is_none());
+        assert_eq!(
+            (e.primary.label.as_str(), e.primary.action.as_str()),
+            ("continue", "dismiss")
+        );
+        assert!((3..=5).contains(&e.items.len()));
+        // Texts in both languages, short lines, no exclamation marks.
+        let mut texts = vec![&e.title];
+        for i in &e.items {
+            texts.push(&i.title);
+            texts.extend(i.detail.as_ref());
+        }
+        for t in texts {
+            for s in [&t.en, &t.de] {
+                assert!(!s.trim().is_empty() && !s.contains('!'), "{s}");
+                assert!(s.chars().count() <= 48, "line too long: {s}");
+            }
+        }
+        // The first update to 1.1.0 shows it; a fresh install does not.
+        assert_eq!(
+            decide(Some("1.0.8"), true, "1.1.0", true),
+            WhatsNewDecision::Show
+        );
+        assert_eq!(
+            decide(None, false, "1.1.0", true),
+            WhatsNewDecision::MarkSeen
+        );
     }
 
     #[test]

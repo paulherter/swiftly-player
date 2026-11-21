@@ -72,6 +72,7 @@ public enum SettingsSync {
         .init(name: "alphabetAn", kind: .bool, perServer: false),
         .init(name: "neuGetrennt", kind: .bool, perServer: false),
         .init(name: "seerrArrivalHint", kind: .bool, perServer: false),
+        .init(name: "seerrRequestsRail", kind: .bool, perServer: false),
         // Home page
         .init(name: "startReihen", kind: .list, perServer: false),
         .init(name: "startAus", kind: .list, perServer: false),

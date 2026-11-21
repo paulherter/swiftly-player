@@ -284,3 +284,104 @@ fn keys_and_base32() {
     assert_eq!(base32_decode(b"M"), None);
     assert_eq!(base32_decode(b"my-"), Some(vec![0x66]));
 }
+
+// ---- the keeper: what a pasted key leaves on the device -------------------------------------------------------------
+
+mod keeper {
+    use super::*;
+    use std::sync::Arc;
+    use swiftly_settings::{KeyValueStore, MemoryStore, StoreError, Value};
+    use swiftly_support::support::{Source, SupportPlan, SupportStatus, SupportStore};
+    use swiftly_support::supporter_keeper::KeyKeeper;
+
+    #[derive(Clone, Default)]
+    struct Shared(Arc<MemoryStore>);
+    impl KeyValueStore for Shared {
+        fn get(&self, key: &str) -> Option<Value> {
+            self.0.get(key)
+        }
+        fn set(&self, key: &str, value: Value) -> Result<(), StoreError> {
+            self.0.set(key, value)
+        }
+        fn remove(&self, key: &str) -> Result<(), StoreError> {
+            self.0.remove(key)
+        }
+        fn keys(&self) -> Vec<String> {
+            self.0.keys()
+        }
+    }
+
+    fn keeper(store: &Shared) -> KeyKeeper<Shared> {
+        KeyKeeper::with_public_key(store.clone(), test_key().to_vec(), false)
+    }
+
+    #[test]
+    fn a_good_key_makes_a_supporter_that_survives_a_restart() {
+        let store = Shared::default();
+        let l = keeper(&store).activate(v2("lifetime"), ISSUED).unwrap();
+        assert_eq!(l.plan, "lifetime");
+        let support = SupportStore::new(store.clone());
+        assert!(support.status().is_supporter());
+        assert_eq!(support.plan(), Some(SupportPlan::Lifetime));
+        assert_eq!(
+            support.status(),
+            SupportStatus::Supporter {
+                source: Source::Key,
+                since: Some(ISSUED as f64 / 1000.0)
+            }
+        );
+        // A new keeper over the same store (the next start) still knows the key and the licence.
+        let again = keeper(&store);
+        assert_eq!(again.stored_key().as_deref(), Some(v2("lifetime")));
+        assert_eq!(again.license().unwrap().id, l.id);
+        again.apply_expiry(ISSUED + 1000);
+        assert!(support.status().is_supporter());
+    }
+
+    #[test]
+    fn a_refused_key_changes_nothing() {
+        let store = Shared::default();
+        assert_eq!(
+            keeper(&store).activate("SS2-AAAA", ISSUED).unwrap_err(),
+            Failure::TooShort
+        );
+        assert_eq!(
+            keeper(&store).activate("", ISSUED).unwrap_err(),
+            Failure::Empty
+        );
+        assert_eq!(
+            keeper(&store)
+                .activate(v2("lifetimeTest"), ISSUED)
+                .unwrap_err(),
+            Failure::TestKey
+        );
+        assert_eq!(
+            keeper(&store).activate(v2("monthly"), EXPIRES).unwrap_err(),
+            Failure::Expired
+        );
+        assert!(keeper(&store).stored_key().is_none());
+        assert!(!SupportStore::new(store).status().is_supporter());
+    }
+
+    #[test]
+    fn a_monthly_key_that_ran_out_withdraws_only_a_key_status() {
+        let store = Shared::default();
+        keeper(&store).activate(v2("monthly"), ISSUED).unwrap();
+        let support = SupportStore::new(store.clone());
+        assert_eq!(support.plan(), Some(SupportPlan::Monthly));
+        keeper(&store).apply_expiry(EXPIRES - 1);
+        assert!(support.status().is_supporter());
+        keeper(&store).apply_expiry(EXPIRES);
+        assert!(!support.status().is_supporter());
+        assert_eq!(support.plan(), None);
+        // A status that came from a store is never touched by a key.
+        support
+            .set_status(SupportStatus::Supporter {
+                source: Source::Store,
+                since: None,
+            })
+            .unwrap();
+        keeper(&store).apply_expiry(EXPIRES + 10_000_000_000);
+        assert!(support.status().is_supporter());
+    }
+}

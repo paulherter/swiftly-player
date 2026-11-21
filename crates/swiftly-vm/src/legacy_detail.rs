@@ -15,7 +15,7 @@ use swiftly_library::series_state::SeasonSelectionRule;
 use swiftly_library::shuffle_run::{Rng, ShuffleRun};
 use swiftly_model::{Item, Person};
 use swiftly_net::{ErrorKind, HttpTransport};
-use swiftly_rules::display_rules::runtime_show;
+use swiftly_rules::display_rules::runtime_minutes;
 
 use crate::account::AccountRef;
 use crate::cache::ViewCache;
@@ -121,6 +121,9 @@ struct TitleOut {
     /// fresh plan replaces it. `planDa` stays false (the plan is still unknown).
     #[serde(rename = "beleg", skip_serializing_if = "Option::is_none")]
     proof_seed: Option<ProofSeedOut>,
+    /// The player's top bar facts of this title (`kopf`, the keys of [`DetailOf::play_seed`]), handed to the play request.
+    #[serde(rename = "kopf", skip_serializing_if = "Option::is_none")]
+    play_head: Option<PlaySeed>,
     /// This answer is the page's seed (stored copies, no server answer yet); the host treats the playback plan as unknown.
     #[serde(rename = "vorab", skip_serializing_if = "std::ops::Not::not")]
     seed: bool,
@@ -149,6 +152,10 @@ struct StateOut {
     episode: Option<i64>,
     #[serde(rename = "ab", skip_serializing_if = "Option::is_none")]
     since: Option<f64>,
+    /// The player's top bar facts of this item (`kopf`, the keys of [`DetailOf::play_seed`]): the page hands them to the play
+    /// request, so the bar is complete from the player's first frame without a stored copy.
+    #[serde(rename = "kopf", skip_serializing_if = "Option::is_none")]
+    play_head: Option<PlaySeed>,
 }
 
 #[derive(Serialize)]
@@ -251,6 +258,10 @@ struct EpisodeOut {
     runtime_min: Option<i64>,
     #[serde(rename = "restzeit", skip_serializing_if = "Option::is_none")]
     remaining_time: Option<String>,
+    /// The player's top bar facts of this item (`kopf`, the keys of [`DetailOf::play_seed`]): the page hands them to the play
+    /// request, so the bar is complete from the player's first frame without a stored copy.
+    #[serde(rename = "kopf", skip_serializing_if = "Option::is_none")]
+    play_head: Option<PlaySeed>,
 }
 
 #[derive(Serialize)]
@@ -340,6 +351,32 @@ pub struct DetailOf<S> {
         Mutex<std::collections::HashMap<String, Vec<swiftly_model::MediaStream>>>,
     /// One pending-report pass at a time (`Kern._reportLaterRuns`).
     pub(crate) report_later_runs: std::sync::atomic::AtomicBool,
+}
+
+/// The header facts of [`DetailOf::play_seed`], keyed like the playback plan.
+#[derive(Serialize)]
+struct PlaySeed {
+    #[serde(rename = "titel")]
+    title: String,
+    #[serde(rename = "untertitel")]
+    subtitle: String,
+    #[serde(rename = "serie", skip_serializing_if = "Option::is_none")]
+    series: Option<String>,
+    #[serde(rename = "itemId")]
+    item_id: String,
+    episode: bool,
+    #[serde(rename = "serieId", skip_serializing_if = "Option::is_none")]
+    series_id: Option<String>,
+    #[serde(rename = "staffelId", skip_serializing_if = "Option::is_none")]
+    season_id: Option<String>,
+    #[serde(rename = "kopfzeile")]
+    header_line: String,
+    #[serde(rename = "staffelNr", skip_serializing_if = "Option::is_none")]
+    season_number: Option<i64>,
+    #[serde(rename = "folgeNr", skip_serializing_if = "Option::is_none")]
+    episode_number: Option<i64>,
+    #[serde(rename = "nebenzeile", skip_serializing_if = "Option::is_none")]
+    secondary_line: Option<String>,
 }
 
 fn json<V: Serialize>(v: &V) -> Result<String, ErrorKind> {
@@ -596,6 +633,17 @@ impl<T: HttpTransport + 'static> DetailOf<Client<T>> {
         json(&out).unwrap_or_default()
     }
 
+    /// **The player's top bar before the stream answers**: title line, meta line and episode facts of a stored title, in the
+    /// keys of the playback plan (`kopfzeile`, `nebenzeile`, `staffelNr`, ...), from the same `play_display` rule the plan uses.
+    /// Empty text when nothing is stored. Never touches the network.
+    #[must_use]
+    pub fn play_seed(&self, id: &str) -> String {
+        let Some(item) = self.seed_item(id) else {
+            return String::new();
+        };
+        json(&self.play_head(&item)).unwrap_or_default()
+    }
+
     /// The first frame of a series page, in the shape of [`Self::series`]: the head from the stored copies, the seasons
     /// and the viewer's state from the stored shape of the page (warmed from the Home rows). Empty text without a copy.
     #[must_use]
@@ -764,6 +812,33 @@ impl<S: DetailServer> DetailOf<S> {
         json(&self.title_out(&i, plan.as_ref(), false))
     }
 
+    /// **The player's top bar of an item** (title line, meta facts, episode numbers), from the same `play_display` rule the
+    /// playback plan uses. A page that lists the item hands this to the play request, so the player's bar is complete
+    /// from its first frame even when the core has no stored copy yet.
+    fn play_head(&self, item: &Item) -> PlaySeed {
+        let d = crate::play_display::play_display(
+            item,
+            swiftly_model::DeliveryMethod::DirectPlay,
+            None,
+            None,
+            None,
+            self.text.locale(),
+        );
+        PlaySeed {
+            title: item.name.clone(),
+            subtitle: d.context_line,
+            series: d.series,
+            item_id: item.id.clone(),
+            episode: d.episode,
+            series_id: item.series_id.clone(),
+            season_id: d.season_id,
+            header_line: d.header_line,
+            season_number: d.season_number,
+            episode_number: d.episode_number,
+            secondary_line: d.secondary_line,
+        }
+    }
+
     /// The answer of [`Self::title`] from an item and its plan; the seed passes no plan.
     fn title_out(&self, i: &Item, plan: Option<&PlaybackPlan>, seed: bool) -> TitleOut {
         let file = plan.and_then(|p| p.source.as_ref()).map(|q| {
@@ -795,9 +870,7 @@ impl<S: DetailServer> DetailOf<S> {
         let since = resume_from(i);
         let year_runtime = [
             i.production_year.map(|y| y.to_string()),
-            i.runtime_seconds()
-                .filter(|s| *s > 0.0)
-                .map(|s| self.text.runtime(s)),
+            self.text.runtime_line(i.runtime_seconds()),
         ]
         .into_iter()
         .flatten()
@@ -833,11 +906,7 @@ impl<S: DetailServer> DetailOf<S> {
             resume_from: since,
             resume_text: since.map(|s| self.text.time_text(s)),
             remaining_time: self.text.resume_slot(i),
-            progress: i
-                .user_data
-                .as_ref()
-                .and_then(|d| d.played_percentage)
-                .map(|p| p / 100.0),
+            progress: i.watched_share(),
             description: i.overview.clone(),
             direction: i.direction().into_iter().map(str::to_owned).collect(),
             actors: i
@@ -856,6 +925,7 @@ impl<S: DetailServer> DetailOf<S> {
             backdrop: self.backdrop(i, None, seed),
             versions,
             tile_image: None,
+            play_head: Some(self.play_head(i)),
             proof_seed: None,
             seed,
         }
@@ -946,14 +1016,11 @@ impl<S: DetailServer> DetailOf<S> {
                     .unwrap_or(0)
                     > 0,
                 remaining_time: self.text.resume_slot(f),
-                progress: f
-                    .user_data
-                    .as_ref()
-                    .and_then(|d| d.played_percentage)
-                    .map(|p| p / 100.0),
+                progress: f.watched_share(),
                 season: f.parent_index_number,
                 episode: f.index_number,
                 since: resume_from(f),
+                play_head: Some(self.play_head(f)),
             }),
             button_text: self.text.series_button(state, false),
             seasons: seasons
@@ -994,18 +1061,11 @@ impl<S: DetailServer> DetailOf<S> {
             .zip(images)
             .map(|(f, image)| {
                 let watched = f.user_data.as_ref().and_then(|d| d.played).unwrap_or(false);
-                let minutes = |s: f64| {
-                    if s.is_finite() {
-                        (s / 60.0).clamp(0.0, 1.0e9) as i64
-                    } else {
-                        0
-                    }
-                };
-                let time = runtime_show(f.runtime_seconds()).then(|| {
-                    self.text.remaining(f).unwrap_or_else(|| {
-                        format!("{} min", minutes(f.runtime_seconds().unwrap_or(0.0)))
-                    })
-                });
+                let runtime_min = runtime_minutes(f.runtime_seconds());
+                let time = self
+                    .text
+                    .remaining(f)
+                    .or_else(|| runtime_min.map(|m| format!("{m} min")));
                 EpisodeOut {
                     id: f.id.clone(),
                     title: f
@@ -1013,20 +1073,14 @@ impl<S: DetailServer> DetailOf<S> {
                         .map_or_else(|| f.name.clone(), |n| format!("{n}. {}", f.name)),
                     subline: time,
                     image,
-                    progress: if watched {
-                        None
-                    } else {
-                        f.user_data
-                            .as_ref()
-                            .and_then(|d| d.played_percentage)
-                            .map(|p| p / 100.0)
-                    },
+                    progress: if watched { None } else { f.watched_share() },
                     watched,
                     since: resume_from(f),
                     name: f.name.clone(),
                     number: f.index_number,
-                    runtime_min: f.runtime_seconds().filter(|s| *s > 0.0).map(minutes),
+                    runtime_min,
                     remaining_time: self.text.remaining(f),
+                    play_head: Some(self.play_head(f)),
                 }
             })
             .collect()
@@ -1055,9 +1109,7 @@ impl<S: DetailServer> DetailOf<S> {
                     name: e.name.clone(),
                     image: ImageSelection::landscape(e, &self.addresses, 600)
                         .map(|l| l.url.to_string()),
-                    runtime: runtime_show(e.runtime_seconds())
-                        .then(|| e.runtime_seconds().map(|s| self.text.runtime(s)))
-                        .flatten(),
+                    runtime: self.text.runtime_line(e.runtime_seconds()),
                 })
                 .collect(),
         })
@@ -1081,9 +1133,7 @@ impl<S: DetailServer> DetailOf<S> {
                     name: Some(t.name.clone()),
                     image: ImageSelection::landscape(&t, &self.addresses, 600)
                         .map(|l| l.url.to_string()),
-                    runtime: runtime_show(t.runtime_seconds())
-                        .then(|| t.runtime_seconds().map(|s| self.text.runtime(s)))
-                        .flatten(),
+                    runtime: self.text.runtime_line(t.runtime_seconds()),
                     address: None,
                 },
                 TrailerCandidate::Web(url) => TrailerOut {

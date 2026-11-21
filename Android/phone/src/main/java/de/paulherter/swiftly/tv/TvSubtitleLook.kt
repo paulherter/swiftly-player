@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,6 +51,7 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import de.paulherter.swiftly.subtitleColourName
 import de.paulherter.swiftly.subtitleOutlineName
@@ -247,7 +247,7 @@ private fun UnfoldingRow(key: String, title: String, value: String, opened: Stri
                         perform = {
                             set(field, step.word); trialLost(owner); setOpened(null); runCatching { header.requestFocus() }
                         }) { focus ->
-                        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
+                        Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(smoothRoundedShape(TvTheme.corner))
                                 .background(if (focus) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color.Transparent).padding(horizontal = TvSpec.rowInset),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvSpec.rowSpacing)) {
                             // The check mark is in the type colour, not the accent (spec).

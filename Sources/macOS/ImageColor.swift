@@ -36,7 +36,6 @@ final class ImageColor {
         }.value
         guard let values = computed else { return }
         // The tint colours a screen-tall gradient: it lands once the page has stopped sliding (`InTravel`).
-        await InTravel.waitFor()
         guard !Task.isCancelled else { return }
         // Darken and desaturate: the tint should color the base tone, not replace it.
         //
@@ -54,9 +53,11 @@ final class ImageColor {
         // **No jumping.** The tint colors a screen-tall gradient; if it changes without
         // an explicit animation, half the page flashes the new color. The change comes
         // from the network and will hit at some point, often mid slide-in.
-        withAnimation(.easeInOut(duration: 0.40)) {
-            audio = Color(hue: values.colorAudio, saturation: min(values.saturation, 0.45),
-                        brightness: 0.146)
+        InTravel.land { [self] in
+            withAnimation(.easeInOut(duration: 0.40)) {
+                audio = Color(hue: values.colorAudio, saturation: min(values.saturation, 0.45),
+                            brightness: 0.146)
+            }
         }
     }
 

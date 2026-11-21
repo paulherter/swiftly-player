@@ -509,6 +509,42 @@ fn auto_skip_off_waits_for_the_user_on_intro_and_outro() {
     );
 }
 
+/// The end of the file with a next episode: a short episode and an outro that stops well before the end get no
+/// card (the scene after the credits stays untouched), and the file used to end with nothing started.
+#[test]
+fn the_end_of_the_file_starts_the_next_episode_without_a_card_while_automatic_is_on() {
+    let started = |r: &Rig| {
+        r.vm.take_effects()
+            .iter()
+            .any(|e| matches!(e, PlayerEffect::StartEpisode { .. }))
+    };
+    for sections in [vec![], vec![Segment::new(Art::Credits, 6.0, 10.0)]] {
+        let r = rig_with(0.0, true, PlayerPrefs::default());
+        r.vm.set_sections(sections.clone());
+        r.picture(101.0, 100.0, 130.0);
+        r.run(101.0, 120.0, 100.0);
+        assert_eq!(r.vm.offer().view, OfferView::Hidden, "{sections:?}");
+        assert!(!started(&r), "{sections:?}: not before the end");
+        r.run(120.0, 135.0, 119.0);
+        assert!(started(&r), "{sections:?}: the end of the file advances");
+    }
+    // "Next episode automatically" off: nothing advances by itself.
+    let off = PlayerPrefs {
+        next_automatic: false,
+        ..PlayerPrefs::default()
+    };
+    let r = rig_with(0.0, true, off);
+    r.vm.set_sections(vec![Segment::new(Art::Credits, 6.0, 10.0)]);
+    r.picture(101.0, 100.0, 130.0);
+    r.run(101.0, 140.0, 100.0);
+    assert!(!started(&r));
+    // No next episode: nothing to start.
+    let r = rig_with(0.0, false, PlayerPrefs::default());
+    r.picture(101.0, 100.0, 130.0);
+    r.run(101.0, 140.0, 100.0);
+    assert!(!started(&r));
+}
+
 #[test]
 fn auto_skip_outro_card_counts_down_first_then_advances_and_dismiss_cancels() {
     // Wanted: the card with its countdown first; the episode only changes after it.
@@ -3026,4 +3062,48 @@ fn a_chapter_index_past_the_list_does_nothing() {
     r.vm.send(PlayerIntent::JumpToChapter(9), 103.0);
     assert_eq!(r.engine.calls().len(), before);
     assert_eq!(r.vm.controls().layer, Some(PlayerLayer::Chapters));
+}
+
+/// The top bar is up from the first frame, under the start veil; the centre and the timeline wait for the picture.
+#[test]
+fn top_bar_is_up_while_loading_and_the_middle_waits() {
+    let r = rig();
+    let (t, c) = (r.vm.transport(), r.vm.controls());
+    assert_eq!(t.phase, Phase::Loading);
+    assert!(t.veil_up(), "veil while loading");
+    assert!(c.top_bar_up(), "top bar from the first frame");
+    assert!(!c.middle_up(&t), "middle waits for the picture");
+    r.picture(101.0, 0.4, 3600.0);
+    r.vm.display_tick(101.25);
+    r.vm.tick(101.5);
+    let (t, c) = (r.vm.transport(), r.vm.controls());
+    assert!(!t.veil_up());
+    assert!(c.top_bar_up(), "the bar does not change when loading ends");
+    assert!(c.middle_up(&t));
+}
+
+/// A slow stream: the idle timer does not hide the bar under the start veil, and it starts counting at the picture.
+#[test]
+fn bar_stays_through_a_slow_load_then_hides_after_the_picture() {
+    let r = rig();
+    for step in 1..=20 {
+        let now = 100.0 + step as f64; // 20 s of loading, far past the idle time
+        r.vm.tick(now);
+        assert!(
+            r.vm.controls().visible,
+            "still up while loading at +{step} s"
+        );
+    }
+    r.picture(121.0, 0.4, 3600.0);
+    r.vm.display_tick(121.25);
+    r.vm.tick(121.5);
+    assert!(
+        r.vm.controls().visible,
+        "not hidden the moment the picture arrives"
+    );
+    r.run(121.5, 127.0, 0.9);
+    assert!(
+        !r.vm.controls().visible,
+        "hidden by the idle timer after the picture"
+    );
 }

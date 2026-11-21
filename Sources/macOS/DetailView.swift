@@ -41,9 +41,8 @@ struct DetailView: View {
         .task {
             guard full == nil else { return }
             let fetched = await model.item(id: item.id)
-            await InTravel.waitFor()
             guard !Task.isCancelled else { return }
-            full = fetched
+            InTravel.land { full = fetched }
         }
         // Reload the title after the player closes. The player is an overlay above this
         // view, so `.task` does not run again. See `AppModel.playbackEnded`.
@@ -104,15 +103,15 @@ struct SeasonTarget: View {
                 if let fetched { SeriesCache.shared.remember(fetched) }
                 // The whole series page is built from this value, not in the middle of the
                 // transition (`InTravel`).
-                await InTravel.waitFor()
                 guard !Task.isCancelled else { return }
-                series = fetched
+                InTravel.land { series = fetched }
             }
             let f = await freshValue
-            await InTravel.waitFor()
             guard !Task.isCancelled else { return }
-            freshSeasonID = f?.seasonId
-            freshSeasonNumber = f?.parentIndexNumber
+            InTravel.land {
+                freshSeasonID = f?.seasonId
+                freshSeasonNumber = f?.parentIndexNumber
+            }
         }
     }
 }
@@ -644,11 +643,46 @@ struct DetailHero: View {
         // the matching row starts (the same `SeerrTitleMenu.start`).
         .task {
             let args = ProcessInfo.processInfo.arguments
+            // `-SwiftlyProofLockDelete on|off`: the same write as a tap on "Löschen vom Server sperren" (core row, core store).
+            if let at = args.firstIndex(of: "-SwiftlyProofLockDelete"), at + 1 < args.count {
+                let feed = SettingsRowsFeed.shared
+                // The row exists once the server's Seerr capability is known (it arrives after the page opened): wait for it.
+                for _ in 0..<40 {
+                    feed.apply(feed.facts(model), model)
+                    if feed.row("loeschenSperren") != nil { break }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+                feed.setSwitch("loeschenSperren", args[at + 1] == "on")
+                // The core publishes the new rows through its observe loop, a moment after the write: read the row after that.
+                try? await Task.sleep(for: .seconds(2))
+                AppLog.writeOut("[proof] loeschenSperren -> \(feed.isOn("loeschenSperren"))")
+            }
             guard args.contains("-SwiftlyProofMore") || args.contains("-SwiftlyProofReport") || args.contains("-SwiftlyProofDelete") else { return }
             try? await Task.sleep(for: .seconds(5))
             if args.contains("-SwiftlyProofMore") { withAnimation(Theme.leap) { moreOpen = true } }
             if args.contains("-SwiftlyProofReport") { await seerrMenu.start(.reportProblem, model: model, item: seriesPage?.next ?? title, seconds: nil) }
             if args.contains("-SwiftlyProofDelete") { await seerrMenu.start(.deleteFromServer, model: model, item: seriesPage?.next ?? title, seconds: nil) }
+            // `-SwiftlyProofReportSend <text>`: then the calls of the sheet's controls (the kind "Ton", the words, "Melden").
+            if let at = args.firstIndex(of: "-SwiftlyProofReportSend"), at + 1 < args.count, seerrMenu.reportOpen {
+                try? await Task.sleep(for: .seconds(3))
+                seerrMenu.report.setKind(.audio)
+                seerrMenu.report.setMessage(args[at + 1])
+                try? await Task.sleep(for: .seconds(2))
+                await seerrMenu.report.send()
+            }
+            // `-SwiftlyProofDeleteRun`: then the calls of "Löschen" and, once every step is done, "Schließen".
+            if args.contains("-SwiftlyProofDeleteRun"), seerrMenu.deleteOpen {
+                try? await Task.sleep(for: .seconds(4))
+                await seerrMenu.delete.run()
+                try? await Task.sleep(for: .seconds(4))
+                if seerrMenu.delete.info?.phase == .done {
+                    seerrMenu.deleteOpen = false
+                    navigator.back(in: pageSection)
+                    // Then Start, where "Nächste Folge" must no longer list the title.
+                    try? await Task.sleep(for: .seconds(2.5))
+                    CommandPost.dispatch(.start)
+                }
+            }
         }
         #endif
         .onChange(of: seerrMenu.message) { _, text in
@@ -1073,7 +1107,9 @@ struct DetailHeadBlock<Chips: View, Buttons: View, Below: View>: View {
                 .padding(.top, 12)
 
             chips.padding(.top, 14)
-            buttons.padding(.top, 20)
+            // **Above what follows.** The buttons carry popups (More, the download panel) that hang over the
+            // description below; a later sibling draws over an earlier one unless the earlier one is raised.
+            buttons.padding(.top, 20).zIndex(1)
             below
         }
         .frame(width: 700, alignment: .topLeading)
@@ -1115,7 +1151,7 @@ struct DetailChip: View {
         .foregroundStyle(color)
         .padding(.horizontal, 9)
         .frame(height: 26)
-        .background(fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(fill, in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
     }
 }
 

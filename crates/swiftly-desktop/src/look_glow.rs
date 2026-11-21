@@ -40,6 +40,52 @@ pub fn set(glow: Glow) {
     CURRENT.with(|c| c.set(glow));
 }
 
+thread_local! {
+    /// The look's accent as `0xRRGGBB`; today's turquoise until a look says otherwise.
+    static ACCENT: Cell<u32> = const { Cell::new(0x50D5DA) };
+}
+
+/// The accent the app draws buttons, selection, progress and links with (`Theme.accent`): the look's own, or the turquoise
+/// of the original look. Every screen reads it when it builds, and [`set_accent`] makes them build again.
+pub fn accent() -> swiftly_design::types::Colour {
+    let hex = ACCENT.with(Cell::get);
+    let ch = |shift: u32| ((hex >> shift) & 0xFF) as f32 / 255.0;
+    swiftly_design::types::Colour {
+        r: ch(16),
+        g: ch(8),
+        b: ch(0),
+        a: 1.0,
+        rgba8: (hex << 8) | 0xFF,
+    }
+}
+
+/// Sets the accent; every screen builds again on its next frame when it changed.
+pub fn set_accent(hex: u32) {
+    if ACCENT.with(|c| c.replace(hex)) != hex {
+        swiftly_ui::bump_theme();
+    }
+}
+
+/// Takes the glow and the accent of a look store as they show now (the saved look, or the one being tried on).
+pub fn apply<S: KeyValueStore>(look: &LookStore<S>) {
+    set(glow_of(look));
+    set_accent(look.selection().palette().accent.main.hex);
+}
+
+/// Takes the glow and the accent of the saved look from `settings`.
+pub fn apply_saved<S: KeyValueStore + Clone>(settings: S) {
+    set(read(settings.clone()));
+    set_accent(accent_of_saved(settings));
+}
+
+/// The accent of the saved look, worn only when the core's rules allow it.
+fn accent_of_saved<S: KeyValueStore + Clone>(settings: S) -> u32 {
+    let supporter = SupportStore::new(settings.clone()).status().is_supporter();
+    let mut look = LookStore::load(settings);
+    let _ = look.change(|s| s.set_supporter(supporter));
+    look.selection().palette().accent.main.hex
+}
+
 /// The glow the pages draw.
 pub fn current() -> Glow {
     CURRENT.with(Cell::get)
@@ -51,6 +97,11 @@ pub fn read<S: KeyValueStore + Clone>(settings: S) -> Glow {
     let supporter = SupportStore::new(settings.clone()).status().is_supporter();
     let mut look = LookStore::load(settings);
     let _ = look.change(|s| s.set_supporter(supporter));
+    glow_of(&look)
+}
+
+/// The glow of a look store as it shows now: the saved look, or the one being tried on.
+pub fn glow_of<S: KeyValueStore>(look: &LookStore<S>) -> Glow {
     let palette = look.selection().palette();
     Glow {
         tone: palette.glow_color().hex,

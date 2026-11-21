@@ -136,6 +136,9 @@ impl LibraryState {
     /// The order of a library page nobody has chosen an order for yet: "Recently added".
     /// A list without a remember name (collections, genre shelves) keeps "By name".
     pub const DEFAULT_PAGE_SORTING: Sorting = Sorting::Latest;
+    /// The order a collection page starts on: premiere year ascending, so a saga or a series of films reads in order
+    /// (nothing is remembered; `LibraryView(collection:)`).
+    pub const COLLECTION_PAGE_SORTING: Sorting = Sorting::Erscheinung;
 
     /// `init(rememberName:)` (:55-61): reads the remembered order and filter; without a name
     /// nothing is remembered. A remembered place (a library page) starts on

@@ -1,8 +1,10 @@
-//! `cargo xtask fixture-server [--port N] [--big] [--real-shapes] [--admin] [--slow-downloads] [--mode ...]`: a small Jellyfin-shaped HTTP server for the real-app runs. Auth (password
+//! `cargo xtask fixture-server [--port N] [--big] [--real-shapes] [--extreme] [--admin] [--slow-downloads] [--mode ...]`: a small Jellyfin-shaped HTTP server for the real-app runs. Auth (password
 //! and Quick Connect), views, items, resume and next up, detail with a media source, seasons and episodes, generated
 //! pictures, a playable test clip (16-bit WAV tone served with ranges) and the playback reports. Everything is
 //! deterministic and read-only; user `demo`, password `demo` (or empty). Not a Jellyfin replacement: only what the
 //! Rust app asks for.
+//!
+//! `SWIFTLY_FIXTURE_LONG_CLIP=1`: every title streams a 120 s clip (and reports 120 s) so a player menu can be used while it runs.
 //!
 //! # Real shapes (opt-in)
 //!
@@ -46,6 +48,26 @@ fn movie_runtime_ticks() -> i64 {
     if std::env::var_os("SWIFTLY_FIXTURE_LONG_MOVIES").is_some() {
         72_000_000_000
     } else {
+        clip_ticks()
+    }
+}
+
+/// `SWIFTLY_FIXTURE_LONG_CLIP` set: every title streams a 120 s clip (and reports 120 s) instead of the 12 s one, so a
+/// player menu can be opened and used while the film runs. Without it nothing changes.
+fn long_clip() -> bool {
+    std::env::var_os("SWIFTLY_FIXTURE_LONG_CLIP").is_some()
+}
+
+/// The clip the stream routes serve.
+fn clip_bytes() -> &'static [u8] {
+    if long_clip() { CLIP_LONG } else { CLIP }
+}
+
+/// The run time of `clip_bytes()` in ticks.
+fn clip_ticks() -> i64 {
+    if long_clip() {
+        1_200_000_000
+    } else {
         120_000_000
     }
 }
@@ -79,16 +101,25 @@ pub(crate) fn movie(i: usize) -> String {
 }
 
 fn movie_plain(i: usize) -> String {
-    let resume = if i.is_multiple_of(2) {
-        r#""PlaybackPositionTicks":3000000000,"PlayedPercentage":25.0,"Played":false"#
+    // The pinned old answers keep the fixed 300 s position. `SWIFTLY_FIXTURE_RESUME_IN_CLIP` set: 65 s, which lies inside
+    // the 120 s clip. The apps resume only after more than 60 s and at least 60 s before the end, so this needs
+    // `SWIFTLY_FIXTURE_LONG_CLIP` (the clip is long enough) and `SWIFTLY_FIXTURE_LONG_MOVIES` (the run time is 2 h);
+    // with the 12 s or the 120 s run time no position can count as a resume.
+    let position: i64 = if std::env::var_os("SWIFTLY_FIXTURE_RESUME_IN_CLIP").is_some() {
+        650_000_000
     } else {
-        r#""Played":false"#
+        3_000_000_000
+    };
+    let resume = if i.is_multiple_of(2) {
+        format!(r#""PlaybackPositionTicks":{position},"PlayedPercentage":25.0,"Played":false"#)
+    } else {
+        r#""Played":false"#.to_string()
     };
     format!(
         r#"{{"Id":"m{i}","Name":"{}","Type":"Movie","ProductionYear":{},"RunTimeTicks":{rt},"Overview":"Ein ruhiger Testfilm vom Fixture-Server.","Genres":["Drama"],"CommunityRating":7.5,"OfficialRating":"FSK 12","People":[{{"Id":"p1","Name":"Anna Test","Type":"Actor","Role":"Hauptrolle","PrimaryImageTag":"pp1"}},{{"Id":"p2","Name":"Ben Regie","Type":"Director"}}],"RemoteTrailers":[{{"Url":"https://www.youtube.com/watch?v=fixture{i}"}}],"ImageTags":{{"Primary":"p{i}"}},"BackdropImageTags":["b{i}"],"MediaSources":[{{"Id":"src{i}","Name":"Test","Container":"mp4","Size":{clip},"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":{rt},"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"DisplayTitle":"Ton","IsDefault":true}}]}},{{"Id":"src{i}b","Name":"Test klein","Container":"mkv","Size":900000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":{rt},"MediaStreams":[{{"Type":"Video","Codec":"hevc","Index":0,"Width":1280,"Height":720}},{{"Type":"Audio","Codec":"ac3","Channels":6,"Index":1,"Language":"deu","DisplayTitle":"Deutsch 5.1"}},{{"Type":"Subtitle","Codec":"srt","Index":2,"Language":"eng"}}]}}],"UserData":{{{resume}}}}}"#,
         NAMES[i % NAMES.len()],
         2015 + i,
-        clip = CLIP.len(),
+        clip = clip_bytes().len(),
         rt = movie_runtime_ticks()
     )
 }
@@ -140,8 +171,17 @@ fn episode(n: usize) -> String {
 fn episode_plain(n: usize) -> String {
     // Episodes 3 and above belong to season 2, which only exists in rich mode.
     let season = if rich() && n >= 3 { 2 } else { 1 };
+    // `SWIFTLY_FIXTURE_VERSIONS=1`: every episode has a second version, so the version sheet of a series' Play button can be proven.
+    let second = if std::env::var_os("SWIFTLY_FIXTURE_VERSIONS").is_some() {
+        format!(
+            r#",{{"Id":"srce{n}b","Name":"Test klein","Container":"wav","SupportsDirectPlay":true,"MediaStreams":[]}}"#
+        )
+    } else {
+        String::new()
+    };
     format!(
-        r#"{{"Id":"e{n}","Name":"Folge {n}","Type":"Episode","SeriesId":"s1","SeriesName":"Hafenlichter","SeasonId":"se{season}","ParentIndexNumber":{season},"IndexNumber":{n},"RunTimeTicks":120000000,"ImageTags":{{"Primary":"pe{n}"}},"MediaSources":[{{"Id":"srce{n}","Name":"Test","Container":"wav","SupportsDirectPlay":true,"MediaStreams":[]}}],"UserData":{{"Played":false}}}}"#
+        r#"{{"Id":"e{n}","Name":"Folge {n}","Type":"Episode","SeriesId":"s1","SeriesName":"Hafenlichter","SeasonId":"se{season}","ParentIndexNumber":{season},"IndexNumber":{n},"RunTimeTicks":{ticks},"ImageTags":{{"Primary":"pe{n}"}},"MediaSources":[{{"Id":"srce{n}","Name":"Test","Container":"wav","SupportsDirectPlay":true,"MediaStreams":[]}}{second}],"UserData":{{"Played":false}}}}"#,
+        ticks = clip_ticks()
     )
 }
 
@@ -264,7 +304,7 @@ fn playback_info(id: &str) -> String {
         .as_deref()
         .and_then(|j| sources_span(j).map(|span| j[span].to_owned()));
     let sources = own.unwrap_or_else(|| {
-        format!(r#"[{{"Id":"src-{id}","Container":"mp4","SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"IsDefault":true}}]}}]"#)
+        format!(r#"[{{"Id":"src-{id}","Container":"mp4","SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":{ticks},"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"IsDefault":true}}]}}]"#, ticks = clip_ticks())
     });
     format!(r#"{{"MediaSources":{sources},"PlaySessionId":"fx-session"}}"#)
 }
@@ -414,7 +454,32 @@ pub(crate) fn list(items: &[String]) -> String {
 }
 
 fn all_items() -> Vec<String> {
-    (0..6).map(movie).chain(std::iter::once(series())).collect()
+    // `SWIFTLY_FIXTURE_BARE_LIST=1`: like a real server's list answer, the series entry in a list has no overview, year, rating
+    // or runtime; only its own `/Items/s1` answer carries them (a page opened from a list then starts from a bare entry).
+    let listed = if std::env::var_os("SWIFTLY_FIXTURE_BARE_LIST").is_some() {
+        series_bare()
+    } else {
+        series()
+    };
+    // `SWIFTLY_FIXTURE_HOLLOW=1`: one more series without episodes (`ChildCount` 0), the kind "Leere Serien ausblenden" hides.
+    let hollow = std::env::var_os("SWIFTLY_FIXTURE_HOLLOW").map(|_| {
+        r#"{"Id":"s9","Name":"Leere Serie","Type":"Series","ProductionYear":2021,"ChildCount":0,"ImageTags":{"Primary":"ps9"},"UserData":{"UnplayedItemCount":0,"Played":false}}"#.to_owned()
+    });
+    (0..6)
+        .map(movie)
+        .chain(std::iter::once(listed))
+        .chain(hollow)
+        .collect()
+}
+
+/// The series' own answer with the facts a real server adds (community rating, runtime).
+fn series_full() -> String {
+    series().replacen(r#""Type":"Series","#, r#""Type":"Series","CommunityRating":8.1,"OfficialRating":"TV-14","RunTimeTicks":27000000000,"#, 1)
+}
+
+/// The series as a list names it: no overview, year, rating or runtime.
+fn series_bare() -> String {
+    r#"{"Id":"s1","Name":"Hafenlichter","Type":"Series","ChildCount":2,"ImageTags":{"Primary":"ps1"},"UserData":{"UnplayedItemCount":2,"Played":false}}"#.into()
 }
 
 /// What the plain fixture's `/Items` lists. Without a type or library the whole catalogue, as ever; with
@@ -447,7 +512,12 @@ pub(crate) fn find(id: &str) -> Option<String> {
             r#"{"Type":"Audio","Codec":"ac3","Channels":6,"Index":1,"Language":"deu","DisplayTitle":"Deutsch 5.1","IsDefault":true},{"Type":"Audio","Codec":"aac","Channels":2,"Index":3,"Language":"eng","DisplayTitle":"English"}"#,
             1,
         )),
-        b's' if n == 1 => Some(series()),
+        // The facts a real server adds to the series' own answer come with the bare list option; without it the answer is the old one.
+        b's' if n == 1 => Some(if std::env::var_os("SWIFTLY_FIXTURE_BARE_LIST").is_some() {
+            series_full()
+        } else {
+            series()
+        }),
         b'g' if n == 1 => Some(extras_movie()),
         b'p' if n == 1 => Some(r#"{"Id":"p1","Name":"Anna Test","Type":"Person","Overview":"Schauspielerin aus dem Fixture.","PremiereDate":"1980-05-01T00:00:00.0000000Z","ProductionLocations":["Berlin"],"ProviderIds":{"Tmdb":"1234"},"ImageTags":{"Primary":"pp1"}}"#.into()),
         b'e' if (1..=3).contains(&n) => Some(episode(n)),
@@ -630,6 +700,8 @@ fn json(body: String) -> Reply {
 /// The 12 s test clip (320x180 h264 + aac, generated with ffmpeg; served with ranges).
 /// What every film download and stream answers with; the catalogue declares exactly this many bytes.
 pub(crate) const CLIP: &[u8] = include_bytes!("../assets/fixture-clip.mp4");
+/// The 120 s variant (320x180 h264 + quiet aac tone), served instead when `SWIFTLY_FIXTURE_LONG_CLIP` is set.
+const CLIP_LONG: &[u8] = include_bytes!("../assets/fixture-clip-long.mp4");
 /// `POST /Sessions/Playing*` paths in arrival order, read back with `GET /fixture/reports`.
 static REPORTS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 /// Every request target in arrival order, read back with `GET /fixture/seen` (what a client really asked).
@@ -664,6 +736,18 @@ fn record_timed(path: &str, body: &str) {
     }
 }
 
+/// Titles taken out of "Continue Watching" (`POST UserItems/{id}/UserData`, the position back to zero): like a real server,
+/// `/UserItems/Resume` no longer lists them. Without this the app's removal worked and the next list load put the title
+/// back, which looked like a menu entry that does nothing. `POST /fixture/resume/reset` forgets them.
+static HIDDEN_FROM_RESUME: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+fn hidden_from_resume(id: &str) -> bool {
+    HIDDEN_FROM_RESUME
+        .lock()
+        .map(|h| h.iter().any(|x| x == id))
+        .unwrap_or(false)
+}
+
 fn record(path: &str) {
     if let Ok(mut r) = REPORTS.lock() {
         r.push(path.to_owned());
@@ -684,8 +768,16 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
     if let Ok(mut seen) = SEEN.lock() {
         seen.push(target.to_owned());
     }
+    // The second client (`/__push/...`): changes the catalogue and tells every open socket.
+    if let Some(reply) = crate::fixture_push::answer(method, path, query) {
+        return reply;
+    }
     // The opt-in big catalogue (`--big`): answers first, only when switched on.
     if let Some(reply) = crate::fixture_big::answer(method, path, query) {
+        return reply;
+    }
+    // The opt-in worst-case catalogue (`--extreme`, `fixture_extreme.rs`): long names, emoji, RTL, empty library.
+    if let Some(reply) = crate::fixture_extreme::answer(method, path, query) {
         return reply;
     }
     // The opt-in administrator side (`--admin`): the server page's reads and the two users (`fixture_admin.rs`).
@@ -771,7 +863,13 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
             r#"{"Id":"lib-movies","Name":"Filme","Type":"CollectionFolder","CollectionType":"movies"}"#.into(),
             r#"{"Id":"lib-shows","Name":"Serien","Type":"CollectionFolder","CollectionType":"tvshows"}"#.into(),
         ])),
-        (_, p) if p.ends_with("/UserItems/Resume") || p.ends_with("/Items/Resume") => json(list(&[movie(0), movie(2)])),
+        (_, p) if p.ends_with("/UserItems/Resume") || p.ends_with("/Items/Resume") => json(list(&[0, 2].map(|n| (n, format!("m{n}"))).iter().filter(|(_, id)| !hidden_from_resume(id)).map(|(n, _)| movie(*n)).collect::<Vec<_>>())),
+        ("POST", "/fixture/resume/reset") => {
+            if let Ok(mut h) = HIDDEN_FROM_RESUME.lock() {
+                h.clear();
+            }
+            Reply(204, "text/plain", Vec::new())
+        }
         (_, "/Shows/NextUp") => json(list(&[episode(2)])),
         (_, p) if p.ends_with("/Shows/s1/Seasons") || p == "/Shows/s1/Seasons" => json(list(&seasons())),
         // Rich mode has two seasons: season 1 holds episodes 1/2, season 2 holds 3/4 (like bm-ep3/bm-ep4), so a season
@@ -790,7 +888,19 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
             let (w, h) = if p.contains("Backdrop") { (320, 180) } else { (200, 300) };
             Reply(200, "image/png", png(seed, w, h))
         }
-        (_, p) if p.contains("/Videos/") && (p.ends_with("/stream") || p.contains("/stream.")) => Reply(200, "video/mp4", CLIP.to_vec()),
+        // `SWIFTLY_FIXTURE_STREAM_FAIL=<id>,..` answers the stream of those titles with an error at once; `SWIFTLY_FIXTURE_STREAM_STALL=<id>,..`
+        // holds it for 45 s first (a start slower than the player's start timeout). For the failed-start proof.
+        (_, p) if p.contains("/Videos/") && (p.ends_with("/stream") || p.contains("/stream.")) => {
+            let listed = |var: &str| std::env::var(var).is_ok_and(|v| v.split(',').any(|id| !id.is_empty() && p.contains(&format!("/Videos/{id}/"))));
+            if listed("SWIFTLY_FIXTURE_STREAM_STALL") {
+                std::thread::sleep(std::time::Duration::from_secs(45));
+                Reply(500, "text/plain", Vec::new())
+            } else if listed("SWIFTLY_FIXTURE_STREAM_FAIL") {
+                Reply(500, "text/plain", Vec::new())
+            } else {
+                Reply(200, "video/mp4", clip_bytes().to_vec())
+            }
+        }
         // Player extras (`g1` only; every other id keeps its old answer below).
         (_, "/MediaSegments/g1") => json(extras_segments()),
         // The first bench episode (10 s) has an outro from 6 s to the end, so the next-episode card opens (desktop check).
@@ -834,6 +944,14 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
             if crate::fixture_modes::global().0.refuse_user_data {
                 Reply(500, "text/plain", b"refused".to_vec())
             } else {
+                if let (Some(id), Ok(mut h)) = (
+                    p.strip_prefix("/UserItems/").and_then(|r| r.split('/').next()),
+                    HIDDEN_FROM_RESUME.lock(),
+                ) && body.contains("\"PlaybackPositionTicks\":0")
+                    && !h.iter().any(|x| x == id)
+                {
+                    h.push(id.to_owned());
+                }
                 Reply(204, "text/plain", Vec::new())
             }
         }
@@ -992,10 +1110,18 @@ fn real_versions(base: usize, json: String) -> String {
 }
 
 /// The five shared films of one movie library: `ra0..ra4` (library A) or `rb0..rb4` (library B), the same Tmdb ids.
+/// The films a second client added (`/__push/film`), newest last.
+fn real_pushed_films() -> Vec<String> {
+    (1..=crate::fixture_push::extra_films())
+        .map(|n| real_movie(&format!("rn{n}"), 1, &format!("Neuer Film {n}"), None))
+        .collect()
+}
+
 fn real_library_movies(prefix: &str) -> Vec<String> {
     (0..5)
         .filter(|i| {
             !crate::fixture_seerr::library_hidden((REAL_TMDB_BASE + i) as i64, prefix == "rb")
+                && !(prefix == "ra" && crate::fixture_push::film_removed(*i))
         })
         .map(|i| {
             real_versions(
@@ -1059,7 +1185,7 @@ fn real_home() -> Vec<String> {
         .collect()
 }
 
-/// False once Seerr deleted the series' files and Jellyfin re-read its library (`SWIFTLY_FIXTURE_SEERR_DELETE_JELLYFIN=1`);
+/// False once Seerr deleted the series' files and Jellyfin re-read its library (always in the running server, with `SWIFTLY_FIXTURE_SEERR_DELETE_JELLYFIN=1` in tests);
 /// then the series, its season and its episodes are gone from every listing and lookup.
 fn real_series_listed() -> bool {
     !crate::fixture_seerr::library_hidden(7777, false)
@@ -1082,7 +1208,10 @@ fn real_episode(n: usize) -> String {
     // A real server's media source carries the run time; a client that plays the file reads its length from there.
     let mut base = episode(n).replace(
         r#""Container":"wav","SupportsDirectPlay":true,"MediaStreams":[]"#,
-        r#""Container":"wav","SupportsDirectPlay":true,"RunTimeTicks":120000000,"MediaStreams":[]"#,
+        &format!(
+            r#""Container":"wav","SupportsDirectPlay":true,"RunTimeTicks":{},"MediaStreams":[]"#,
+            clip_ticks()
+        ),
     );
     // `SWIFTLY_FIXTURE_EPISODE_VERSIONS=1`: every episode names a second version, to run the version choice on episodes.
     if std::env::var_os("SWIFTLY_FIXTURE_EPISODE_VERSIONS").is_some() {
@@ -1159,6 +1288,11 @@ fn real_find(id: &str) -> Option<String> {
             .into_iter()
             .find(|m| m.contains(&own_id));
     }
+    if id.starts_with("rn") {
+        return real_pushed_films()
+            .into_iter()
+            .find(|m| m.contains(&own_id));
+    }
     if let Some(i) = numbered("hv", 3) {
         return real_home().into_iter().nth(i);
     }
@@ -1201,6 +1335,7 @@ fn real_children(parent: &str, recursive: bool) -> Option<Vec<String>> {
     let mut items = match parent {
         REAL_LIB_A => {
             let mut a = real_library_movies("ra");
+            a.extend(real_pushed_films());
             a.push(real_virtual());
             a
         }
@@ -1327,7 +1462,11 @@ fn real_answer_on(method: &str, path: &str, query: &str) -> Option<Reply> {
         }
         // "Next up" comes from the same catalogue as the Serien library: without this arm the simple fixture's series
         // "Hafenlichter" showed on Home although no library holds it.
-        ["Shows", "NextUp"] => Some(real_json_list(&[real_episode(2)])),
+        // The series' episode leaves it with the series once the library was rescanned after a delete.
+        ["Shows", "NextUp"] if !real_series_listed() => Some(real_json_list(&[])),
+        ["Shows", "NextUp"] => Some(real_json_list(&[real_episode(
+            crate::fixture_push::next_up_episode(),
+        )])),
         [.., "Items", "Latest"] => {
             let items = param("ParentId")
                 .and_then(|p| real_children(&p, false))
@@ -1373,17 +1512,15 @@ fn real_answer_on(method: &str, path: &str, query: &str) -> Option<Reply> {
             if param("SortBy").is_some_and(|s| s.starts_with("DateCreated")) {
                 let mut items = real_episodes_newest_first();
                 items.extend(real_library_movies("ra"));
+                items.extend(real_pushed_films());
                 items.extend(real_library_movies("rb"));
                 items.extend(real_home());
                 return Some(real_json_list(&of_types(items, types.as_deref())));
             }
-            // A word nothing in the library carries (the Seerr search cases use it for "nothing found").
-            if param("searchTerm").is_some_and(|t| t.eq_ignore_ascii_case("zzzz")) {
-                return Some(real_json_list(&[]));
-            }
             // The whole catalogue: both libraries' films (so a film shows twice), the home videos, the
             // missing movie, the series; seasons and episodes only when asked for by type.
             let mut items = real_library_movies("ra");
+            items.extend(real_pushed_films());
             items.push(real_virtual());
             items.extend(real_library_movies("rb"));
             items.extend(real_home());
@@ -1394,10 +1531,39 @@ fn real_answer_on(method: &str, path: &str, query: &str) -> Option<Reply> {
                 items.push(real_season());
                 items.extend((1..=4).map(real_episode));
             }
+            // A search answers with what carries the word in its name, as a server does (a word nothing carries, like the
+            // Seerr search cases' "zzzz", finds nothing); without the term the whole catalogue stays.
+            let items = named(items, param("searchTerm").as_deref());
             Some(real_json_list(&of_types(items, types.as_deref())))
         }
         _ => None,
     }
+}
+
+/// The name of a listed item (its first `"Name"`).
+fn item_name(json: &str) -> &str {
+    json.split_once(r#""Name":""#)
+        .and_then(|(_, rest)| rest.split('"').next())
+        .unwrap_or("")
+}
+
+/// The items whose name contains `term`, in any case; all of them without a term.
+fn named(items: Vec<String>, term: Option<&str>) -> Vec<String> {
+    let Some(term) = term
+        .map(|t| {
+            t.replace('+', " ")
+                .replace("%20", " ")
+                .trim()
+                .to_lowercase()
+        })
+        .filter(|t| !t.is_empty())
+    else {
+        return items;
+    };
+    items
+        .into_iter()
+        .filter(|i| item_name(i).to_lowercase().contains(&term))
+        .collect()
 }
 
 fn serve(mut stream: TcpStream) {
@@ -1565,7 +1731,7 @@ const SLOW_CHUNK: usize = 16 * 1024;
 /// Flags (env in brackets): `--big` [SWIFTLY_FIXTURE_BIG] (300 movies, 40 series, genres, four accounts), `--port N`, `--mode a,b` [SWIFTLY_FIXTURE_MODE], `--latency-ms N` [SWIFTLY_FIXTURE_LATENCY_MS],
 /// `--flaky-every N` [SWIFTLY_FIXTURE_FLAKY_EVERY], `--expire-after N` [SWIFTLY_FIXTURE_EXPIRE_AFTER].
 pub fn run(args: &[String]) -> Result<(), String> {
-    const USAGE: &str = "usage: cargo xtask fixture-server [--port N] [--real-shapes] [--admin] [--mode empty|long|huge|i18n|sessions|slow|offline-flaky|auth-expire[,..]] [--latency-ms N] [--flaky-every N] [--expire-after N]";
+    const USAGE: &str = "usage: cargo xtask fixture-server [--port N] [--real-shapes] [--extreme] [--admin] [--mode empty|long|huge|i18n|sessions|slow|offline-flaky|auth-expire[,..]] [--latency-ms N] [--flaky-every N] [--expire-after N]";
     let env_num = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<u64>().ok());
     let (mut port, mut modes) = (
         0_u16,
@@ -1580,6 +1746,10 @@ pub fn run(args: &[String]) -> Result<(), String> {
     while let Some(flag) = it.next() {
         if flag == "--big" {
             crate::fixture_big::enable();
+            continue;
+        }
+        if flag == "--extreme" {
+            crate::fixture_extreme::enable();
             continue;
         }
         if flag == "--real-shapes" {
@@ -1608,6 +1778,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
     crate::fixture_modes::set_global(crate::fixture_modes::Config::parse(
         &modes, latency, flaky, expire,
     )?);
+    crate::fixture_seerr::follow_deletes();
     // `SWIFTLY_FIXTURE_BIND=0.0.0.0`: reachable from a real device on the LAN (default: this machine only).
     let bind = std::env::var("SWIFTLY_FIXTURE_BIND").unwrap_or_else(|_| "127.0.0.1".into());
     let listener = TcpListener::bind((bind.as_str(), port)).map_err(|e| e.to_string())?;
@@ -1621,6 +1792,39 @@ pub fn run(args: &[String]) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_search_term_keeps_only_the_items_named_with_it() {
+        let count = |query: &str| -> usize {
+            let reply = super::real_answer_on("GET", "/Users/u1/Items", query).expect("answered");
+            let body = String::from_utf8(reply.2).unwrap();
+            body.split(r#""TotalRecordCount":"#)
+                .nth(1)
+                .and_then(|r| r.trim_end_matches('}').parse().ok())
+                .expect("a total")
+        };
+        let plain = "Recursive=true&IncludeItemTypes=Movie,Series&Limit=40";
+        let all = count(plain);
+        assert!(all > 3, "the plain catalogue is more than one title");
+        let nord = count(&format!("searchTerm=nord&{plain}"));
+        assert!(
+            nord < all,
+            "'nord' must not return the whole catalogue ({nord} of {all})"
+        );
+        assert_eq!(count(&format!("searchTerm=zzzz&{plain}")), 0);
+        // A name finds its title in any case, and only titles carrying it.
+        let films = super::real_library_movies("ra");
+        let first = super::item_name(&films[0]).to_owned();
+        let found = super::named(films.clone(), Some(&first.to_uppercase()));
+        assert!(!found.is_empty() && found.len() <= films.len());
+        assert!(found.iter().all(|f| {
+            super::item_name(f)
+                .to_lowercase()
+                .contains(&first.to_lowercase())
+        }));
+        assert_eq!(super::named(films.clone(), None).len(), films.len());
+        assert_eq!(super::named(films.clone(), Some("  ")).len(), films.len());
+    }
+
     #[test]
     fn playback_info_names_the_versions_the_listing_names() {
         let ids = |json: &str| {
@@ -2051,6 +2255,37 @@ mod tests {
         assert!(movie(1).contains(&size), "the film's first source");
         assert!(extras_sources().contains(&size), "the extras' first source");
         assert!(!movie(1).contains("1500000"));
+    }
+
+    #[test]
+    fn resume_forgets_a_title_whose_position_was_set_back() {
+        let ids = |r: Reply| {
+            let t = String::from_utf8_lossy(&r.2).into_owned();
+            (t.contains(r#""Id":"m0""#), t.contains(r#""Id":"m2""#))
+        };
+        route("POST", "/fixture/resume/reset", "");
+        assert_eq!(
+            ids(route("GET", "/UserItems/Resume?userId=u1", "")),
+            (true, true)
+        );
+        assert_eq!(
+            route(
+                "POST",
+                "/UserItems/m0/UserData?userId=u1",
+                r#"{"PlaybackPositionTicks":0}"#
+            )
+            .0,
+            204
+        );
+        assert_eq!(
+            ids(route("GET", "/UserItems/Resume?userId=u1", "")),
+            (false, true)
+        );
+        route("POST", "/fixture/resume/reset", "");
+        assert_eq!(
+            ids(route("GET", "/UserItems/Resume?userId=u1", "")),
+            (true, true)
+        );
     }
 
     #[test]

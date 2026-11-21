@@ -13,9 +13,15 @@ path = "src/main.rs"
 required-features = ["window"]
 
 [features]
-default = ["window"]
+default = ["window", "supporter-key"]
 # The winit window (`app`, the binary). The iOS/tvOS shell turns it off: winit has no tvOS backend.
 window = ["dep:winit", "dep:accesskit_winit"]
+# The supporter-key entry of the direct Windows and Linux build (the offline check of the support core). The iOS and
+# tvOS shells turn the default features off and never carry it.
+supporter-key = ["swiftly-support/supporter-key"]
+# Proof builds only, never shipped: keys signed with the TEST key count, so the accepted state can be shown in the
+# running app. Off by default.
+test-support-key = ["supporter-key"]
 # Real video under the player screen through libmpv (loaded at run time).
 mpv = ["dep:swiftly-player-surface", "swiftly-player-surface/mpv"]
 
@@ -37,7 +43,9 @@ swiftly-net = { path = "../swiftly-net" }
 swiftly-accounts = { path = "../swiftly-accounts" }
 swiftly-seerr = { path = "../swiftly-seerr" }
 swiftly-library = { path = "../swiftly-library" }
-swiftly-l10n = { path = "../swiftly-l10n" }
+# The support page texts (the key and the website link) are in this crate's sources whatever the feature says, so the
+# catalogue always carries the direct distribution's texts here; only the Play core of `swiftly-uniffi` leaves them out.
+swiftly-l10n = { path = "../swiftly-l10n", features = ["supporter-key"] }
 swiftly-settings = { path = "../swiftly-settings" }
 swiftly-support = { path = "../swiftly-support" }
 swiftly-downloads = { path = "../swiftly-downloads" }

@@ -137,10 +137,10 @@ struct MacSupportSettingsGroup: View {
                           }
                       })
             ValuesRow(symbol: "gift", title: Text(verbatim: "Show the gift pop-up now"),
-                      action: { GiftFlow.shared.stage = .offer(.halloween) })
+                      action: { GiftFlow.shared.show(.offer(.halloween)) })
             ValuesRow(symbol: "sparkles", title: Text(verbatim: "Show What's New now"),
                       action: {
-                          if let entry = WhatsNewPage.bundled(for: "1.0.8") { GiftFlow.shared.stage = .whatsNew(entry) }
+                          if let entry = WhatsNewPage.bundled(for: "1.0.8") { GiftFlow.shared.show(.whatsNew(entry)) }
                       })
             ValuesRow(symbol: "arrow.counterclockwise", title: Text(verbatim: "Reset support state"),
                       action: {
@@ -239,6 +239,11 @@ private struct MacSupportPresentation: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 ask(sheet: true)
             }
+            // A page (settings, profile, a title) lies over Start: the sheet waits (`GiftFlow.pagesAboveStart`) and asks again
+            // when the window is bare.
+            .onChange(of: GiftFlow.shared.pagesAboveStart) { _, depth in
+                if depth == 0 { ask(sheet: true) }
+            }
     }
 
     private func ask(sheet: Bool) {
@@ -252,7 +257,8 @@ private struct MacSupportPresentation: ViewModifier {
         SupportModel.shared.evaluate(
             isPlaying: model.playerOpen,
             sheetAllowed: sheet && !model.ratingDue && !model.discordHintDue && !gift.bigAskShown
-                && gift.stage == nil && Date.now.timeIntervalSince(playerClosedAt) > 10)
+                && gift.stage == nil && gift.pagesAboveStart == 0
+                && Date.now.timeIntervalSince(playerClosedAt) > 10)
         if SupportModel.shared.presented { gift.noteBigAsk() }
     }
 }

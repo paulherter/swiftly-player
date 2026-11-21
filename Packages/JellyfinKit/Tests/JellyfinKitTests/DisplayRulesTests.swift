@@ -21,6 +21,20 @@ struct DisplayRulesTests {
         #expect(DisplayRules.runtimeShow(seconds: 3600))
     }
 
+    @Test("Unter einer Minute steht keine Laufzeit, sonst stünde dort „0 Min.“")
+    func underAMinute() {
+        #expect(DisplayRules.runtimeMinutes(seconds: nil) == nil)
+        #expect(DisplayRules.runtimeMinutes(seconds: 0) == nil)
+        #expect(DisplayRules.runtimeMinutes(seconds: 12) == nil)
+        #expect(DisplayRules.runtimeMinutes(seconds: 59.9) == nil)
+        #expect(DisplayRules.runtimeMinutes(seconds: .nan) == nil)
+        #expect(DisplayRules.runtimeMinutes(seconds: 60) == 1)
+        #expect(DisplayRules.runtimeMinutes(seconds: 7680) == 128)
+        #expect(runtimeLine(12) == nil)
+        #expect(runtimeLine(nil) == nil)
+        #expect(runtimeLine(3600) != nil)
+    }
+
     @Test("Ein einzelner Buchstabe ist keine Suche")
     func inLetter() {
         #expect(!DisplayRules.searchTermFits(""))

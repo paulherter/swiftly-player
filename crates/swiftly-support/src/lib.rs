@@ -13,6 +13,7 @@
 pub mod copy;
 pub mod discord;
 pub mod gift;
+pub mod gift_flow;
 pub mod licenses;
 pub mod log_ring;
 pub mod look;
@@ -22,6 +23,8 @@ pub mod season;
 pub mod subtitle;
 pub mod support;
 #[cfg(feature = "supporter-key")]
+pub mod supporter_keeper;
+#[cfg(feature = "supporter-key")]
 pub mod supporter_key;
 pub mod time;
 pub mod try_on;
@@ -30,6 +33,7 @@ pub use copy::{SupportCopy, SupportProductId, SupportTip, SupporterIcon};
 pub use gift::{
     BatBlock, EffectContext, EffectPage, GiftContext, LookEffects, LookGift, LookProfileEntry,
 };
+pub use gift_flow::{GiftEval, GiftEvaluation, GiftFlow, GiftOutcome, GiftStage, WhatsNewDue};
 pub use look::{Look, LookAccent, LookColor, LookGlow, LookPalette, LookSelection};
 pub use look_store::{IconStep, LookStore, dock_icon_name, look_icon_step};
 pub use season::LookSeason;

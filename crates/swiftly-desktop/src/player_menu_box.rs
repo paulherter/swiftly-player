@@ -200,16 +200,17 @@ impl Page {
     }
 }
 
-/// What a desktop cannot do from the core's rows: the host has no screen lock, no problem form and no start-together
-/// sheet over the player, and no AirPlay (the host tells `airplay: false`).
+/// What a desktop cannot do from the core's rows: the host has no screen lock and no start-together sheet over the
+/// player, and no AirPlay (the host tells `airplay: false`). "Problem melden" is listed only while the Seerr account
+/// may report (`desk::report_offered`, the core's title menu).
 fn supported(a: &MenuAction) -> bool {
-    !matches!(
-        a,
-        MenuAction::LockScreen
-            | MenuAction::ReportProblem
-            | MenuAction::StartTogether
-            | MenuAction::AirPlay
-    )
+    match a {
+        MenuAction::ReportProblem => crate::desk::report_offered(),
+        _ => !matches!(
+            a,
+            MenuAction::LockScreen | MenuAction::StartTogether | MenuAction::AirPlay
+        ),
+    }
 }
 
 /// Which level the back chevron goes to (`None`: the level is the box's first page).
@@ -473,6 +474,12 @@ pub fn page(
                     selected: r.selected,
                     act,
                 });
+            }
+            // The bar is up before the stream answers, so this menu can open too: with no audio track known yet, a quiet
+            // line says the rows are coming (the page is rebuilt when the tracks arrive).
+            if t.audio.rows.is_empty() {
+                p.items
+                    .push(Item::Note(swiftly_l10n::t("Spuren werden geladen …")));
             }
             if let Some(search) = page.search.as_ref().filter(|_| search_offered) {
                 let act = p.add(search.clone());

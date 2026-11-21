@@ -21,6 +21,9 @@ pub const OP_CLOSE: u32 = 2;
 /// The large image, as an address Discord fetches itself (`DiscordDisplay.symbolText`).
 pub const SYMBOL_URL: &str = "https://raw.githubusercontent.com/paulherter/swiftly-player/main/Linux/Ressourcen/icons/hicolor/512x512/apps/de.paulherter.swiftly.png";
 
+/// How far the bar's start or end may wander between two ticks before it is sent again, in seconds.
+pub const DRIFT: f64 = 2.0;
+
 /// What is in the profile (`DiscordDisplay`). Times are Unix seconds.
 #[derive(Debug, Clone)]
 pub struct DiscordDisplay {
@@ -55,6 +58,21 @@ impl DiscordDisplay {
             from: None,
             until: None,
         }
+    }
+
+    /// Whether `other` shows the same thing for the profile: same lines, and start and end within [`DRIFT`] seconds.
+    /// A player reports its position in steps, so `now - position` wobbles by a few tenths between two ticks; Discord
+    /// takes an update only every few seconds, so a wobble must not count as a change. A seek moves the bar by more.
+    pub fn same_as(&self, other: &Self) -> bool {
+        let near = |a: Option<f64>, b: Option<f64>| match (a, b) {
+            (Some(a), Some(b)) => (a - b).abs() < DRIFT,
+            (None, None) => true,
+            _ => false,
+        };
+        self.title == other.title
+            && self.subline == other.subline
+            && near(self.from, other.from)
+            && near(self.until, other.until)
     }
 
     /// The activity object (`asWordsBook`): type 3 ("watching"), `details`, `state` unless the
@@ -214,6 +232,26 @@ fn whole(v: f64) -> i64 {
     v as i64
 }
 
+/// The two lines of the presence for a title (`PlaybackHub.report`): an episode shows the series as the bold
+/// line and `code · name` below, anything else shows its own name alone.
+pub fn lines_for(
+    series: Option<&str>,
+    name: &str,
+    episode_code: Option<&str>,
+) -> (String, Option<String>) {
+    match series.filter(|s| !s.is_empty()) {
+        Some(series) => {
+            let under = [episode_code.filter(|c| !c.is_empty()), Some(name)]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" \u{b7} ");
+            (series.to_owned(), Some(under))
+        }
+        None => (name.to_owned(), None),
+    }
+}
+
 /// What the host does after a report.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PresenceAction {
@@ -299,7 +337,7 @@ impl DiscordPresence {
             from: running.then_some(now - spot),
             until: running.then_some(now + (duration - spot)),
         };
-        if self.recent.as_ref() == Some(&display) {
+        if self.recent.as_ref().is_some_and(|r| r.same_as(&display)) {
             return PresenceStep {
                 log,
                 action: PresenceAction::Nothing,
@@ -311,6 +349,12 @@ impl DiscordPresence {
             log,
             action: PresenceAction::Show(display),
         }
+    }
+
+    /// Whether a display is up in the profile (the host keeps ticking while it is, so a pause or a stop is noticed even
+    /// when the window has nothing to redraw).
+    pub fn is_showing(&self) -> bool {
+        self.ran
     }
 
     /// Clears the display if one was shown (`DiscordState.tidyAway`).
@@ -364,6 +408,20 @@ mod tests {
         assert_eq!(d.short_version(), "Film \u{b7}  \u{b7} ohne Balken");
         d.subline = None;
         assert_eq!(d.short_version(), "Film \u{b7} \u{2014} \u{b7} ohne Balken");
+    }
+
+    #[test]
+    fn lines_name_the_series_first_and_the_episode_below() {
+        assert_eq!(lines_for(None, "Film", None), ("Film".into(), None));
+        assert_eq!(
+            lines_for(Some("Show"), "Pilot", Some("S2:E1")),
+            ("Show".into(), Some("S2:E1 \u{b7} Pilot".into()))
+        );
+        assert_eq!(
+            lines_for(Some("Show"), "Pilot", None),
+            ("Show".into(), Some("Pilot".into()))
+        );
+        assert_eq!(lines_for(Some(""), "Film", None), ("Film".into(), None));
     }
 
     #[test]
@@ -509,5 +567,36 @@ mod tests {
                 .action,
             PresenceAction::Nothing
         );
+    }
+
+    #[test]
+    fn a_wobbling_position_is_not_sent_again_but_a_seek_is() {
+        let mut p = DiscordPresence::new();
+        let shown = |p: &mut DiscordPresence, spot: f64, now: f64| {
+            p.report("T", None, spot, 600.0, true, true, now, &text)
+                .action
+        };
+        assert!(matches!(
+            shown(&mut p, 10.0, 1000.0),
+            PresenceAction::Show(_)
+        ));
+        // The same second of film, reported with small timing noise either side of a whole second.
+        for (spot, now) in [
+            (10.45, 1000.0),
+            (10.9, 1000.8),
+            (11.1, 1001.45),
+            (12.0, 1001.6),
+        ] {
+            assert_eq!(
+                shown(&mut p, spot, now),
+                PresenceAction::Nothing,
+                "{spot} {now}"
+            );
+        }
+        // A jump of half a minute moves the bar: send.
+        assert!(matches!(
+            shown(&mut p, 40.0, 1002.0),
+            PresenceAction::Show(_)
+        ));
     }
 }

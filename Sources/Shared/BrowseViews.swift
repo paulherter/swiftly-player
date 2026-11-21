@@ -233,6 +233,7 @@ struct ItemDetailView: View {
                             .padding(.bottom, 8)
                         description
                     }
+                    .readColumn(wide: wide)
                     .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 4)
 
@@ -342,6 +343,14 @@ struct ItemDetailView: View {
         // The core loads the title with its plan, then cast, extras, similar and collections, and keeps the page
         // current. Cancelled (page covered) is not a failure; the task restarts on return.
         .task { await page?.run(app: model) }
+        #if DEBUG
+        .task {
+            // Proof hook: `-SwiftlyLiveAutoplay` presses Play once on this detail page (fixture runs play without sound).
+            guard ProcessInfo.processInfo.arguments.contains("-SwiftlyLiveAutoplay") else { return }
+            try? await Task.sleep(for: .seconds(3))
+            launch(page?.pressPlay(), since: nil, picked: nil)
+        }
+        #endif
         // What the core tells the host to do (open a trailer page, hand a title to another device ...).
         .onChange(of: actions?.effectSeq) { _, _ in drain() }
         .onChange(of: actions?.message) { _, new in if let new { message = new } }
@@ -432,7 +441,10 @@ struct ItemDetailView: View {
             } label: {
                 Label { Text(verbatim: button?.label ?? "") } icon: { Image(icon: "play.fill") }
             }
-            .buttonStyle(PrimaryButtonStyle(stretches: true))
+            .buttonStyle(PrimaryButtonStyle(stretches: true, corner: Theme.primaryDetailCorner,
+                                            progress: button?.progress.map(Double.init)))
+            // The remaining time is not drawn any more (the line inside the button says it); VoiceOver still gets it.
+            .accessibilityValue(Text(verbatim: button?.remaining ?? ""))
             // **A tap starts the default version at once, with several versions too.** 4K next to
             // 1080p, theatrical next to extended cut; the server lists them as sources of one
             // item. A long press lists them (and only them) to start another one; without a
@@ -442,8 +454,6 @@ struct ItemDetailView: View {
             // known is held by the core (`PlayReady.waiting(queued:)`) and comes back as a `.play` effect
             // (`drain`) when they are there, once; only a plan that is on its way after a press disables it.
             .disabled(prepares)
-
-            ResumeSlot(remaining: button?.remaining, progress: button?.progress)
         }
     }
 

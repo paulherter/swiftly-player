@@ -175,4 +175,9 @@ impl<T: HttpTransport, J: CookieJar> MyRequests<T, J> {
         let _ = self.hub.refresh_counts().await;
         self.info()
     }
+
+    /// The detail card of one of the account's requests; its row can offer "Zurückziehen" (the queue's card cannot).
+    pub async fn request_detail(&self, id: i64) -> Option<crate::SeerrRequestCard> {
+        crate::seerr_admin_io::read_card(&self.hub, RequestScope::Mine, id).await
+    }
 }

@@ -5,11 +5,10 @@ import SwiftUI
 /// The same three states as on iPhone and TV, from the same `AppModel`. Only the
 /// views behind them are specific to the Mac.
 ///
-/// **With launch curtain.** `StartAnimation.swift` has an AppKit variant, so the
-/// mark animates in the same way on all four platforms.
+/// **No launch curtain.** The window shows the real page from its first frame; the
+/// launch animation was removed on all Apple platforms.
 struct RootView: View {
     @State private var model = AppModel.only
-    @State private var curtainShown = true
     /// Whether the keyboard focus mark shows; quiet until the first Tab, see ``KeyboardFocus``.
     @State private var keyboardFocus = KeyboardFocusMonitor()
     /// Apple's review prompt; `Community.kickoff` decides when.
@@ -39,13 +38,7 @@ struct RootView: View {
             case let .needsLogin(serverName, version):
                 SignInView(model: model, serverName: serverName, version: version)
             case .ready:
-                // No focus in a view the launch curtain still covers.
                 MainView(model: model)
-                    .disabled(!KeyboardFocus.isReachable(playerOpen: false, curtainShown: curtainShown))
-            }
-
-            if curtainShown {
-                StartCurtain { withAnimation(.easeOut(duration: 0.35)) { curtainShown = false } }
             }
         }
         .background(WindowLine())
@@ -169,7 +162,7 @@ struct ServerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if back == nil { Wordmark(height: 44) }
+            if back == nil { AppIconMark(height: 44) }
 
             Text("Wo steht dein Jellyfin-Server?")
                 .font(Theme.body)
@@ -264,7 +257,7 @@ struct SignInView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Wordmark(height: 44)
+            AppIconMark(height: 44)
 
             Text(serverName)
                 .font(Theme.subpageTitle).tracking(Theme.lockSubpage)

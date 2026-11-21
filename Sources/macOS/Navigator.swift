@@ -339,33 +339,7 @@ extension EnvironmentValues {
     @Entry var section: Region = .start
 }
 
-/// **While a page slides in, nothing is swapped.**
-///
-/// The slide is an `.offset`, which SwiftUI evaluates on the main actor every frame.
-/// If a server response arrived during that time (full title, seasons and episodes,
-/// extras and similar, the plan, the image tint), SwiftUI rebuilt half the page in the
-/// same pass and the slide dropped frames: an inch or two in, a short stall, then on.
-/// That was the stutter in the first second after the click.
-///
-/// So responses wait until the page is settled (Linux: `postPush`). The fetch
-/// still starts immediately; only applying the result waits, at most one slide
-/// duration. Returning to a page that is already settled does not wait.
-@MainActor
-enum InTravel {
-    private static var end = ContinuousClock.now
-
-    /// Called by `MainView` when a new page starts sliding in.
-    static func begins() {
-        // One frame of slack: the last frame of the slide still belongs to it.
-        end = .now + .milliseconds(Int(Theme.durationPagesPush * 1000) + 30)
-    }
-
-    /// Returns as soon as no page is sliding.
-    static func waitFor() async {
-        guard end > .now else { return }
-        try? await Task.sleep(until: end, clock: .continuous)
-    }
-}
+// `InTravel` (the gate for everything that lands while a page slides in) lives in `Sources/Shared/InTravel.swift`.
 
 /// **Playback plans, fetched ahead** for the "Direct Play" badge in the detail page
 /// header. Hovering a tile (after the `TileWrapper` delay) makes `prefetch` fetch the

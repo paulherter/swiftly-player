@@ -18,7 +18,7 @@ public enum HomeRowOrder {
     }
 
     /// The Start page form of this build; the core decides which Seerr sections that form shows (handheld both,
-    /// desktop only "ist da", TV none).
+    /// desktop only "Meine Anfragen", TV none).
     public static var deviceForm: HomeForm {
         #if os(macOS)
         .desktop

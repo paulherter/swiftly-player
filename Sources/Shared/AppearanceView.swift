@@ -33,11 +33,11 @@ struct PresentationView: View {
             Group {
                 if wide {
                     HStack(alignment: .top, spacing: 0) {
-                        list { rails; lists; general; looks }
+                        list { rails; general; looks }
                         list { libraryRails; genres }
                     }
                 } else {
-                    list { rails; libraryRails; genres; lists; general; looks }
+                    list { rails; libraryRails; genres; general; looks }
                 }
             }
             .fadingUnderSubpageHeader(title: String(localized: "Darstellung")) { back() }
@@ -158,19 +158,6 @@ struct PresentationView: View {
     private func rowShown(_ id: String) -> Bool {
         guard let rail = StartRail(rawValue: id) else { return true }
         return rail.fits(disconnected: model.newAccessDisconnected)
-    }
-
-    /// "Leere Serien ausblenden": the core row, the same rule for every list (library, Home, search).
-    @ViewBuilder private var lists: some View {
-        if let row = feed.row("leereSerienAusblenden") {
-            KitSection {
-                ChoiceRow(symbol: "rectangle.stack.badge.minus", title: row.titleText, under: row.underText,
-                          an: feed.binding("leereSerienAusblenden"))
-                    .row()
-            } header: {
-                Category(text: "Filme und Serien")
-            }
-        }
     }
 
     private var rails: some View {

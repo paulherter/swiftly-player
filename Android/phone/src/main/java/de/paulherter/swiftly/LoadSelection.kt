@@ -13,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -39,6 +38,7 @@ import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Glyph
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -177,7 +177,7 @@ private fun LoadSelection(app: SwiftlyApplication, seriesIdentifier: String, nam
                .padding(bottom = 12.dp),
            verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // The series card: "Whole series" and the switch.
-        Column(Modifier.padding(horizontal = 16.dp).clip(RoundedCornerShape(Theme.cornerCard)).background(Theme.raised)) {
+        Column(Modifier.padding(horizontal = 16.dp).clip(smoothRoundedShape(Theme.cornerCard)).background(Theme.raised)) {
             // "Whole series" names only what is still missing.
             val right = when {
                 loads -> translated("wird gelesen …")
@@ -199,7 +199,7 @@ private fun LoadSelection(app: SwiftlyApplication, seriesIdentifier: String, nam
         }
 
         // The season card: expandable, episodes only indented, no second surface.
-        Column(Modifier.padding(horizontal = 16.dp).clip(RoundedCornerShape(Theme.cornerCard)).background(Theme.raised)) {
+        Column(Modifier.padding(horizontal = 16.dp).clip(smoothRoundedShape(Theme.cornerCard)).background(Theme.raised)) {
             seasons.forEachIndexed { nr, st ->
                 val all = episodes[st.id]
                 val ownOnes = visible(all.orEmpty())
@@ -375,7 +375,7 @@ fun QualityBadge(choice: String, offered: List<QualityLevel>, selectable: Boolea
                     .then(if (expandable) Modifier.tapOn { opened = true } else Modifier)
                     .semantics { contentDescription = translated("Qualität") + ", " + KernRules.downloadBadge(choice) },
                 verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.clip(RoundedCornerShape(Theme.cornerSmall)).background(Theme.accent.copy(alpha = 0.15f))
+                Row(Modifier.clip(smoothRoundedShape(Theme.cornerSmall)).background(Theme.accent.copy(alpha = 0.15f))
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (choice == "original") Symbol(Glyph.Checkmark, 11.dp, color = Theme.accent, strength = Strength.Semibold)
@@ -384,7 +384,7 @@ fun QualityBadge(choice: String, offered: List<QualityLevel>, selectable: Boolea
                 }
             }
             DropdownMenu(opened, onDismissRequest = { opened = false }, containerColor = Theme.raised,
-                         shape = RoundedCornerShape(Theme.cornerCard)) {
+                         shape = smoothRoundedShape(Theme.cornerCard)) {
                 offered.forEach { q ->
                     val g = size(q.id)
                     DropdownMenuItem(
@@ -435,7 +435,7 @@ fun AudioBadge(choice: String, options: List<AudioOption>, select: (String) -> U
         Row(Modifier.heightIn(min = 44.dp).tapOn { opened = true }
                 .semantics { contentDescription = translated("Ton") + ", " + current },
             verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.clip(RoundedCornerShape(Theme.cornerSmall)).background(Theme.accent.copy(alpha = 0.15f))
+            Row(Modifier.clip(smoothRoundedShape(Theme.cornerSmall)).background(Theme.accent.copy(alpha = 0.15f))
                     .padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Symbol(Glyph.Speaker, 13.dp, color = Theme.accent, strength = Strength.Semibold)
@@ -444,7 +444,7 @@ fun AudioBadge(choice: String, options: List<AudioOption>, select: (String) -> U
             }
         }
         DropdownMenu(opened, onDismissRequest = { opened = false }, containerColor = Theme.raised,
-                     shape = RoundedCornerShape(Theme.cornerCard)) {
+                     shape = smoothRoundedShape(Theme.cornerCard)) {
             options.forEach { o ->
                 DropdownMenuItem(
                     text = { Text(o.text, style = Theme.listTitle, color = Theme.font) },

@@ -6,7 +6,9 @@
 use crate::browse::wide;
 use crate::home::{Form, fill_frame, ins, rgba, text};
 use std::cell::Cell;
-use swiftly_design::tokens::{colour, desktop, touch};
+use swiftly_design::tokens::touch;
+use swiftly_design::tokens_generated::color;
+use swiftly_design::tokens_generated::desktop as dsk;
 use swiftly_layout::{Align, Alignment, Axis, EdgeInsets};
 use swiftly_render::Color;
 use swiftly_ui::components::{color, focus_id};
@@ -88,7 +90,7 @@ pub fn fm(env: &Env) -> Fm {
         },
         Form::Desktop => Fm {
             form: Form::Desktop,
-            edge: desktop::EDGE_SPACING,
+            edge: dsk::SPACE_PAGE,
             col: 640.0,
             row: (52.0, 60.0),
             title: (15.0, 600),
@@ -126,7 +128,7 @@ pub fn tappable_kb(n: Node, f: &Fm, key: &str, corner: f32) -> Node {
     }
     let mut look = FocusLook::tile(corner)
         .scaled(1.0)
-        .with_glow(rgba(colour::FONT, 0.5));
+        .with_glow(rgba(color::TEXT_PRIMARY, 0.5));
     look.shadow = None;
     n.focusable(focus_id(key), Some(look))
 }
@@ -153,17 +155,21 @@ pub enum Trail {
 
 /// `ToggleSwitch`.
 pub fn toggle_switch(on: bool) -> Node {
-    let knob = Node::rect(color(if on { colour::REASON } else { colour::FONT }), 8.0).frame(
-        Some(16.0),
-        Some(16.0),
-        Alignment::CENTER,
-    );
+    let knob = Node::rect(
+        color(if on {
+            color::SURFACE_BASE
+        } else {
+            color::TEXT_PRIMARY
+        }),
+        8.0,
+    )
+    .frame(Some(16.0), Some(16.0), Alignment::CENTER);
     let knob = knob.padding(ins(3.0, 3.0, 3.0, 3.0));
     let track = Node::rect(
         if on {
-            color(colour::MARK_ACCENT)
+            color(crate::look_glow::accent())
         } else {
-            rgba(colour::FONT, 0.2)
+            rgba(color::TEXT_PRIMARY, 0.2)
         },
         11.0,
     );
@@ -192,18 +198,18 @@ pub fn toggle_switch_mac(on: bool) -> Node {
     };
     let track = Node::rect(
         if on {
-            color(colour::MARK_ACCENT)
+            color(crate::look_glow::accent())
         } else {
-            color(colour::MARGIN)
+            color(color::SURFACE_FOCUS)
         },
         11.0,
     );
     let both = wide(
-        knob(colour::FONT, !on, Alignment::LEADING),
+        knob(color::TEXT_PRIMARY, !on, Alignment::LEADING),
         Alignment::LEADING,
     )
     .overlay(
-        knob(colour::REASON, on, Alignment::TRAILING),
+        knob(color::SURFACE_BASE, on, Alignment::TRAILING),
         Alignment::CENTER,
     );
     both.frame(Some(38.0), Some(22.0), Alignment::CENTER)
@@ -212,17 +218,21 @@ pub fn toggle_switch_mac(on: bool) -> Node {
 
 /// The tv switch (`ToggleSwitch` with the settings look): 84 x 50 capsule, knob 42, inset 4.
 pub fn toggle_switch_tv(on: bool) -> Node {
-    let knob = Node::rect(color(if on { colour::REASON } else { colour::FONT }), 21.0).frame(
-        Some(42.0),
-        Some(42.0),
-        Alignment::CENTER,
-    );
+    let knob = Node::rect(
+        color(if on {
+            color::SURFACE_BASE
+        } else {
+            color::TEXT_PRIMARY
+        }),
+        21.0,
+    )
+    .frame(Some(42.0), Some(42.0), Alignment::CENTER);
     let knob = knob.padding(ins(0.0, 4.0, 0.0, 4.0));
     let track = Node::rect(
         if on {
-            color(colour::MARK_ACCENT)
+            color(crate::look_glow::accent())
         } else {
-            rgba(colour::FONT, 0.2)
+            rgba(color::TEXT_PRIMARY, 0.2)
         },
         25.0,
     );
@@ -332,9 +342,9 @@ fn row_inner(
     // the second line 12; the Mac (`SettingRows.swift`) and the tv keep the quiet value.
     let touch = f.form == Form::Touch;
     let tone = if touch {
-        colour::FONT
+        color::TEXT_PRIMARY
     } else {
-        colour::FONT_QUIET
+        color::TEXT_SECONDARY
     };
     // tvOS `SettingsRowsStyle`: title and value 30 medium, the value very quiet, the arrow 24 semibold.
     let tv = f.form == Form::Tv;
@@ -344,7 +354,7 @@ fn row_inner(
                 cx,
                 s,
                 style(30.0, 500),
-                colour::FONT_VERY_QUIET,
+                color::TEXT_TERTIARY,
                 Some(1),
                 swiftly_text::Align::End,
             )
@@ -359,7 +369,7 @@ fn row_inner(
             )
         }
     };
-    let tone = if tv { colour::FONT_VERY_QUIET } else { tone };
+    let tone = if tv { color::TEXT_TERTIARY } else { tone };
     match &trail {
         Trail::Switch(on) => right.push(if tv {
             toggle_switch_tv(*on)
@@ -384,9 +394,11 @@ fn row_inner(
             true,
             color(tone),
         )),
-        Trail::Check => right.push(icons.node("check", 17.0, true, color(colour::MARK_ACCENT))),
+        Trail::Check => {
+            right.push(icons.node("check", 17.0, true, color(crate::look_glow::accent())))
+        }
         Trail::External => right.push(icons.node("arrow-up-right", 14.0, true, color(tone))),
-        Trail::Icon(name) => right.push(icons.node(name, 16.0, true, color(colour::FONT_QUIET))),
+        Trail::Icon(name) => right.push(icons.node(name, 16.0, true, color(color::TEXT_SECONDARY))),
         Trail::None => {}
     }
     // tv: symbol 40 in a 52 column (`TVSpec.rowSymbol`).
@@ -399,7 +411,7 @@ fn row_inner(
         cx,
         title,
         style(f.title.0, if tv { 500 } else { f.title.1 }),
-        colour::FONT,
+        color::TEXT_PRIMARY,
         max_lines,
         swiftly_text::Align::Start,
     )];
@@ -416,9 +428,9 @@ fn row_inner(
             u,
             style(size, 400),
             if tv {
-                colour::FONT_QUIET
+                color::TEXT_SECONDARY
             } else {
-                colour::FONT_VERY_QUIET
+                color::TEXT_TERTIARY
             },
             max_lines,
             swiftly_text::Align::Start,
@@ -435,11 +447,13 @@ fn row_inner(
         Align::Center,
         Some(gap),
         vec![
-            icons.node(symbol, sym, true, color(colour::FONT)).frame(
-                Some(if tv { 52.0 } else { sym.max(26.0) }),
-                None,
-                Alignment::CENTER,
-            ),
+            icons
+                .node(symbol, sym, true, color(color::TEXT_PRIMARY))
+                .frame(
+                    Some(if tv { 52.0 } else { sym.max(26.0) }),
+                    None,
+                    Alignment::CENTER,
+                ),
             Node::vstack(Align::Start, Some(if tv { 4.0 } else { 2.0 }), lines)
                 .layout_priority(1.0),
             Node::spacer(),
@@ -480,7 +494,7 @@ fn row_inner(
     if f.form == Form::Desktop {
         // `SettingRows.swift:154-164`: white 6 % surface, radius 12, easeOut 0.12 s; a press keeps the surface.
         n.hover_surface(
-            rgba(colour::FONT, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
+            rgba(color::TEXT_PRIMARY, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
             12.0,
         )
         .press_style(swiftly_ui::interact::PressStyle::Row)
@@ -498,7 +512,7 @@ pub fn separator_line() -> Node {
 /// Playback and Appearance pages is 52.
 pub fn separator_line_at(inset: f32) -> Node {
     wide(
-        Node::rect(rgba(colour::FONT, 0.07), 0.0).frame(None, Some(1.0), Alignment::CENTER),
+        Node::rect(rgba(color::TEXT_PRIMARY, 0.07), 0.0).frame(None, Some(1.0), Alignment::CENTER),
         Alignment::CENTER,
     )
     .padding(ins(0.0, inset, 0.0, 0.0))
@@ -523,7 +537,7 @@ pub fn card_view_at(rows: Vec<Node>, inset: f32) -> Node {
         Alignment::TOP_LEADING,
     )
     .background(
-        Node::rect(color(colour::GROUPS_AREA), 16.0),
+        Node::rect(color(color::SURFACE_GROUP), 16.0),
         Alignment::CENTER,
     )
 }
@@ -559,7 +573,7 @@ pub fn setting_group_at(
             cx,
             title,
             t,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         )
@@ -598,11 +612,11 @@ pub fn button(
     enabled: bool,
 ) -> Node {
     let c = if primary {
-        colour::REASON
+        color::SURFACE_BASE
     } else if accent {
-        colour::MARK_ACCENT
+        crate::look_glow::accent()
     } else {
-        colour::FONT
+        color::TEXT_PRIMARY
     };
     let mut parts = Vec::new();
     if let Some(s) = symbol {
@@ -624,9 +638,9 @@ pub fn button(
     .background(
         Node::rect(
             if primary {
-                color(colour::FONT)
+                color(color::TEXT_PRIMARY)
             } else {
-                color(colour::AREA)
+                color(color::SURFACE_CONTROL)
             },
             12.0,
         ),
@@ -690,15 +704,16 @@ pub fn input_ex(
     focused: bool,
     edit: Option<&swiftly_text::Display>,
 ) -> Node {
-    let mut row = vec![icons.node(symbol, 17.0, true, color(colour::FONT_QUIET))];
+    let mut row = vec![icons.node(symbol, 17.0, true, color(color::TEXT_SECONDARY))];
     let size = if f.form == Form::Tv { 28.0 } else { 15.0 };
+    let mut long_field = false;
     if let (true, Some(d)) = (focused, edit) {
         let look = swiftly_ui::field::FieldLook {
             style: swiftly_text::TextStyle::new(size, 400),
-            text: color(colour::FONT),
-            placeholder: color(colour::FONT_VERY_QUIET),
-            caret: color(colour::MARK_ACCENT),
-            selection: rgba(colour::MARK_ACCENT, 0.35),
+            text: color(color::TEXT_PRIMARY),
+            placeholder: color(color::TEXT_TERTIARY),
+            caret: color(crate::look_glow::accent()),
+            selection: rgba(crate::look_glow::accent(), 0.35),
             caret_height: None,
         };
         let view = swiftly_ui::field::FieldView {
@@ -709,13 +724,28 @@ pub fn input_ex(
             touch: false,
             loupe: None,
         };
-        row.push(swiftly_ui::field::field_content(cx, &view, &look));
+        // The field keeps the width the row gives it: a flexible stand-in sets the size and the text is laid over it,
+        // clipped, its end (the caret) in view. A long pasted text never widens the page.
+        let content = swiftly_ui::field::field_content(cx, &view, &look);
+        let at_start = d.caret == Some(0) && d.selection.start == d.selection.end;
+        let side = if at_start {
+            Alignment::LEADING
+        } else {
+            Alignment::TRAILING
+        };
+        row.push(
+            Node::flexible()
+                .frame(None, Some(size * 1.4), Alignment::CENTER)
+                .overlay(content, side)
+                .clipped(),
+        );
+        long_field = true;
     } else if value.is_empty() {
         row.push(text(
             cx,
             placeholder,
             style(size, 400),
-            colour::FONT_VERY_QUIET,
+            color::TEXT_TERTIARY,
             Some(1),
             swiftly_text::Align::Start,
         ));
@@ -729,19 +759,23 @@ pub fn input_ex(
             cx,
             &shown,
             style(size, 400),
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         ));
     }
-    row.push(Node::spacer());
+    if !long_field {
+        row.push(Node::spacer());
+    }
     let h = if f.form == Form::Tv { 80.0 } else { 56.0 };
     let n = Node::hstack(Align::Center, Some(10.0), row)
         .padding(EdgeInsets::symmetric(14.0, 0.0))
         .frame(None, Some(h), Alignment::LEADING);
     tappable(
-        wide(n, Alignment::LEADING)
-            .background(Node::rect(color(colour::AREA), 10.0), Alignment::CENTER),
+        wide(n, Alignment::LEADING).background(
+            Node::rect(color(color::SURFACE_CONTROL), 10.0),
+            Alignment::CENTER,
+        ),
         f,
         key,
         10.0,
@@ -755,9 +789,9 @@ pub fn note(cx: &Cx, f: &Fm, s: &str, error: bool, centre: bool) -> Node {
         s,
         style(if f.form == Form::Tv { 22.0 } else { 12.0 }, 400),
         if error {
-            colour::ERROR
+            color::STATE_ERROR
         } else {
-            colour::FONT_VERY_QUIET
+            color::TEXT_TERTIARY
         },
         Some(3),
         if centre {
@@ -783,7 +817,7 @@ fn header(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, title: &str, right: Option<
     let sz = if f.form == Form::Tv { 40.0 } else { 20.0 };
     let back = tappable(
         icons
-            .node("caret-left", sz, true, color(colour::FONT))
+            .node("caret-left", sz, true, color(color::TEXT_PRIMARY))
             .frame(Some(44.0), Some(44.0), Alignment::CENTER)
             .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück"),
         f,
@@ -803,7 +837,7 @@ fn header(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, title: &str, right: Option<
                 cx,
                 title,
                 t,
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Start,
             )
@@ -856,7 +890,10 @@ pub fn flow_page(
     fill_frame(scroll, Alignment::TOP_LEADING)
         .overlay(strip, Alignment::TOP)
         .overlay(back_arrow(icons, f), Alignment::TOP_LEADING)
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_BASE), 0.0),
+            Alignment::CENTER,
+        )
 }
 
 /// A full page: `body` scrolls under the header (column at most `Fm::col` wide), `overlay` (a sheet) covers all.
@@ -920,7 +957,10 @@ pub fn page(
             wide(header(cx, icons, env, f, title, right), Alignment::TOP),
             Alignment::TOP,
         )
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER);
+        .background(
+            Node::rect(color(color::SURFACE_BASE), 0.0),
+            Alignment::CENTER,
+        );
     let p = fill_frame(p, Alignment::TOP_LEADING);
     match overlay {
         Some(o) => p.overlay(o, Alignment::BOTTOM),
@@ -953,7 +993,7 @@ pub fn page_title(cx: &Cx, title: &str) -> Node {
             cx,
             title,
             t,
-            colour::FONT,
+            color::TEXT_PRIMARY,
             Some(1),
             swiftly_text::Align::Start,
         ),
@@ -975,7 +1015,7 @@ pub fn on_back_arrow(x: f32, y: f32) -> bool {
 pub fn back_arrow(icons: &Icons, f: &Fm) -> Node {
     tappable(
         icons
-            .node("caret-left", 16.0, true, color(colour::FONT))
+            .node("caret-left", 16.0, true, color(color::TEXT_PRIMARY))
             .frame(Some(30.0), Some(28.0), Alignment::CENTER)
             .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück"),
         f,
@@ -1000,7 +1040,10 @@ pub fn centred_page(cx: &Cx, icons: &Icons, f: &Fm, title: &str, body: Vec<Node>
     fill_frame(col, Alignment::CENTER)
         .overlay(fill_frame(head, Alignment::TOP), Alignment::TOP)
         .overlay(back_arrow(icons, f), Alignment::TOP_LEADING)
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_BASE), 0.0),
+            Alignment::CENTER,
+        )
 }
 
 /// The width of one column of [`settings_page`], the gap between two and whether there are two.
@@ -1078,7 +1121,10 @@ pub fn settings_page(
     let p = fill_frame(scroll, Alignment::TOP_LEADING)
         .overlay(strip, Alignment::TOP)
         .overlay(back, Alignment::TOP_LEADING)
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER);
+        .background(
+            Node::rect(color(color::SURFACE_BASE), 0.0),
+            Alignment::CENTER,
+        );
     let p = fill_frame(p, Alignment::TOP_LEADING);
     match overlay {
         Some(o) => p.overlay(o, Alignment::CENTER),
@@ -1219,19 +1265,18 @@ pub struct HomeRowSpec<'a> {
 /// A small quiet icon button of a Home row: 22 x 22, dimmed while it has nothing to do.
 fn home_button(icons: &Icons, f: &Fm, key: &str, name: &str, size: f32, enabled: bool) -> Node {
     let n = icons
-        .node(name, size, true, color(colour::FONT_QUIET))
+        .node(name, size, true, color(color::TEXT_SECONDARY))
         .frame(Some(22.0), Some(22.0), Alignment::CENTER)
         .opacity(if enabled { 0.6 } else { 0.2 }, Motion::Instant);
     if enabled {
-        tappable(n, f, key, 6.0).hover_surface(rgba(colour::FONT, 0.10), 6.0)
+        tappable(n, f, key, 6.0).hover_surface(rgba(color::TEXT_PRIMARY, 0.10), 6.0)
     } else {
         n.key(key)
     }
 }
 
 /// A row of the Home page group: icon 20 (quiet), title, then the switch or the cross and the two move arrows. 44 high,
-/// padding 12, gap 14 as on the Mac; the Mac's drag handle is the pair of arrows here (and Alt + Up / Down on a
-/// focused row), because the window has no drag-and-drop between rows.
+/// padding 12, gap 14 as on the Mac, with the Mac's drag handle on the rows that can be dragged.
 pub fn home_row(cx: &Cx, icons: &Icons, f: &Fm, s: &HomeRowSpec<'_>) -> Node {
     let mut right: Vec<Node> = Vec::new();
     if let Some(on) = s.switch {
@@ -1240,14 +1285,33 @@ pub fn home_row(cx: &Cx, icons: &Icons, f: &Fm, s: &HomeRowSpec<'_>) -> Node {
     if let Some(k) = &s.remove {
         right.push(home_button(icons, f, k, "x", 12.0, true));
     }
-    if let Some([(up, can_up), (down, can_down)]) = &s.moves {
+    // A draggable row on the desktop wears the Mac's handle (three bars, `Handle` in `AppearanceView.swift`); its keyboard
+    // way is Alt + Up / Down on the focused row. Rows that cannot be dragged yet keep the two arrows.
+    let handle = s.drag.is_some() && f.form == Form::Desktop;
+    if !handle && let Some([(up, can_up), (down, can_down)]) = &s.moves {
         right.push(home_button(icons, f, up, "caret-up", 13.0, *can_up));
         right.push(home_button(icons, f, down, "caret-down", 13.0, *can_down));
+    }
+    if handle {
+        let bar = || {
+            Node::rect(rgba(color::TEXT_PRIMARY, 0.40), 0.75).frame(
+                Some(14.0),
+                Some(1.5),
+                Alignment::CENTER,
+            )
+        };
+        right.push(
+            Node::vstack(Align::Center, Some(3.0), vec![bar(), bar(), bar()]).frame(
+                Some(22.0),
+                Some(28.0),
+                Alignment::CENTER,
+            ),
+        );
     }
     if let (Some(a), Form::Touch) = (s.drag, f.form) {
         // The finger drags by the grip (a drag of the row itself scrolls the page): two columns of three dots.
         let dot = || {
-            Node::rect(color(colour::FONT_QUIET), 1.5).frame(
+            Node::rect(color(color::TEXT_SECONDARY), 1.5).frame(
                 Some(3.0),
                 Some(3.0),
                 Alignment::CENTER,
@@ -1265,13 +1329,13 @@ pub fn home_row(cx: &Cx, icons: &Icons, f: &Fm, s: &HomeRowSpec<'_>) -> Node {
         Some(14.0),
         vec![
             icons
-                .node(s.symbol, 20.0, true, color(colour::FONT_QUIET))
+                .node(s.symbol, 20.0, true, color(color::TEXT_SECONDARY))
                 .frame(Some(20.0), None, Alignment::CENTER),
             text(
                 cx,
                 s.title,
                 style(15.0, 600),
-                colour::FONT,
+                color::TEXT_PRIMARY,
                 Some(1),
                 swiftly_text::Align::Start,
             )
@@ -1288,9 +1352,10 @@ pub fn home_row(cx: &Cx, icons: &Icons, f: &Fm, s: &HomeRowSpec<'_>) -> Node {
     });
     let n = wide(body, Alignment::LEADING);
     let row = if s.switch.is_some() {
-        tappable_kb(n, f, s.key, 0.0).hover_surface(rgba(colour::FONT, 0.06), 0.0)
+        tappable_kb(n, f, s.key, 0.0).hover_surface(rgba(color::TEXT_PRIMARY, 0.06), 0.0)
     } else {
-        n.key(s.key).hover_surface(rgba(colour::FONT, 0.06), 0.0)
+        n.key(s.key)
+            .hover_surface(rgba(color::TEXT_PRIMARY, 0.06), 0.0)
     };
     match (s.drag, f.form) {
         (Some(a), Form::Desktop) => row

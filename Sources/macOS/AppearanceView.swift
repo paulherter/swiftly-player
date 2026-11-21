@@ -79,6 +79,7 @@ struct PresentationView: View {
             }
             switchRow("alphabetAn", "textformat.abc")
             switchRow("titelAlsLogo", "textformat")
+            switchRow("leereSerienAusblenden", "rectangle.stack.badge.minus")
         }
     }
 

@@ -14,10 +14,12 @@ use crate::player_screen::{PlayerKey, PlayerScenario, PlayerScreen};
 use crate::search_screen::SearchScreen;
 use crate::series_screen::SeriesScreen;
 use crate::settings_screen::{Dest, SettingsScreen};
+use crate::whats_new_sheet::SheetTap;
 use std::rc::Rc;
 use std::sync::Arc;
 use swiftly_motion::catalogue::Id;
 use swiftly_render::{DrawList, RgbaImage};
+use swiftly_support::gift_flow::{CLAIM_MS, GiftOutcome};
 use swiftly_ui::nav::{Layers, Nav, NavStyle};
 use swiftly_ui::{Cx, Env, NavKey, Outcome};
 
@@ -101,6 +103,9 @@ fn accounts_screen(env: Env, cx: Cx, core: &crate::live::Core) -> LoginScreen {
     )
 }
 
+/// How long Start stays loaded and quiet before "Was ist neu" comes (`LookGift.quietAfterHome`).
+const WHATS_NEW_QUIET_MS: f64 = 3000.0;
+
 /// The answer of a fetch of an episode: its season id and number.
 type FreshSeason = std::sync::mpsc::Receiver<(Option<String>, Option<i64>)>;
 
@@ -136,6 +141,9 @@ pub struct Suite {
     live: Option<Rc<crate::live::Wiring>>,
     /// The support card's records and counter (real app only) and when it was last looked at.
     support: Option<(crate::support_card::SupportCard, f64, bool)>,
+    /// The looks panel over Start (real app only), and when it is to open after the page above Start slid away.
+    looks: Option<crate::looks_panel::LooksPanel>,
+    looks_at: Option<f64>,
     /// The core of the real app, kept to rebuild the tabs after the sign-in.
     core: Option<std::sync::Arc<crate::live::Core>>,
     /// The real app keeps asking for frames until this time (ms) after the last input or start.
@@ -155,6 +163,19 @@ pub struct Suite {
     hint: crate::desk::HintBar,
     /// The hint about the Discord after a few finished titles, and when it is due (ms).
     discord: crate::desk::DiscordCard,
+    /// "Was ist neu" after an update, and since when Start has been loaded and quiet (ms; `None`: not yet).
+    whats_new: crate::whats_new_sheet::WhatsNewSheet,
+    whats_new_since: Option<f64>,
+    whats_new_done: bool,
+    /// Where the gift sheet stands (core `GiftFlow`), and when the pick-up animation ends (ms).
+    gift: swiftly_support::gift_flow::GiftFlow,
+    claim_at: Option<f64>,
+    /// "Problem melden" over the page or the player, with the Seerr desk its rule and send run on.
+    report: crate::report_sheet::ReportSheet,
+    /// "Vom Server löschen" over the page (the same desk and rule as the report).
+    delete: crate::delete_sheet::DeleteSheet,
+    report_desk: Option<crate::seerr_desk::Desk>,
+    report_checked: f64,
     /// The panel of watching together and continuing on this device, over everything but the player.
     together_ui: crate::together_ui::TogetherUi,
     /// The view models behind the writes of the Home tile menu (watched, unwatched, watchlist)
@@ -182,8 +203,6 @@ pub struct Suite {
     side_press: bool,
     /// The area change in progress: the tab left and when (the 0.12 s out, 0.22 s in cross fade of the content).
     fade: Option<(usize, f64)>,
-    /// The launch curtain, when it is on.
-    curtain: Option<crate::desk::Curtain>,
     /// The tabs visited before this one, oldest first, and the ones left by going back (the Mac's window history).
     history: Vec<Place>,
     future: Vec<Place>,
@@ -319,6 +338,15 @@ impl Suite {
             arrows: crate::desk::NavArrows::new(env, cx.clone()),
             hint: crate::desk::HintBar::new(env, cx.clone()),
             discord: crate::desk::DiscordCard::new(env, cx.clone()),
+            whats_new: crate::whats_new_sheet::WhatsNewSheet::new(env, cx.clone()),
+            whats_new_since: None,
+            whats_new_done: false,
+            gift: swiftly_support::gift_flow::GiftFlow::default(),
+            claim_at: None,
+            report: crate::report_sheet::ReportSheet::new(env, cx.clone()),
+            delete: crate::delete_sheet::DeleteSheet::new(env, cx.clone()),
+            report_desk: None,
+            report_checked: f64::MIN,
             together_ui: crate::together_ui::TogetherUi::new(env, cx.clone()),
             tile_writers: Vec::new(),
             together_at: f64::NEG_INFINITY,
@@ -332,7 +360,6 @@ impl Suite {
             under: Vec::new(),
             side_press: false,
             fade: None,
-            curtain: None,
             cx,
             env,
             tab: 0,
@@ -350,6 +377,8 @@ impl Suite {
             sliding_out: false,
             live: None,
             support: None,
+            looks: None,
+            looks_at: None,
             core: None,
             busy_until: 0.0,
             starting: None,
@@ -389,7 +418,6 @@ impl Suite {
         let mut s = Suite::new(env, cx);
         s.core = Some(core);
         s.reload_live();
-        s.enable_curtain();
         s
     }
 
@@ -447,9 +475,7 @@ impl Suite {
         self.hub = Some(Rc::clone(&hub));
         crate::settings_run::start_sync(Arc::clone(&core));
         crate::desk::set_downloads_on(crate::settings_run::downloads_on(&*core.settings));
-        crate::look_glow::set(crate::look_glow::read(crate::support_card::Shared(
-            Arc::clone(&core.settings),
-        )));
+        crate::look_glow::apply_saved(crate::support_card::Shared(Arc::clone(&core.settings)));
         let w = Rc::new(crate::live::Wiring::new(core, account, Rc::clone(&hub)));
         crate::live::install(Some(Rc::clone(&w)));
         let (env, cx) = (self.env, self.cx.clone());
@@ -482,7 +508,7 @@ impl Suite {
     /// Width of the sidebar on the desktop layout (the pushed pages start right of it), 0 elsewhere.
     fn side(&self) -> f32 {
         if self.env.idiom == swiftly_ui::Idiom::Desktop && !self.first_run() {
-            swiftly_design::tokens::desktop::SIDEBAR_WIDTH
+            swiftly_design::tokens_generated::desktop::SIZE_SIDEBAR_WIDTH
         } else {
             0.0
         }
@@ -542,9 +568,12 @@ impl Suite {
             return;
         }
         self.home_settings.1 = now;
-        crate::look_glow::set(crate::look_glow::read(crate::support_card::Shared(
-            Arc::clone(&w.core.settings),
-        )));
+        // While the looks panel is up it owns the glow and the accent (a look only tried on is not in the settings).
+        if !self.looks_open() {
+            crate::look_glow::apply_saved(crate::support_card::Shared(Arc::clone(
+                &w.core.settings,
+            )));
+        }
         let print = crate::home_data::live_fingerprint(&w);
         if self.home_settings.0.is_empty() {
             self.home_settings.0 = print;
@@ -629,16 +658,6 @@ impl Suite {
         e
     }
 
-    /// Turns the launch curtain on (the real app plays it once at start).
-    pub fn enable_curtain(&mut self) {
-        self.curtain = Some(crate::desk::Curtain::new(self.env, self.cx.clone()));
-    }
-
-    /// The curtain is still showing at `now` (tests).
-    pub fn curtain_up(&mut self, now: f64) -> bool {
-        self.curtain.as_mut().is_some_and(|c| c.alpha(now) > 0.0)
-    }
-
     /// The tab in front (0 Start, 1 Filme, 2 Serien, 3 Suche).
     pub fn tab(&self) -> usize {
         self.tab
@@ -694,10 +713,10 @@ impl Suite {
         self.search.set_env(env);
         self.arrows.set_env(env);
         self.together_ui.set_env(env);
+        self.whats_new.set_env(env);
+        self.report.set_env(env);
+        self.delete.set_env(env);
         self.controls.set_env(env);
-        if let Some(c) = &mut self.curtain {
-            c.set_env(env);
-        }
         // The player covers the whole window (also the sidebar's strip): a window that grows or goes fullscreen relays it out.
         if let Some(p) = &mut self.player {
             p.set_env(env);
@@ -755,6 +774,14 @@ impl Suite {
                 .flat_map(|g| g.tiles.iter())
                 .find(is)
                 .cloned(),
+        }
+    }
+
+    /// `SearchView.onAppear { inField = true }`: the field has the keyboard whenever the section opens, on every way in
+    /// (a bar click, and a bar click over the profile panel, which goes through `close_panel_for`).
+    fn focus_search_on_open(&mut self) {
+        if self.tab == 3 && crate::home::Form::of(self.env.idiom) == crate::home::Form::Desktop {
+            self.search.focus();
         }
     }
 
@@ -853,11 +880,7 @@ impl Suite {
             }
             self.seen[self.tab] = front!(self, s => s.opened().len());
             self.start_in_front();
-            // `SearchView.onAppear { inField = true }`: the field has the keyboard whenever the section opens.
-            if self.tab == 3 && crate::home::Form::of(self.env.idiom) == crate::home::Form::Desktop
-            {
-                self.search.focus();
-            }
+            self.focus_search_on_open();
             return;
         }
         let opened: Vec<String> = front!(self, s => s.opened().to_vec());
@@ -1104,6 +1127,14 @@ impl Suite {
             self.after_top();
         }
         done
+    }
+
+    /// Alt + Up / Down: the focused Start row or genre of the Settings page moves one place. Returns whether it did.
+    pub fn move_row(&mut self, delta: i32) -> bool {
+        match &mut self.top {
+            Some(Top::Settings(s)) if self.player.is_none() => s.move_focused_row(delta),
+            _ => false,
+        }
     }
 
     /// Closes the menu a title page opened its sheet from.
@@ -1371,6 +1402,7 @@ impl Suite {
                 self.fade = None;
                 self.gone_page = None;
                 self.start_in_front();
+                self.focus_search_on_open();
             }
             Some(Page::Downloads) => self.after_panel = Some(Page::Downloads),
             _ => {}
@@ -1459,6 +1491,7 @@ impl Suite {
         let live = self.core.clone().filter(|_| self.live.is_some());
         let hub = self.hub.clone();
         let mut sign_out = false;
+        let mut looks_wanted = false;
         if let Some(Top::Settings(s)) = &mut self.top {
             for e in s.take_effects() {
                 crate::effects::post(e);
@@ -1492,6 +1525,11 @@ impl Suite {
                 }))),
                 // The Support sheet is the host's (`SupportModel.open`).
                 Dest::Support => None,
+                // The looks panel comes up over Start once the page above it has slid away (`openLooksOnHome`).
+                Dest::Looks => {
+                    looks_wanted = true;
+                    None
+                }
                 Dest::SignOut => {
                     sign_out = true;
                     None
@@ -1519,6 +1557,12 @@ impl Suite {
             } else {
                 self.show(t, 0.0);
             }
+        }
+        if looks_wanted {
+            let now = self.clock;
+            self.pop_to_root(now);
+            self.goto_tab(0, now);
+            self.looks_at = Some(now + 320.0);
         }
         if sign_out
             && let Some(core) = live
@@ -1690,6 +1734,11 @@ impl Suite {
     /// What the system's media widgets show (`None` when no player plays).
     pub fn now_playing(&self) -> Option<crate::media_keys::NowPlaying> {
         self.player.as_ref().and_then(|p| p.now_playing())
+    }
+
+    /// Whether the user switched the Discord presence on (`discordAnzeigen`; off in the demo and without a store).
+    pub fn discord_allowed(&self) -> bool {
+        crate::live::current().is_some_and(|w| crate::settings_run::discord_on(&*w.core.settings))
     }
 
     /// A button of the system's media widgets or a headset: the intent goes to the player like the on-screen button.
@@ -2295,7 +2344,16 @@ impl Suite {
 
     /// A finger or button goes down.
     pub fn touch_down(&mut self, x: f32, y: f32, now: f64) {
-        if self.curtain.is_some() {
+        if self.report.open() {
+            self.report.touch_down(x, y, now);
+            return;
+        }
+        if self.delete.open() {
+            self.delete.touch_down(x, y, now);
+            return;
+        }
+        if self.player.is_none() && self.whats_new.open() {
+            self.whats_new.touch_down(x, y, now);
             return;
         }
         if self.player.is_none() && self.together_ui.open() {
@@ -2308,6 +2366,7 @@ impl Suite {
             if self.player.is_none()
                 && let Some(b) = self.controls.hit(x, y)
             {
+                self.controls.press();
                 self.win_press = Some(b);
                 return;
             }
@@ -2330,6 +2389,9 @@ impl Suite {
         self.busy_until = self.busy_until.max(now + 2500.0);
         if let Some(p) = &mut self.player {
             p.touch_down(x, y, now);
+            return;
+        }
+        if x >= off && self.looks_press(x, y) {
             return;
         }
         // The Discord card: its button opens the invitation, the X closes it; a click on the card is its own.
@@ -2454,6 +2516,14 @@ impl Suite {
 
     /// The finger moves.
     pub fn touch_move(&mut self, x: f32, y: f32, now: f64) {
+        if self.report.open() {
+            self.report.touch_move(x, y, now);
+            return;
+        }
+        if self.delete.open() {
+            self.delete.touch_move(x, y, now);
+            return;
+        }
         if self.player.is_none() && self.together_ui.open() {
             self.together_ui.touch_move(x, y, now);
             return;
@@ -2482,6 +2552,19 @@ impl Suite {
 
     /// The finger lifts.
     pub fn touch_up(&mut self, x: f32, y: f32, now: f64) {
+        if self.report.open() {
+            self.report.touch_up(x, y, now);
+            return;
+        }
+        if self.delete.open() {
+            self.delete.touch_up(x, y, now);
+            return;
+        }
+        if self.player.is_none() && self.whats_new.open() {
+            self.whats_new.touch_up(x, y, now);
+            self.pump_gift(now);
+            return;
+        }
         if self.player.is_none() && self.together_ui.open() {
             self.together_ui.touch_up(x, y, now);
             return;
@@ -2546,6 +2629,39 @@ impl Suite {
 
     /// Arrow, Tab, Enter or Esc on the focus engine.
     pub fn nav_key(&mut self, key: NavKey, down: bool, now: f64) -> Outcome {
+        // "Problem melden" is modal over the page and the player: Escape closes it, Return sends (a field with the
+        // keyboard gets Return as text input instead).
+        if self.report.open() {
+            if down {
+                match key {
+                    NavKey::Escape => self.report.escape(),
+                    NavKey::Enter if !self.report.wants_text() => self.report.enter(),
+                    _ => {}
+                }
+            }
+            return Outcome::None;
+        }
+        // "Vom Server löschen" is modal too: Escape closes it (not while the steps run), Return closes a finished one.
+        if self.delete.open() {
+            if down {
+                match key {
+                    NavKey::Escape => self.delete.escape(),
+                    NavKey::Enter => self.delete.enter(),
+                    _ => {}
+                }
+            }
+            return Outcome::None;
+        }
+        // "Was ist neu" is modal: Escape and Return close it, nothing else reaches the page.
+        if self.player.is_none() && self.whats_new.open() {
+            if down && key == NavKey::Escape {
+                self.whats_new.close();
+            } else if down && key == NavKey::Enter {
+                self.whats_new.enter();
+            }
+            self.pump_gift(now);
+            return Outcome::None;
+        }
         if self.player.is_none() && self.together_ui.open() {
             if down {
                 match key {
@@ -2591,6 +2707,18 @@ impl Suite {
 
     /// Back (Esc, mouse back button): closes a sheet or the keyboard first, then pops the title page.
     pub fn back(&mut self, now: f64) -> bool {
+        if self.report.open() {
+            self.report.escape();
+            return true;
+        }
+        if self.delete.open() {
+            self.delete.escape();
+            return true;
+        }
+        if self.player.is_none() && self.whats_new.open() {
+            self.whats_new.close();
+            return true;
+        }
         if self.player.is_none() && self.together_ui.open() {
             self.together_ui.escape();
             return true;
@@ -2598,6 +2726,10 @@ impl Suite {
         if let Some(p) = &mut self.player {
             p.back(now);
             self.after_player();
+            return true;
+        }
+        if self.looks_open() {
+            self.close_looks();
             return true;
         }
         if let Some(t) = &mut self.top {
@@ -2655,6 +2787,14 @@ impl Suite {
             return false;
         }
         match cmd {
+            // The shortcuts on the rows of an open tile menu (the Mac's `keyboardShortcut`): only while a menu of the list
+            // in front is open, otherwise the key goes on.
+            "tile.remember" | "tile.watched" | "tile.info" if self.top.is_none() => {
+                let Some(entry) = crate::tile_menu::shortcut_entry(cmd) else {
+                    return false;
+                };
+                front!(self, s => s.menu_shortcut(&entry))
+            }
             "cmd.settings" => self.open_settings(now),
             "cmd.profile" => {
                 let (env, cx) = (self.env, self.cx.clone());
@@ -2845,6 +2985,18 @@ impl Suite {
             _ => self.press_tip = None,
         }
         let off = self.side();
+        if self.report.open() {
+            self.report.pointer_move(x, y, now);
+            return;
+        }
+        if self.delete.open() {
+            self.delete.pointer_move(x, y, now);
+            return;
+        }
+        if self.player.is_none() && self.whats_new.open() {
+            self.whats_new.pointer_move(x, y, now);
+            return;
+        }
         if self.player.is_none() && self.together_ui.open() {
             self.together_ui.pointer_move(x, y, now);
             return;
@@ -2916,6 +3068,12 @@ impl Suite {
         front!(self, s => s.visible_tooltip(now))
     }
 
+    /// The tooltip of the window's history arrows at `now` (tests).
+    #[doc(hidden)]
+    pub fn arrows_tooltip(&self, now: f64) -> Option<String> {
+        self.arrows.tooltip(now).map(|(t, _)| t)
+    }
+
     /// The tooltip to draw over the page in front (the pushed pages draw their own through `Ui::frame`).
     pub fn tooltip(&mut self, now: f64) -> Option<(String, swiftly_layout::Rect)> {
         match &mut self.top {
@@ -2971,6 +3129,9 @@ impl Suite {
     /// Whether a focused text field takes typed text. The player has none: its keys (Space, arrows, letters) go to the
     /// window rules, so only a real field in front (search, settings, sign-in, a Together code) may swallow keys.
     pub fn wants_text(&self) -> bool {
+        if self.report.wants_text() {
+            return true;
+        }
         if self.player.is_some() {
             return false;
         }
@@ -2980,6 +3141,7 @@ impl Suite {
         match &self.top {
             Some(Top::Settings(s)) => s.wants_text(),
             Some(Top::Login(l)) => l.wants_text(),
+            Some(Top::Page(p)) => p.wants_text(),
             Some(_) => false,
             None => self.tab == 3 && self.search.wants_text(),
         }
@@ -2988,12 +3150,20 @@ impl Suite {
     /// What the input method needs for the screen in front: open only over a text field, a password purpose on a
     /// password field, and the caret's rectangle in window points.
     pub fn ime_state(&self) -> crate::ime::ImeState {
+        if self.report.open() {
+            return crate::ime::ImeState {
+                allowed: self.report.wants_text(),
+                password: false,
+                area: None,
+            };
+        }
         if self.player.is_some() {
             return crate::ime::ImeState::default();
         }
         match &self.top {
             Some(Top::Settings(s)) => s.ime_state(),
             Some(Top::Login(l)) => l.ime_state(),
+            Some(Top::Page(p)) => p.ime_state(),
             Some(_) => crate::ime::ImeState::default(),
             None if self.tab == 3 => self.search.ime_state(),
             None => crate::ime::ImeState::default(),
@@ -3002,6 +3172,12 @@ impl Suite {
 
     /// Typed text for the search field.
     pub fn type_text(&mut self, s: &str) {
+        if self.report.open() {
+            let _ = self
+                .report
+                .text_event(&swiftly_text::TextInputEvent::Text(s.to_owned()));
+            return;
+        }
         if let Some(p) = &mut self.player {
             p.type_text(s, self.clock);
             return;
@@ -3017,6 +3193,8 @@ impl Suite {
             st.type_text(s);
         } else if let Some(Top::Login(l)) = &mut self.top {
             l.type_text(s);
+        } else if let Some(Top::Page(p)) = &mut self.top {
+            let _ = p.text_event(&swiftly_text::TextInputEvent::Text(s.to_owned()));
         } else {
             self.search.type_text(s);
         }
@@ -3025,6 +3203,9 @@ impl Suite {
     /// A full text-input event (composition, caret keys, clipboard, undo) for the field in front. The login form only
     /// takes typed text, Backspace and Return. Returns whether the field used it.
     pub fn text_event(&mut self, ev: &swiftly_text::TextInputEvent) -> bool {
+        if self.report.open() {
+            return self.report.text_event(ev);
+        }
         if self.player.is_some() || !self.wants_text() {
             return false;
         }
@@ -3037,12 +3218,22 @@ impl Suite {
         if let Some(Top::Login(l)) = &mut self.top {
             return l.edit(ev);
         }
+        if let Some(Top::Page(p)) = &mut self.top {
+            return p.text_event(ev);
+        }
         let _ = self.search.text_event(ev);
         true
     }
 
     /// Backspace in the search field.
     pub fn backspace(&mut self) {
+        if self.report.open() {
+            let _ = self.report.text_event(&swiftly_text::TextInputEvent::Key(
+                swiftly_text::EditKey::Backspace,
+                swiftly_text::Mods::NONE,
+            ));
+            return;
+        }
         if self.player.is_some() || !self.wants_text() {
             return;
         }
@@ -3054,6 +3245,11 @@ impl Suite {
             st.backspace();
         } else if let Some(Top::Login(l)) = &mut self.top {
             l.backspace();
+        } else if let Some(Top::Page(p)) = &mut self.top {
+            let _ = p.text_event(&swiftly_text::TextInputEvent::Key(
+                swiftly_text::EditKey::Backspace,
+                swiftly_text::Mods::NONE,
+            ));
         } else {
             self.search.backspace();
         }
@@ -3061,6 +3257,14 @@ impl Suite {
 
     /// Return in the search field.
     pub fn submit(&mut self) {
+        if self.report.open() {
+            self.report.enter();
+            return;
+        }
+        if self.delete.open() {
+            self.delete.enter();
+            return;
+        }
         if self.player.is_some() || !self.wants_text() {
             return;
         }
@@ -3072,6 +3276,11 @@ impl Suite {
             st.submit();
         } else if let Some(Top::Login(l)) = &mut self.top {
             l.submit();
+        } else if let Some(Top::Page(p)) = &mut self.top {
+            let _ = p.text_event(&swiftly_text::TextInputEvent::Key(
+                swiftly_text::EditKey::Enter,
+                swiftly_text::Mods::NONE,
+            ));
         } else {
             self.search.submit();
         }
@@ -3089,7 +3298,8 @@ impl Suite {
             sel == crate::nav_machine::Selected::Settings && self.player.is_none(),
         );
         self.pump_support(now);
-        let (list, more) = self.frame_inner(now);
+        let (mut list, mut more) = self.frame_inner(now);
+        more |= self.frame_report(&mut list, now);
         // What a page posted while it ran (a play that cannot start) shows in the strip, on the next frame.
         let posted = crate::desk::take_hints();
         let more = more || !posted.is_empty();
@@ -3104,6 +3314,80 @@ impl Suite {
                 || self.film_read.is_some()))
             || matches!(&self.top, Some(Top::Login(l)) if l.pending());
         (list, more || waiting)
+    }
+
+    /// "Problem melden": keeps the Seerr desk the rule and the send run on, tells the screens whether the account may
+    /// report (`desk::report_offered`), starts a requested report (the place is read on the network runtime) and draws
+    /// the sheet over the page or the player. Returns whether another frame is wanted.
+    fn frame_report(&mut self, list: &mut DrawList, now: f64) -> bool {
+        let Some(w) = self.live.clone() else {
+            crate::desk::set_report_offered(false);
+            crate::desk::set_delete_offered(false);
+            return false;
+        };
+        if now - self.report_checked >= 2000.0 {
+            self.report_checked = now;
+            if w.core.seerr_stored().is_none() {
+                self.report_desk = None;
+            } else if self.report_desk.is_none()
+                && let Some(desk) = crate::seerr_desk::Desk::stored(&w.core)
+            {
+                // The hub reads who the account is and what it may do once; the entries appear when it is in.
+                let hub = Arc::clone(desk.hub());
+                desk.run(async move {
+                    hub.ensure().await;
+                });
+                self.report_desk = Some(desk.with_account(w.account.clone()));
+            }
+        }
+        let menu = self
+            .report_desk
+            .as_ref()
+            .map(|d| d.hub().title_menu())
+            .unwrap_or_default();
+        let has = |k| menu.iter().any(|e| e.kind == k);
+        let offered = has(swiftly_vm::TitleMenuKind::ReportProblem);
+        crate::desk::set_report_offered(offered);
+        // "Vom Server löschen": the core's rule (an account that manages requests, no delete lock on this device).
+        let delete_offered = has(swiftly_vm::TitleMenuKind::DeleteFromServer);
+        crate::desk::set_delete_offered(delete_offered);
+        for (id, seconds) in crate::desk::take_report_requests() {
+            if let (true, Some(desk)) = (offered, &self.report_desk) {
+                self.report.begin(desk, &w.core, &w.account, &id, seconds);
+            }
+        }
+        for (id, back) in crate::desk::take_delete_requests() {
+            if let (true, Some(desk)) = (delete_offered, &self.report_desk) {
+                self.delete.begin(desk, &w.core, &w.account, &id, back);
+            }
+        }
+        self.report.poll(now);
+        self.delete.poll(now);
+        for text in self.delete.take_notes() {
+            crate::desk::post_hint(text);
+        }
+        let waiting = self.report_desk.as_ref().is_some_and(|d| d.busy());
+        let mut more = waiting;
+        if self.report.open() {
+            let (sheet, wants) = self.report.frame(now);
+            list.append_shifted(&sheet, 0.0);
+            more |= wants;
+        } else {
+            more |= self.report.opening();
+        }
+        if self.delete.open() {
+            let (sheet, wants) = self.delete.frame(now);
+            list.append_shifted(&sheet, 0.0);
+            more |= wants;
+        } else {
+            more |= self.delete.opening();
+        }
+        // The title is gone from the server and its sheet was closed: the page behind goes back (the Mac's `finished`).
+        if self.delete.take_went() {
+            self.back(now);
+            more = true;
+        }
+        more
     }
 
     /// The support card at the end of Start (`SupportModel.cardVisible`): feeds the watch time while the player is open,
@@ -3122,6 +3406,7 @@ impl Suite {
         }
         let open = self.player.is_some();
         let playing = open && self.now_playing().is_some_and(|n| n.playing);
+        self.pump_whats_new(now);
         let Some((card, looked, was_open)) = self.support.as_mut() else {
             return;
         };
@@ -3133,9 +3418,11 @@ impl Suite {
         *was_open = open;
         match self.home.take_support_tap() {
             Some(crate::home::SupportTap::Open) => {
-                crate::effects::post(crate::effects::Effect::OpenUrl(
-                    crate::support_card::SUPPORTER_PAGE.to_owned(),
-                ));
+                // The same page as the Settings row: the website button and the key field.
+                let mut screen = self.settings_screen();
+                screen.open_support_from_start();
+                self.show(Top::Settings(Box::new(screen)), now);
+                return;
             }
             Some(crate::home::SupportTap::Snooze) => {
                 card.snooze(wall);
@@ -3148,6 +3435,110 @@ impl Suite {
             let due = if open { None } else { card.due(false, wall) };
             self.home.set_support(due);
         }
+    }
+
+    /// "Was ist neu" and the gift offer (`GiftFlow.evaluate`): after Start has its rails and stood quiet for
+    /// [`WHATS_NEW_QUIET_MS`], on Start itself, and never with a player, another sheet or the Discord or support card in
+    /// view (one big ask a session). The core decides what comes (`gift_flow::evaluate`). `SWIFTLY_WHATSNEW_VERSION`
+    /// stands in for the app version and `SWIFTLY_LOOK_DATE` (unix seconds) for the date of the season windows (the proof
+    /// runs, like the Mac's `-lookDate`).
+    fn pump_whats_new(&mut self, now: f64) {
+        self.pump_gift(now);
+        if self.whats_new_done || self.whats_new.open() || self.gift.presented() {
+            return;
+        }
+        let blocked = self.player.is_some()
+            || self.top.is_some()
+            || self.tab != 0
+            || self.together_ui.open()
+            || self.discord.is_open()
+            || self.nudge.is_some()
+            || self.home.support_shown()
+            || self.looks_open()
+            || !self.home.loaded();
+        if blocked {
+            self.whats_new_since = None;
+            return;
+        }
+        let since = *self.whats_new_since.get_or_insert(now);
+        if now - since < WHATS_NEW_QUIET_MS {
+            return;
+        }
+        self.whats_new_done = true;
+        let version = std::env::var("SWIFTLY_WHATSNEW_VERSION")
+            .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_owned());
+        let Some((card, _, _)) = &self.support else {
+            return;
+        };
+        let (eval, entry) = card.gift_evaluate(
+            &version,
+            crate::looks_panel::now_seconds(),
+            (now - since) / 1000.0,
+            false,
+            &self.gift,
+        );
+        self.gift.apply(&eval);
+        match eval.outcome {
+            GiftOutcome::WhatsNew { gift } => {
+                if let Some(entry) = entry {
+                    let language = swiftly_l10n::current_locale().language().to_owned();
+                    self.whats_new.show(&entry, &language, gift);
+                }
+            }
+            GiftOutcome::Offer(look) => self.whats_new.show_offer(look),
+            GiftOutcome::Nothing => {}
+        }
+    }
+
+    /// The steps of the gift sheet after a tap or a key: "Hol ihn dir" picks the look up and the app turns to it while the
+    /// ring runs, then the looks panel comes (`GiftFlow.grab`); the sheet and the panel closing close the flow.
+    fn pump_gift(&mut self, now: f64) {
+        match self.whats_new.take_tap() {
+            Some(SheetTap::Grab(look)) => {
+                let reduce = self.env.reduce_motion;
+                if let Some(look) = self.gift.grab(look, reduce) {
+                    if let Some((card, _, _)) = &self.support {
+                        card.claim_gift(&look);
+                    }
+                    if reduce {
+                        self.land_gift();
+                    } else {
+                        self.whats_new.show_claiming(look);
+                        self.claim_at = Some(now + CLAIM_MS);
+                    }
+                }
+            }
+            Some(SheetTap::OpenLooks) => {
+                let _ = self.whats_new.take_closed();
+                self.gift.open_looks();
+                self.open_looks();
+            }
+            Some(SheetTap::Skip) => self.land_gift(),
+            None => {}
+        }
+        if self.claim_at.is_some_and(|t| now >= t) {
+            self.land_gift();
+        }
+        if self.whats_new.take_closed() {
+            self.claim_at = None;
+            self.gift.close();
+        }
+        // The panel was closed by its own buttons, Esc or the bar.
+        if self.gift.looks_open() && !self.looks_open() && self.claim_at.is_none() {
+            self.gift.close();
+        }
+    }
+
+    /// The pick-up animation is over (its time, or a tap on it): the sheet goes and the looks panel comes.
+    fn land_gift(&mut self) {
+        self.claim_at = None;
+        self.gift.land();
+        if !self.gift.looks_open() {
+            return;
+        }
+        self.whats_new.close();
+        let _ = self.whats_new.take_closed();
+        self.open_looks();
     }
 
     /// The "Laden" of a film's detail page reads the live title and opens the add sheet on the Downloads page.
@@ -3559,7 +3950,7 @@ impl Suite {
         let (sessions, groups) = Self::together_offers(&hub);
         // The picker grows out of the middle of the row.
         self.together_ui.set_origin(
-            swiftly_design::tokens::desktop::SIDEBAR_WIDTH / 2.0,
+            swiftly_design::tokens_generated::desktop::SIZE_SIDEBAR_WIDTH / 2.0,
             self.env.size.h - 48.0 - 10.0 - 12.0 - 20.0,
         );
         if groups.is_empty() {
@@ -3747,13 +4138,9 @@ impl Suite {
     }
 
     fn frame_inner(&mut self, now: f64) -> (DrawList, bool) {
-        // The launch curtain only plays over the pages. A title given at launch (a video file, a link) opens the player
-        // under it, and the player draws no curtain: a curtain left up would swallow every click of the player.
-        if self.player.is_some() {
-            self.curtain = None;
-        }
         let (mut list, mut more) = self.frame_pages(now);
         more |= self.frame_stage(&mut list, now);
+        more |= self.frame_looks(&mut list, now);
         if self.player.is_none() {
             let (panel, wants) = self.together_ui.frame(now);
             list.append_shifted(&panel, 0.0);
@@ -3777,19 +4164,81 @@ impl Suite {
             let (card, card_wants) = self.discord.frame(now);
             list.append_shifted(&card, self.side());
             wants |= card_wants || self.nudge.is_some();
-            let mut curtain_wants = false;
-            if let Some(c) = &mut self.curtain {
-                match c.frame(now) {
-                    Some(cur) => {
-                        list.append_shifted(&cur, 0.0);
-                        curtain_wants = true;
-                    }
-                    None => self.curtain = None,
-                }
-            }
-            return (list, more || wants || bar_wants || curtain_wants);
+            let (sheet, sheet_wants) = self.whats_new.frame(now);
+            list.append_shifted(&sheet, 0.0);
+            wants |= sheet_wants || self.whats_new_since.is_some_and(|_| !self.whats_new_done);
+            return (list, more || wants || bar_wants);
         }
         (list, more)
+    }
+
+    /// The looks panel over the page: opens once the page above Start has slid away, draws over the page and keeps the
+    /// glow behind it on what is tried on.
+    fn frame_looks(&mut self, list: &mut DrawList, now: f64) -> bool {
+        if self.player.is_some() {
+            return false;
+        }
+        if self.looks_at.is_some_and(|t| now >= t) {
+            self.looks_at = None;
+            self.open_looks();
+        }
+        let env = self.page_env();
+        let side = self.side();
+        let Some(panel) = self.looks.as_mut() else {
+            return self.looks_at.is_some();
+        };
+        panel.set_env(env);
+        let (over, wants) = panel.frame(now);
+        list.append_shifted(&over, side);
+        wants || self.looks_at.is_some()
+    }
+
+    /// Opens the looks panel on the saved look (`GiftFlow.openLooks`); real app only.
+    pub fn open_looks(&mut self) {
+        let Some(core) = self.core.clone().filter(|_| self.live.is_some()) else {
+            return;
+        };
+        let (env, cx) = (self.page_env(), self.cx.clone());
+        let panel = self.looks.get_or_insert_with(|| {
+            crate::looks_panel::LooksPanel::new(Arc::clone(&core.settings), env, cx)
+        });
+        panel.open();
+        panel.theme();
+    }
+
+    /// Whether the looks panel (or its preview bar) is up.
+    pub fn looks_open(&self) -> bool {
+        self.looks.as_ref().is_some_and(|p| p.is_open())
+    }
+
+    /// Closes the looks panel; a look only tried on is dropped.
+    fn close_looks(&mut self) {
+        if let Some(p) = &mut self.looks {
+            p.close();
+            p.theme();
+        }
+    }
+
+    /// A press on the looks panel: runs what it hit, nothing reaches the page under it. Returns whether the press was its.
+    fn looks_press(&mut self, x: f32, y: f32) -> bool {
+        let x = x - self.side();
+        let Some(panel) = self.looks.as_mut().filter(|p| p.is_open()) else {
+            return false;
+        };
+        let hit = panel.hit(x, y);
+        let swallowed = panel.hits(x, y);
+        if let Some(key) = hit {
+            let tap = panel.tap(&key);
+            panel.theme();
+            if tap == Some(crate::looks_panel::LookTap::Support) {
+                crate::effects::post(crate::effects::Effect::OpenUrl(
+                    crate::effects::SUPPORT_URL.to_owned(),
+                ));
+            }
+        }
+        // The page under the panel does not react while it is up (`looksOpen`); a click beside it is its own too.
+        let _ = swallowed;
+        true
     }
 
     /// The tab in front, with the content cross fade of an area change (the sidebar stays). The old page stays at full
@@ -4022,9 +4471,31 @@ impl Suite {
 
     /// What a screen reader gets for the screen in front (player, pushed page or tab), with its window-level title.
     pub fn a11y_nodes(&self) -> (&'static str, Vec<swiftly_ui::a11y::A11yNode>) {
+        if self.report.open() {
+            return ("Problem melden", self.report.a11y_nodes());
+        }
+        if self.delete.open() {
+            return ("Vom Server löschen", self.delete.a11y_nodes());
+        }
+        if self.player.is_none() && self.whats_new.open() {
+            return ("Was ist neu", self.whats_new.a11y_nodes());
+        }
         // The together panel is modal over the whole window (it takes every click and key): it alone is reachable.
         if self.player.is_none() && self.together_ui.open() {
             return ("Gemeinsam", self.together_ui.a11y_nodes());
+        }
+        // The looks panel (or its bar) is modal over Start: it takes every click, so it alone is reachable, in window points.
+        if self.player.is_none() && self.looks_open() {
+            let mut nodes = self
+                .looks
+                .as_ref()
+                .map(|p| p.a11y_nodes())
+                .unwrap_or_default();
+            shift_x(&mut nodes, self.side());
+            if self.env.idiom == swiftly_ui::Idiom::Desktop {
+                nodes.extend(self.controls.a11y_nodes());
+            }
+            return ("Looks", nodes);
         }
         let (title, mut nodes) = self.a11y_pages();
         // The player covers the whole window: its nodes are already in window points, with no sidebar beside them.
@@ -4126,6 +4597,8 @@ impl Suite {
     /// Whether a frame is wanted without a new event.
     pub fn wants_frame(&self) -> bool {
         if self.stage.is_some()
+            || self.looks_at.is_some()
+            || self.looks_open()
             || self.live.is_some() && (self.clock < self.busy_until || self.starting.is_some())
             || matches!(&self.top, Some(Top::Login(l)) if l.pending())
         {

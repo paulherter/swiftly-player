@@ -105,3 +105,55 @@ fn a_seed_from_a_poster_only_tile_names_no_head_picture_and_the_slot_shows_the_r
         "{seed}"
     );
 }
+
+#[test]
+fn a_play_seed_has_the_player_top_bar_facts_of_a_stored_title_and_nothing_without_a_copy() {
+    let cache = ViewCache::new(EntityCache::in_memory(CacheConfig::default()).unwrap());
+    let scope = ViewCache::scope(&account("TOKEN-A"));
+    let movie: Item = serde_json::from_value(serde_json::json!({
+        "Id": "m1", "Name": "Die Brücke", "Type": "Movie", "ProductionYear": 1959,
+        "RunTimeTicks": 6_000_000_000_i64, "ImageTags": {"Primary": "p1"}
+    }))
+    .unwrap();
+    let episode: Item = serde_json::from_value(serde_json::json!({
+        "Id": "e3", "Name": "Der Hafen", "Type": "Episode", "SeriesName": "Hafenlichter", "SeriesId": "s1",
+        "SeasonId": "s1-2", "ParentIndexNumber": 2, "IndexNumber": 3, "RunTimeTicks": 2_700_000_000_i64
+    }))
+    .unwrap();
+    let ticket = cache.ticket(&scope);
+    cache.note_tiles(&ticket, &[movie, episode]);
+
+    let net = Script::new(|_| Some("{}".into()));
+    net.offline.store(true, std::sync::atomic::Ordering::SeqCst);
+    let detail = LegacyDetail::new(&Arc::clone(&net), &with(&cache), &account("TOKEN-A")).unwrap();
+
+    let film: serde_json::Value = serde_json::from_str(&detail.play_seed("m1")).unwrap();
+    assert_eq!(film["titel"], "Die Brücke");
+    assert_eq!(film["episode"], false, "a film has no episode slot: {film}");
+    assert_eq!(film["kopfzeile"], "Die Brücke");
+    assert!(
+        film["nebenzeile"]
+            .as_str()
+            .is_some_and(|l| l.contains("1959")),
+        "the film's meta line is year and runtime: {film}"
+    );
+    assert!(film.get("serieId").is_none());
+
+    let folge: serde_json::Value = serde_json::from_str(&detail.play_seed("e3")).unwrap();
+    assert_eq!(folge["episode"], true);
+    assert_eq!(
+        folge["kopfzeile"], "Hafenlichter",
+        "the bar's title is the series"
+    );
+    assert_eq!(folge["serieId"], "s1");
+    assert_eq!(folge["staffelId"], "s1-2");
+    assert_eq!(folge["staffelNr"], 2);
+    assert_eq!(folge["folgeNr"], 3);
+    assert_eq!(folge["itemId"], "e3");
+
+    assert_eq!(
+        detail.play_seed("unknown"),
+        "",
+        "nothing stored: no seed, the page's `kopf` is the source"
+    );
+}

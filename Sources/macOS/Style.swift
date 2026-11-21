@@ -26,14 +26,12 @@ extension Theme {
 
     /// With Reduce Motion, a short cross-fade replaces the movement. Same value as
     /// on iPhone, for the shared parts (episode card, image color).
-    static let fadeReduced: Animation = .linear(duration: 0.14)
+    static let fadeReduced: Animation = .token(SwiftlyDesignTokens.Desktop.motionReducedCurve, SwiftlyDesignTokens.Desktop.motionReducedDuration)   // token motion.reduced
 
     /// **The small corner radius, for things shorter than 34 pt.** The radius scales
     /// with the element: 10 on a height of 48 is a ratio of 0.21, and the same ratio
     /// gives 8 on a height of 30. On TV everything is doubled, so 16 there.
-    static let cornerSmall: CGFloat = 8
-
-    // MARK: - Press feedback
+    static let cornerSmall: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.radiusSmall)   // token radius.small
 
     /// **The same two styles as on iPhone**, so the shared components in
     /// `Sources/Shared` find them here too. A row gets a highlight surface, a
@@ -73,8 +71,8 @@ extension Theme {
 
             var body: some View {
                 content
-                    .scaleEffect(pressed && !Theme.motionReduced ? 0.97 : 1)
-                    .opacity(pressed ? 0.85 : 1)
+                    .scaleEffect(pressed && !Theme.motionReduced ? CGFloat(SwiftlyDesignTokens.Desktop.statePressedScale) : 1)
+                    .opacity(pressed ? SwiftlyDesignTokens.Desktop.statePressedOpacity : 1)
                     // **Where keyboard focus is.** Our own button styles cover the system focus
                     // ring and only knew the hover state, which depends on the mouse. With Full
                     // Keyboard Access on, you would walk through the window blind.
@@ -110,12 +108,12 @@ extension Theme {
 
     /// Press: instant in, 0.12 s out.
     static func pressCurve(_ pressed: Bool) -> Animation? {
-        pressed ? nil : .easeOut(duration: 0.12)
+        pressed ? nil : .token(SwiftlyDesignTokens.Desktop.motionPressCurve, SwiftlyDesignTokens.Desktop.motionPressDuration)   // token motion.press
     }
 
     /// Switches and checkmarks: 0.10 s.
     static var toggle: Animation {
-        motionReduced ? linearReduced : .easeOut(duration: 0.10)
+        motionReduced ? linearReduced : .token(SwiftlyDesignTokens.Desktop.motionToggleCurve, SwiftlyDesignTokens.Desktop.motionToggleDuration)   // token motion.toggle
     }
 
     /// Panels, expanding sections, action list: 0.22 s.
@@ -147,13 +145,9 @@ extension Theme {
     /// iPad version (`Theme.readWidth`): a row of icon, title and a value on the
     /// right, stretched across half the window, leaves nothing but empty space
     /// between the two ends.
-    static let readWidth: CGFloat = 700
-
-    /// **Width of a form** (sign-in, adding a server, Seerr). Same value as on
+    static let readWidth: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.sizeReadWidth)   // token size.read-width
     /// iPhone, wide variant.
-    static let formWidth: CGFloat = 420
-
-    /// **Width of a column on the player's layers** (picture, sleep timer, quality):
+    static let formWidth: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.sizeFormWidth)   // token size.form-width
     /// short words such as "Original" or "30 Min.", five columns side by side in the
     /// smallest window.
     static let layerColumnWidth: CGFloat = 200
@@ -164,38 +158,32 @@ extension Theme {
     /// two columns with their spacing stay well inside `windowMinWidth`.
     static let trackColumnWidth: CGFloat = 360
 
-    /// Space for the window traffic lights, **in the sidebar only.**
-    ///
-    /// The three dots sit at the top left of the window, above the sidebar. They end
-    /// at about 27 pt; the wordmark also brings its own space, because its artwork
-    /// includes the dot over the "i" and the descender of the "y" while the letters
-    /// fill only half the height. 40 is therefore enough.
-    ///
     /// How far from the top the zone extends in which the traffic lights appear in
     /// the player. Slightly more generous than the lights themselves, so they are
     /// easy to find.
     static let signalZone: CGFloat = 90
 
-    static let signalHeight: CGFloat = 40
+    /// Space for the window traffic lights, **in the sidebar only**: the gap from the top
+    /// edge of the sidebar to its first row. The three dots sit at the top left of the window,
+    /// above the sidebar; no logo stands above the first row (Start).
+    static let sidebarTop: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.spaceSidebarTop)   // token space.sidebar-top
 
     /// Top margin in the **content area**: the page title starts 58 down, just under
     /// the 52 pt toolbar (design `mac-design.mjs`).
-    static let contentTop: CGFloat = 58
-
-    /// **The bar that appears when scrolling** (`Bestandsleiste`).
+    static let contentTop: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.spaceContentTop)   // token space.content-top
     ///
     /// 40, not `contentTop`: it has to hold a 17 pt line and the 40 pt tall back
     /// arrow, and it is deliberately shorter than the top margin of resting content.
     /// It should be a bar, not a second header.
     static let headerBarHeight: CGFloat = toolbarHeight
     /// **The toolbar of the design:** ‹ › and the title, 52 high on every page.
-    static let toolbarHeight: CGFloat = 52
+    static let toolbarHeight: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.sizeToolbarHeight)   // token size.toolbar-height
 
 
     /// Height of a detail page's header bar (arrow and fading-in title).
     static let titleHeight: CGFloat = 52
 
-    static let sidebarWidth: CGFloat = 220
+    static let sidebarWidth: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.sizeSidebarWidth)   // token size.sidebar-width
 
     // MARK: Dimensions
 
@@ -203,52 +191,40 @@ extension Theme {
     /// the rounder, and button and tile share the smallest step because both are
     /// small objects. A difference of two points between two neighboring elements
     /// reads as a mistake, not as a hierarchy.
-    static let corner: CGFloat = 10
-    static let cornerTile: CGFloat = 10
-    static let cornerField: CGFloat = 12
-    /// **Card and group**: the settings card, the group in a list. Same 14 as on
+    static let corner: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.radiusControl)   // token radius.control
+    static let cornerTile: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.radiusTile)   // token radius.tile
+    static let cornerField: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.radiusField)   // token radius.field
     /// iPhone.
-    static let cornerCard: CGFloat = 14
-    /// What counts as a surface of its own: panels, info boxes.
-    static let cornerArea: CGFloat = 16
-    /// **The sheet.** Nothing slides in from the bottom on the Mac; the action list
+    static let cornerCard: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.radiusCard)   // token radius.card
+    static let cornerArea: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.radiusArea)   // token radius.area
     /// expands in place. The value exists here anyway, so a shared component finds it
     /// and nobody hard-codes 28.
-    static let cornerSheet: CGFloat = 28
-    /// One side margin per sheet (same value as on iPhone).
-    static let sheetInset: CGFloat = 24
-    /// 36: the content edge of the design, left and right.
-    static let edgeSpacing: CGFloat = 36
-
-    /// **Where the hairline starts in a settings card.**
+    static let cornerSheet: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.radiusSheet)   // token radius.sheet
+    static let sheetInset: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.spaceSheetInset)   // token space.sheet-inset
+    static let edgeSpacing: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.spacePage)   // token space.page
     ///
     /// It aligns with the text, not with the card edge: 12 inner padding plus 26
     /// icon column plus 14 gap to the text.
     static let separatorInsetCard: CGFloat = 52
+    /// Settings row padding, above/below and left/right (two-line row 65 high).
+    static let rowPadV: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.spaceRowPadV)   // token space.row-pad-v
+    static let rowPadH: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.spaceRowPadH)   // token space.row-pad-h
     /// Settings row symbol and its column, the same as on iPhone.
     static let rowSymbolSize: CGFloat = 20
     /// Same row title and chevron sizes as on iPhone.
     static let rowTitleSize: CGFloat = 17
     static let chevronSize: CGFloat = 13
     static let rowIconWidth: CGFloat = 26
-    static let tileSpacing: CGFloat = 16
-    static let railsSpacing: CGFloat = 40
-
-    /// **Scroll distance over which the value row fades out**: 44, as on iPhone.
+    static let tileSpacing: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.spaceTileGap)   // token space.tile-gap
+    static let railsSpacing: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.spaceRailGap)   // token space.rail-gap
     /// The distance drives opacity only, never a height: as soon as a header height
     /// depends on the scroll offset, it changes the safe-area inset that is part of
     /// the measurement, and the header never settles.
-    static let valueRailsDistance: CGFloat = 44
-
-    /// Poster, 2:3 (112 x 168 on iPhone).
-    static let tileWidth: CGFloat = 150
-    static let tileHeight: CGFloat = 225
-
-    /// Continue Watching is landscape, 16:9 (240 x 135 on iPhone).
-    static let landscapeWidth: CGFloat = 280
-    static let landscapeHeight: CGFloat = 158
-
-    /// The header zone of the detail page.
+    static let valueRailsDistance: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.spaceValueGap)   // token space.value-gap
+    static let tileWidth: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.sizePosterWidth)   // token size.poster-width
+    static let tileHeight: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.sizePosterHeight)   // token size.poster-height
+    static let landscapeWidth: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.sizeLandscapeWidth)   // token size.landscape-width
+    static let landscapeHeight: CGFloat = CGFloat(SwiftlyDesignTokens.Desktop.sizeLandscapeHeight)   // token size.landscape-height
     ///
     /// **Exactly the content, no spare space**: 150 above plus a 230 block.
     ///
@@ -278,6 +254,12 @@ extension Theme {
     /// and More buttons sit in a different place on every page. 200 fits
     /// "Fortsetzen" and "Abspielen" (Resume and Play) with room to spare.
     static let primaryButtonWidth: CGFloat = 200
+    /// The main Play / Continue button of the detail hero: tokens `size.hero-play-height` / `-width`, corner `radius.button`.
+    static let heroPlayHeight = CGFloat(SwiftlyDesignTokens.Desktop.sizeHeroPlayHeight)
+    static let heroPlayWidth = CGFloat(SwiftlyDesignTokens.Desktop.sizeHeroPlayWidth)
+    static let cornerButton = CGFloat(SwiftlyDesignTokens.Desktop.radiusButton)
+    /// Sidebar row height: token `size.sidebar-row-height`.
+    static let sidebarRowHeight = CGFloat(SwiftlyDesignTokens.Desktop.sizeSidebarRowHeight)
 
     /// **The main button under the pointer.** White at 88 percent, the step between
     /// resting (full) and pressed (75).
@@ -286,14 +268,14 @@ extension Theme {
     // MARK: Type - same scale as on iPhone
 
     /// 30 bold: the page title of the design.
-    static let titleLarge = Font.app(size: 30, weight: .bold)
+    static let titleLarge = Font.app(size: CGFloat(SwiftlyDesignTokens.Desktop.textTitleLargeSize), weight: .bold)   // token title.large
     /// **The title over a hero image *is* the page title.** It used to be 34 on the
     /// Mac, a separate step for the same role, which the shared scale does not have.
     /// This name previously carried the 22 of the subpage title, which now has its
     /// own name.
     static let title      = titleLarge
     /// **Subpage title**, 28 bold, same name and value as on iPhone.
-    static let subpageTitle = Font.app(size: 28, weight: .bold)
+    static let subpageTitle = Font.app(size: CGFloat(SwiftlyDesignTokens.Desktop.textTitleSubpageSize), weight: .bold)   // token title.subpage
     static let rail      = Font.app(size: 20, weight: .semibold)
     /// Group title over a rail or a settings group: 22 bold, white, as on iPhone.
     static let section = Font.app(size: 22, weight: .bold)
@@ -326,14 +308,14 @@ extension Theme {
     // Mac and iPhone share the same scale.
 
     /// 30 pt, -0.5 as in the design.
-    static let lockTitle      = -0.5
+    static let lockTitle      = SwiftlyDesignTokens.Desktop.textTitleLargeTracking
     /// 28 · -0.021 em
-    static let lockSubpage = -0.6
+    static let lockSubpage = SwiftlyDesignTokens.Desktop.textTitleSubpageTracking
     /// 20 · -0.012 em
-    static let lockRail      = -0.24
-    static let lockSection = -0.484
+    static let lockRail      = SwiftlyDesignTokens.Desktop.textHeadingRailTracking
+    static let lockSection = SwiftlyDesignTokens.Desktop.textHeadingSectionTracking
     /// 17 · -0.008 em
-    static let lockCategory     = -0.136
+    static let lockCategory     = SwiftlyDesignTokens.Desktop.textHeadingCategoryTracking
     /// 11 · +0.14 em
     static let lockGroup     = 1.54
     /// 10 · +0.10 em
@@ -342,7 +324,7 @@ extension Theme {
     // MARK: Durations - verbatim from the iPhone version
 
     /// Hover: 0.12 s, the same duration as the press.
-    static let timeFloat   = Animation.easeOut(duration: 0.12)
+    static let timeFloat = Animation.token(SwiftlyDesignTokens.Desktop.motionQuickCurve, SwiftlyDesignTokens.Desktop.motionQuickDuration)   // token motion.quick
 
     /// The paging arrows of a row fade in and out softly (`FadeTimes.arrows`),
     /// the same on Linux and Windows.

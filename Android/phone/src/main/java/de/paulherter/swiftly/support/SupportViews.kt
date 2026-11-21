@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -64,6 +63,7 @@ import de.paulherter.swiftly.shared.SecondaryButton
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import de.paulherter.swiftly.tapOn
 import kotlinx.coroutines.delay
@@ -160,7 +160,7 @@ fun SheetText(text: String, quiet: Boolean = true, small: Boolean = false, cente
  */
 @Composable
 fun TipChoice(emoji: String, title: String, price: String, chosen: Boolean, owned: Boolean, choose: () -> Unit) {
-    val shape = RoundedCornerShape(Theme.cornerField)
+    val shape = smoothRoundedShape(Theme.cornerField)
     Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(shape)
             .background(if (chosen) Theme.raised else Theme.groupsArea)
             .border(1.5.dp, if (chosen) Theme.accent else Color.Transparent, shape)
@@ -182,7 +182,7 @@ private fun ThanksBody(app: SwiftlyApplication, close: () -> Unit, open: (Destin
     SupportMark(filled = true)
     SheetText(translated("Dein Kaffee hilft uns, Swiftly für alle kostenlos zu halten. Das ist neu für dich."))
     Spacer(Modifier.height(16.dp))
-    Column(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).clip(RoundedCornerShape(Theme.cornerCard))
+    Column(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).clip(smoothRoundedShape(Theme.cornerCard))
                .background(Theme.groupsArea)) {
         GiftRow(Glyph.HeartFilled, translated("Ein Herz in „Über“"), translated("Neben deiner Versionsnummer")) {}
     }

@@ -25,7 +25,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,7 +55,7 @@ import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.shared.Theme
 import androidx.compose.foundation.layout.wrapContentWidth
 import de.paulherter.swiftly.shared.Motion
-import de.paulherter.swiftly.shared.Wordmark
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
@@ -167,7 +166,7 @@ internal suspend fun continueWatchingAsking(app: SwiftlyApplication, id: String)
     val loaded = runCatching { titleRead(withContext(Dispatchers.IO) { app.rk.title(id).await() }) }.getOrNull()
     if (loaded == null) { app.message.value = translated("Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal."); return true }
     if (!loaded.planPresent) return false
-    playDefault(app, id, loaded.resumeFrom)
+    playDefault(app, id, loaded.resumeFrom, loaded.head)
     return true
 }
 
@@ -175,7 +174,7 @@ internal suspend fun continueWatchingAsking(app: SwiftlyApplication, id: String)
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
-              libraryJump: (String, String) -> Unit = { _, _ -> }) {
+              libraryJump: (String, String) -> Unit = { _, _ -> }, toDownloads: (() -> Unit)? = null) {
     var rails by remember { mutableStateOf(app.startRails) }
     val run = rememberCoroutineScope()
     var starts by remember { mutableStateOf(false) }
@@ -188,13 +187,15 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
         }
     }
     var error by remember { mutableStateOf<String?>(null) }
+    // Why the core says the page has no answer (`homeFailure`): the page's one load state, not a guess from empty rows.
+    var failure by remember { mutableStateOf<String?>(null) }
     val e = app.settings
     val seerr = remember(app) { SeerrHomeFlow(app) }
     // How many loads are on their way. The lifecycle effect below fires on the very first composition as
     // well, next to the effect for the settings; without this a cold start fetched every row twice
     // (`HomeModel.runningRuns` on Apple).
     var running by remember { mutableIntStateOf(0) }
-    suspend fun load() {
+    suspend fun load(quiet: Boolean = false) {
         // During an account switch, that reloads, not the return to the page that coincides with it.
         if (AccountSwitchTransition.waits && !AccountSwitchTransition.switched) return
         running++
@@ -206,12 +207,20 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
                                     app.store.rememberValue("bibliothek-movies").orEmpty(), app.store.rememberValue("bibliothek-tvshows").orEmpty(),
                                     e.startGenres.toTypedArray(), e.genreChips, e.startLibrariesJson()).await()
             }
-            rails = railsRead(json).also { app.startRails = it; app.continueHiddenAfterLoad(it) }
-            app.startLoaded = System.currentTimeMillis()
-            app.startKey = key
+            // A reload the core started (`followListsStale`) never takes an answer that says the server is away: the rows stay.
+            if (quiet && homeDisturbed(json)) return
+            val answered = railsRead(json)
+            val why = homeFailure(json)
+            // **A silent server over rows that are already there**: an answer that says "no answer" has no rows of its own, and
+            // taking it blanked the page. The rows stay (the same as the iPhone's stored page) and the notice stands above them.
+            val keeps = answered.isEmpty() && homeSilent(why) && !rails.isNullOrEmpty()
+            if (!keeps) rails = answered.also { app.startRails = it; app.continueHiddenAfterLoad(it) }
+            failure = why
+            // An answer that says "no answer" is not fresh: coming back to the page asks again (as `TvStartPage` does).
+            if (failure == null) { app.startLoaded = System.currentTimeMillis(); app.startKey = key } else app.startKey = ""
             error = null
         } catch (e: Throwable) {
-            error = errorString(app, e)
+            if (!quiet) error = errorString(app, e)
         } finally {
             running--
         }
@@ -238,6 +247,9 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
             if (running == 0 && KernRules.refreshDue(app.startLoaded)) load()
         }
     }
+    // **The reloads the core starts by itself** (another device watched something, the link came back, a delete): the rows
+    // patch in quietly, nothing blanks and no spinner shows.
+    LaunchedEffect(Unit) { followListsStale(app, { running > 0 }) { load(quiet = true) } }
     var pulls by remember { mutableStateOf(false) }
     val dragState = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
     // Long press on any tile: the tile menu with preview (`TileMenu`); on Continue Watching with
@@ -251,6 +263,15 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
             if (list.firstVisibleItemIndex > 0) 400f
             else list.firstVisibleItemScrollOffset / density.density
         }
+    }
+
+    // The notice over the rows (below): a LazyColumn keeps its first visible row where it is when an item appears above it, so a page that
+    // stood at the top would show the notice scrolled out of view. Bring it back when the page was at the top.
+    val noticeShown = homeSilent(failure) && !rails.isNullOrEmpty() && !AccountSwitchTransition.waits
+    LaunchedEffect(noticeShown) {
+        if (!noticeShown) return@LaunchedEffect
+        androidx.compose.runtime.withFrameNanos { }; androidx.compose.runtime.withFrameNanos { }
+        if (list.firstVisibleItemIndex == 1 && list.firstVisibleItemScrollOffset == 0) list.animateScrollToItem(0)
     }
 
     // **No glow.** A colored glow used to sit behind the header; on iPhone it is gone, the home page
@@ -276,19 +297,31 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
             //
             // The error text used to be a quiet line in `warning` above an otherwise empty page, so the home
             // page looked like an empty server. The model is `HomeView.notPresent`: the whole area, the server
-            // formula, and **two** ways out: retry and switch server. `warning` means "something is waiting
+            // formula, and the ways out: retry, switch server and, when titles are saved on the device, Downloads. The
+            // state comes from the core (`homeFailure`: the answer says "no answer"), never from empty rows. `warning` means "something is waiting
             // for someone"; here something went wrong, which is `error`.
             //
-            // If rows are already there, it stays the quiet line: the content is there and only the refresh
-            // failed.
-            if (error != null && rails.isNullOrEmpty() && !AccountSwitchTransition.waits) item(key = "gestoert") {
+            // With no rows. If rows are already there and the server does not answer, they stay and the notice stands above
+            // them (the item below); a refused sign-in or an unreadable answer have this page.
+            if ((error != null || failure != null) && rails.isNullOrEmpty() && !AccountSwitchTransition.waits) item(key = "gestoert") {
+                val (heading, sentence) = homeTrouble(app.serverAddress(), failure)
+                // Titles saved on the device play without the server: the way there stays on the page that has nothing else to say.
+                val downloadsWay = toDownloads?.takeIf { app.settings.downloadsAn && app.downloads.entries.value.isNotEmpty() }
+                // While the retry is on its way the symbol breathes and the buttons wait (`EmptyState.serverDived` on iPhone).
+                val retrying = running > 0
                 Box(Modifier.fillMaxWidth().height(420.dp)) {
-                    EmptyState(Glyph.WlanDisruption, translated("Server ist abgetaucht"),
-                        translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serverAddress()),
-                        primaryButton = translated("Erneut versuchen") to { run.launch { load() } },
-                        quietButton = translated("Server wechseln") to { app.signOff() })
+                    EmptyState(Glyph.WlanDisruption, heading, sentence, loads = retrying,
+                        primaryButton = if (retrying) null else translated("Erneut versuchen") to { run.launch { load() } },
+                        quietButton = if (retrying) null else translated("Server wechseln") to { app.signOff() },
+                        secondQuietButton = if (retrying) null else downloadsWay?.let { translated("Downloads") to it })
                 }
             } else error?.let { item { Text(it, color = Theme.error, style = Theme.small, modifier = Modifier.padding(horizontal = Theme.edgeSpacing)) } }
+            // **The same notice over the rows that are already there** (`HomeView` on iPhone): the page keeps what it showed and the
+            // server does not answer. At the very top, the button waits while a retry runs.
+            if (noticeShown) item(key = "server-notice") {
+                DisturbHint(app.serverAddress(), Modifier.animateItem(fadeInSpec = Motion.reveal(), placementSpec = null, fadeOutSpec = Motion.reveal()),
+                            spacingTop = 0.dp, loads = running > 0, retry = { run.launch { load() } })
+            }
             // Placeholder in the shape of the rows, then a crossfade, no ring (`einblenden`).
             // **Not built at all during an account switch**: on tap the old account's rows are gone at once,
             // and what arrives mid-flight is only set after landing, then staggered (`railEntrance`).
@@ -325,15 +358,15 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
     }
 }
 
-/** Mirrors the header in `HomeView`: wordmark 36 left, `HeaderTargets` right, in the `BlurHeader`. */
+/**
+ * The header of the first page: its name (the label of the first tab) left, `HeaderTargets` right, in the
+ * `RootHeader`. The same title, row and scroll behaviour as `LibraryHeader` and the Downloads page; there is no wordmark here.
+ */
 @Composable
 private fun StartHeader(app: SwiftlyApplication, open: (Destination) -> Unit, offset: () -> Float) {
     RootHeader(offset) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            val mark = if (app.isTv) null else app.looks.palette.value.logoGradient
-            if (mark != null && mark.size == 1) Wordmark(height = 36.dp, accent = mark.first())
-            else Wordmark(height = 36.dp, gradient = Theme.markGradient)
-            Spacer(Modifier.weight(1f))
+            Text(translated(Region.Start.title), style = Theme.titleLarge, color = Theme.font, modifier = Modifier.weight(1f))
             HeaderTargets(app, open)
         }
     }
@@ -393,7 +426,7 @@ private fun TileView(k: Tile, landscape: Boolean, continueWatching: Boolean, aft
     Column(Modifier.width(width).reveal().then(touch)
             .semantics(mergeDescendants = true) { contentDescription = description },
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.size(width, height).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
+        Box(Modifier.size(width, height).clip(smoothRoundedShape(Theme.cornerTile)).background(Theme.area)) {
             val address = if (landscape) k.landscape ?: k.poster else k.poster
             // **No `SubcomposeAsyncImage` in rows**: it subcomposes per tile and cost whole images during
             // fast scrolling (measured: 99th percentile 81 ms).

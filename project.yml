@@ -22,12 +22,6 @@ packages:
   # git-ignored: `Werkzeuge/rust-kern.sh` builds it, and must run before `xcodegen generate`.
   SwiftlyCore:
     path: Packages/SwiftlyCore
-  # For the launch animation. The source asset is a Lottie export from After
-  # Effects; the keyframes carry individual bezier easing, which is error-prone
-  # to rebuild by hand. Airbnb's implementation is the standard one.
-  Lottie:
-    url: https://github.com/airbnb/lottie-ios
-    from: 4.5.0
 
 settings:
   base:
@@ -44,7 +38,7 @@ settings:
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "49"
+    CURRENT_PROJECT_VERSION: "50"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
@@ -64,6 +58,9 @@ targets:
     platform: iOS
     sources:
       - path: Sources/Shared
+        excludes:
+          # The launch animation is gone on Apple, Android and the Rust desktop; only the old Swift Linux and Windows apps still read this file.
+          - Assets/startanimation.json
       - path: Sources/iOS
       # **Licenses come from one source**: `LICENSES/` (components.json and the
       # full texts) is copied into the bundle unchanged; `Lizenzbestand` reads
@@ -74,7 +71,6 @@ targets:
       - package: JellyfinKit
       - package: SwiftlyAether
       - package: SwiftlyCore
-      - package: Lottie
     info:
       path: Sources/iOS/Info.plist
       properties:
@@ -106,6 +102,7 @@ targets:
         CFBundleDisplayName: Swiftly
         CFBundleShortVersionString: $(MARKETING_VERSION)
         # Without a color, white flashes briefly before the launch animation.
+        # `StartBackground` is generated from `surface.base` (gen_tokens --semantic), never edit it by hand.
         UILaunchScreen:
           UIColorName: StartBackground
         # All four are required: without UIRequiresFullScreen an app with "1,2"
@@ -234,6 +231,8 @@ targets:
       - path: Sources/Shared/LoginModel.swift
       - path: Sources/Shared/PlayRequest.swift
       - path: Sources/Shared/Colors.swift
+      # The generated design tokens (`design/tokens.json`, layout set `tv`): Apple TV reads its values from here, not from literals.
+      - path: Sources/Shared/Tokens.generated.swift
       - path: Sources/Shared/AppFont.swift
       - path: Sources/Shared/AppIcon.swift
       # Inter and our icons, the same files as on iPhone: the TV uses the same kit.
@@ -251,6 +250,7 @@ targets:
       # The player menus: data, session and the conversion of the core's pages; Apple TV draws them in `Sources/tvOS/TVPlayerMenus.swift`.
       - path: Sources/Shared/MenuSpec.swift
       - path: Sources/Shared/PlayerMenuSession.swift
+      - path: Sources/Shared/EpisodesLoader.swift
       - path: Sources/Shared/PlayerMenuWords+Text.swift
       # Name, sentence and mark of each server kind, and the state of the Plex/Emby sign-in;
       # the views on top are per platform.
@@ -277,6 +277,7 @@ targets:
       # keeps its own `Bild` building block for tiles.
       - path: Sources/Shared/NetworkImage.swift
       - path: Sources/Shared/Picture.swift
+      - path: Sources/Shared/InTravel.swift
       # VLC's counters and the tech badge above them - shared by all platforms
       # since the badge exists everywhere.
       - path: Sources/Shared/PlayValues.swift
@@ -337,6 +338,7 @@ targets:
       - path: Sources/Shared/Version.swift
       # "Support Swiftly": StoreKit, watch time and when to ask; views per platform.
       - path: Sources/Shared/SupportModel.swift
+      - path: Sources/Shared/SupportAppleKey.swift
       - path: Sources/Shared/LibraryModel.swift
       - path: Sources/Shared/WatchlistModel.swift
       # **The series store existed a second time here.** The shared file was
@@ -391,10 +393,9 @@ targets:
       # comes from here.
       - path: Sources/Shared/InfoPlist.xcstrings
       - path: Sources/Shared/ShelfPreview.swift
-      # The launch animation belongs on both platforms - the mark should animate
-      # the same way everywhere. Only the square is larger on TV.
-      - path: Sources/Shared/StartAnimation.swift
       - path: Sources/Shared/Assets
+        excludes:
+          - startanimation.json
       - path: Sources/Shared/Licenses.swift
       # The tones of a backdrop image - TV tints its detail pages with them,
       # iPhone the background below.
@@ -409,12 +410,15 @@ targets:
       - package: JellyfinKit
       - package: SwiftlyAether
       - package: SwiftlyCore
-      - package: Lottie
       # The Top Shelf is a separate target and is embedded.
       - target: Swiftly-TopShelf
     info:
       path: Sources/tvOS/Info.plist
       properties:
+        # The launch colour is generated from `surface.base` (gen_tokens --semantic): the first frame
+        # must be the app's ground, not the system default.
+        UILaunchScreen:
+          UIColorName: StartBackground
         # **The fallback language, not the source language.**
         #
         # German stays the key in the catalog. A device set to neither German
@@ -583,7 +587,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen:
-          UIColorName: ""
+          UIColorName: StartBackground
         # Without this key iOS caps the app at 60 Hz on iPhone (see the real app).
         CADisableMinimumFrameDurationOnPhone: true
         UISupportedInterfaceOrientations:
@@ -616,6 +620,8 @@ targets:
     info:
       path: Sources/RustUI/Info-tvOS.plist
       properties:
+        UILaunchScreen:
+          UIColorName: StartBackground
         CFBundleDevelopmentRegion: en
         CFBundleDisplayName: Swiftly Rust
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -701,6 +707,7 @@ targets:
       - path: Sources/Shared/Version.swift
       # "Support Swiftly": StoreKit, watch time and when to ask; views per platform.
       - path: Sources/Shared/SupportModel.swift
+      - path: Sources/Shared/SupportAppleKey.swift
       # Series, seasons and episodes in memory - shared once instead of built
       # twice, with its own account check.
       - path: Sources/Shared/SeriesCache.swift
@@ -717,9 +724,12 @@ targets:
       - path: Sources/Shared/TechBadge.swift
       - path: Sources/Shared/NetworkImage.swift
       - path: Sources/Shared/Picture.swift
+      - path: Sources/Shared/InTravel.swift
       - path: Sources/Shared/LibraryModel.swift
       - path: Sources/Shared/WatchlistModel.swift
       - path: Sources/Shared/Colors.swift
+      # The generated design tokens (Desktop set): colours, radii, type, motion of the Mac read from here.
+      - path: Sources/Shared/Tokens.generated.swift
       - path: Sources/Shared/AppFont.swift
       - path: Sources/Shared/AppIcon.swift
       # Inter and our icons, the same files as on iPhone: the Mac uses the same kit.
@@ -746,6 +756,7 @@ targets:
       - path: Sources/Shared/MenuSpec.swift
       - path: Sources/Shared/PlayerMenuSession.swift
       - path: Sources/Shared/EpisodesBox.swift
+      - path: Sources/Shared/EpisodesLoader.swift
       - path: Sources/Shared/PlayerMenuLayer.swift
       - path: Sources/Shared/PlayerMenuWords+Text.swift
       - path: Sources/Shared/PlayerGlass.swift
@@ -826,10 +837,9 @@ targets:
       # Only for the local-network prompt: English is in Info.plist, German
       # comes from here.
       - path: Sources/Shared/InfoPlist.xcstrings
-      # The launch animation and its asset. Without this file the Mac would
-      # start without the animation.
-      - path: Sources/Shared/StartAnimation.swift
       - path: Sources/Shared/Assets
+        excludes:
+          - startanimation.json
       # The next-episode card: frame, ring, gradient - the card itself is drawn
       # by `Sources/macOS/EpisodeCardsView.swift`. Plus the preparation of
       # the next episode in the last minutes.
@@ -854,9 +864,6 @@ targets:
       - package: JellyfinKit
       - package: SwiftlyAether
       - package: SwiftlyCore
-      # For the launch animation - same asset as iPhone and TV. Without it the
-      # Mac would start without the animation.
-      - package: Lottie
     info:
       path: Sources/macOS/Info.plist
       properties:

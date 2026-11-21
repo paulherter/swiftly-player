@@ -48,13 +48,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -74,9 +76,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -108,6 +108,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalView
 import android.view.HapticFeedbackConstants
@@ -422,7 +423,7 @@ fun TileBadge(mark: String, figure: Int, modifier: Modifier = Modifier) {
         "staffeln" -> if (figure == 1) translated("1 Staffel") else translated("%lld Staffeln", figure)
         else -> null
     }
-    val form = RoundedCornerShape(Theme.cornerSmall)
+    val form = smoothRoundedShape(Theme.cornerSmall)
     Row(modifier.padding(6.dp).clip(form).background(Theme.reason.copy(alpha = 0.78f))
             .padding(horizontal = if (wording == null) 5.dp else 6.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -452,7 +453,7 @@ fun LoadingPulse(): State<Float> {
 @Composable
 fun LoadField(modifier: Modifier, corner: Dp = Theme.cornerTile) {
     val pulse = LocalLoadingPulse.current
-    Box(modifier.graphicsLayer { alpha = pulse?.value ?: 0.75f }.clip(RoundedCornerShape(corner)).background(Theme.area))
+    Box(modifier.graphicsLayer { alpha = pulse?.value ?: 0.75f }.clip(smoothRoundedShape(corner)).background(Theme.area))
 }
 
 /** Mirrors `TilePlaceholder`: 2:3 poster, two lines below. */
@@ -489,7 +490,8 @@ fun TilePlaceholder() {
  */
 @Composable
 fun EmptyState(symbol: Glyph, headerLine: String, text: String, loads: Boolean = false,
-                primaryButton: Pair<String, () -> Unit>? = null, quietButton: Pair<String, () -> Unit>? = null) {
+                primaryButton: Pair<String, () -> Unit>? = null, quietButton: Pair<String, () -> Unit>? = null,
+                secondQuietButton: Pair<String, () -> Unit>? = null) {
     // Appears with alpha and from 0.97: `.opacity.combined(with: .scale(0.97))`.
     val on = remember { Animatable(0f) }
     LaunchedEffect(Unit) { on.animateTo(1f, Motion.reveal()) }
@@ -513,6 +515,9 @@ fun EmptyState(symbol: Glyph, headerLine: String, text: String, loads: Boolean =
         quietButton?.let { (title, perform) ->
             QuietButton(title, modifier = Modifier.padding(top = if (primaryButton == null) 24.dp else 16.dp), action = perform)
         }
+        secondQuietButton?.let { (title, perform) ->
+            QuietButton(title, modifier = Modifier.padding(top = 8.dp), action = perform) // token-lint: allow same 8 dp gap as the error page above; tokens come with the design wave
+        }
     }
 }
 
@@ -534,11 +539,13 @@ fun EmptyState(symbol: Glyph, headerLine: String, text: String, loads: Boolean =
  * `erneut`: only where there is something to repeat. If the section reloads with the whole
  * page, the button is absent: one that loads the page twice is worse than none.
  *
+ * `loads`: a retry is on its way, the button waits instead of vanishing, so the block keeps its height.
+ *
  * `spacingTop` is 40 below an empty hint and 0 below a row heading that brings its own spacing.
  */
 @Composable
 fun DisturbHint(address: String?, modifier: Modifier = Modifier, spacingTop: Dp = 40.dp,
-                 retry: (() -> Unit)? = null) {
+                 retry: (() -> Unit)? = null, loads: Boolean = false) {
     Column(modifier.fillMaxWidth().padding(top = spacingTop, start = 34.dp, end = 34.dp),
            horizontalAlignment = Alignment.CenterHorizontally) {
         // `DisturbHint`: the empty-state symbol (52, white), the 28 bold title, 15 text in `fontQuiet`.
@@ -552,7 +559,7 @@ fun DisturbHint(address: String?, modifier: Modifier = Modifier, spacingTop: Dp 
         // A real button from the kit, not just text: as a quiet button "Erneut versuchen" had no
                 // surface and no border and did not read as a button. Now the secondary button, as wide as
                 // its text, the same shape as every other second button.
-        retry?.let { PrimaryButton(translated("Erneut versuchen"), stretches = false,
+        retry?.let { PrimaryButton(translated("Erneut versuchen"), released = !loads, stretches = false,
                                  modifier = Modifier.padding(top = 22.dp), action = it) }
     }
 }
@@ -618,6 +625,11 @@ class SheetRequest(val title: String, val entries: List<Choice>, val selected: S
                   val completion: ((Set<String>) -> Unit)? = null,
                   /** Own content instead of the rows: the download sheet has values and buttons, no choice. */
                   val content: (@Composable ColumnScope.(close: () -> Unit) -> Unit)? = null,
+                  /**
+                   * Own content scrolls inside the card when the room is short (landscape, keyboard up). A content that
+                   * pins rows below its own scroll area (the report sheet: send stays in view) sets this false and scrolls itself.
+                   */
+                  val scrollContent: Boolean = true,
                   /**
                                      * A heading before an entry (`value` -> heading): divider, then the heading. In the
                                      * title menu of Movies and Series this puts "Bibliotheken" above the libraries, set
@@ -720,7 +732,7 @@ private fun SheetCard(w: SheetRequest, pull: Animatable<Float, AnimationVector1D
     var pick by remember(w) { mutableStateOf(w.moreCompartment) }
     // Corner 28 (`cornerSheet`), not 16. A sheet from below is the largest rounding on the scale;
         // `eckeFlaeche` belongs to the panel in the picture.
-    val top = RoundedCornerShape(topStart = Theme.cornerSheet, topEnd = Theme.cornerSheet)
+    val top = smoothRoundedShape(topStart = Theme.cornerSheet, topEnd = Theme.cornerSheet)
     // Apple's large sheet: ground `reason`, full height under the status bar.
     val ground = if (w.full) Theme.reason else Theme.area
     Box(Modifier.fillMaxWidth()
@@ -750,20 +762,24 @@ private fun SheetCard(w: SheetRequest, pull: Animatable<Float, AnimationVector1D
         ) {
         w.backdrop?.invoke(this)
         Column(Modifier.fillMaxWidth().then(if (w.full) Modifier.fillMaxHeight() else Modifier)
-            .navigationBarsPadding()) {
+            // The keyboard lifts the card instead of covering its foot; what does not fit above it scrolls (below).
+            .navigationBarsPadding().imePadding()) {
             Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp).size(36.dp, 5.dp)
                 .clip(CircleShape).background(Color.White.copy(alpha = 0.18f)))
             // Heading 17 semibold, 5 above / 14 below, and no line below. The line used to separate the
             // heading from its own rows.
-            if (w.heading) Text(w.title, style = Theme.categoryLarge,
+            if (w.heading) Text(w.title, style = Theme.section,
                  color = Theme.font, maxLines = 1,
-                 modifier = Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 5.dp, bottom = if (w.note != null) 4.dp else 14.dp))
+                 modifier = Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 4.dp, bottom = if (w.note != null) 4.dp else 14.dp))
             w.note?.let {
                 Text(it, style = Theme.small, color = Theme.fontQuiet,
                      modifier = Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).padding(bottom = 14.dp))
             }
             val own = w.content
             when {
+                // Bounded by the room above the keyboard: `weight(fill = false)` keeps a short content at its own height.
+                own != null && !w.full -> Column(Modifier.weight(1f, fill = false)
+                    .then(if (w.scrollContent) Modifier.verticalScroll(rememberScrollState()) else Modifier)) { own(close) }
                 own != null -> own(close)
                 w.moreCompartment != null -> SeasonSelection(w, pick.orEmpty(), { pick = it }, close)
                 w.icons.isNotEmpty() -> Actions(w, close)
@@ -830,7 +846,7 @@ private fun Actions(w: SheetRequest, close: () -> Unit) {
     w.entries.forEachIndexed { i, e ->
         if (i > 0) SheetLine()
         val color = if (e.value in w.cautionary) Theme.warning else Theme.font
-        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).pressRow { close(); w.select(e.value) }
+        Row(Modifier.fillMaxWidth().heightIn(min = Theme.rowHeight).pressRow { close(); w.select(e.value) }
                 .padding(horizontal = Theme.edgeSpacing),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(Modifier.width(Theme.characterColumn), contentAlignment = Alignment.Center) {

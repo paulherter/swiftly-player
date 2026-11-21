@@ -64,17 +64,17 @@ fn back_chevron_is_not_part_of_the_window_drag_strip() {
 }
 
 #[test]
-fn wordmark_is_rasterised_again_when_the_scale_changes() {
+fn app_icon_is_rasterised_again_when_the_scale_changes() {
     let cx = Cx::deterministic();
     let mut l = LoginScreen::new(env(1440.0, 900.0, 1.0), cx.clone(), Start::Kind);
     let _ = l.frame(0.0);
     let (_, _, row_1x) = cx.images.borrow().cursor();
     l.set_env(env(1440.0, 900.0, 1.5));
     let _ = l.frame(16.0);
-    // 44 pt at 1.5 = 66 px plus the margin: a tile at least 68 px high exists now, none did at 1x.
+    // 64 pt at 1.5 = 96 px plus the margin: a tile at least 98 px high exists now, none did at 1x.
     let (_, _, row_15) = cx.images.borrow().cursor();
-    assert!(row_1x < 66, "1x tile is {row_1x} px high");
-    assert!(row_15 >= 68, "1.5x tile is {row_15} px high");
+    assert!(row_1x < 96, "1x tile is {row_1x} px high");
+    assert!(row_15 >= 98, "1.5x tile is {row_15} px high");
 }
 
 #[test]
@@ -103,11 +103,11 @@ fn neighbouring_pictures_never_bleed_into_each_others_edges() {
     assert_eq!(at(x0, y0 + 4), vec![255, 0, 0, 255], "below");
 }
 
-/// Every icon and the wordmark of the first-start pages is drawn one texel to one device pixel on whole pixels at the
+/// Every icon and the app icon of the first-start pages is drawn one texel to one device pixel on whole pixels at the
 /// scale the user has (1.5): a quad of 19.5 pixels showing 20 texels, or one starting between two pixels, is resampled
 /// and looks like a blurry PNG.
 #[test]
-fn icons_and_wordmark_sit_on_whole_pixels_at_scale_1_5() {
+fn icons_and_app_icon_sit_on_whole_pixels_at_scale_1_5() {
     use swiftly_render::{Atlas, QuadKind};
     let cx = Cx::deterministic();
     let mut l = LoginScreen::new(env(2560.0, 1440.0, 1.5), cx.clone(), Start::Kind);

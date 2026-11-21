@@ -98,9 +98,7 @@ fn start_refetches_after_the_grace_period_when_it_comes_back() {
         println!("skipped: build xtask first (cargo build -p xtask)");
         return;
     }
-    let tmp =
-        std::env::temp_dir().join(format!("swiftly-start-refresh-logs-{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&tmp);
+    let tmp = swiftly_desktop::testdir::TestDir::new("swiftly-start-refresh-logs");
     let (fx, addr) = Fixture::start(&xtask, "fx-r", tmp.join("r.log"));
     let core = Arc::new(Core::open().expect("core"));
     let backend = core.sign_in_backend();
@@ -171,11 +169,7 @@ fn start_loads_again_when_its_settings_change_while_it_runs() {
         println!("skipped: build xtask first (cargo build -p xtask)");
         return;
     }
-    let tmp = std::env::temp_dir().join(format!(
-        "swiftly-start-settings-logs-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::create_dir_all(&tmp);
+    let tmp = swiftly_desktop::testdir::TestDir::new("swiftly-start-settings-logs");
     let (fx, addr) = Fixture::start(&xtask, "fx-s", tmp.join("s.log"));
     let core = Arc::new(Core::open().expect("core"));
     let backend = core.sign_in_backend();

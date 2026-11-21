@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -23,7 +22,7 @@ import de.paulherter.swiftly.SwiftlyApplication
 import de.paulherter.swiftly.errorString
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.asJson
-import de.paulherter.swiftly.shared.Wordmark
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
@@ -101,9 +100,7 @@ fun TvServerPage(app: SwiftlyApplication, presetAddress: String? = null, back: (
     if (back != null) androidx.activity.compose.BackHandler { back() }
     Box(Modifier.fillMaxSize().background(Theme.reason), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(TvSpec.messageWidth)) {
-            Wordmark(height = TvSpec.serverWordmark)
-            Text(translated("Wo steht dein Jellyfin-Server?"), style = TvTheme.body, color = Theme.fontQuiet,
-                 modifier = Modifier.padding(top = TvSpec.serverQuestionTop))
+            Text(translated("Wo steht dein Jellyfin-Server?"), style = TvTheme.body, color = Theme.fontQuiet)
             TvField(address, { addressChange(it) }, "tv.beispiel.de",
                    Modifier.padding(top = TvSpec.serverFieldTop).width(TvSpec.formWidth).focusRequester(focus),
                    imeAction = ImeAction.Go, keyboardAction = { linkUp() })
@@ -175,8 +172,7 @@ fun TvLoginPage(app: SwiftlyApplication, serverName: String, version: String,
 
     Box(Modifier.fillMaxSize().background(Theme.reason), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(TvSpec.messageWidth)) {
-            Wordmark(height = TvSpec.loginWordmark)
-            Text(serverName, style = TvTheme.rail, color = Theme.font, modifier = Modifier.padding(top = TvSpec.loginServerNameTop))
+            Text(serverName, style = TvTheme.rail, color = Theme.font)
             if (version.isNotEmpty()) {
                 Text(translated("Jellyfin %@", version), style = TvTheme.small, color = Theme.fontVeryQuiet,
                      modifier = Modifier.padding(top = TvSpec.loginVersionTop))
@@ -268,7 +264,7 @@ fun TvQuickConnectPage(app: SwiftlyApplication, newServer: Boolean = false, clos
                 c != null -> {
                     Row(Modifier.padding(top = 32.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         c.forEach { symbolText ->
-                            Box(Modifier.size(58.dp, 78.dp).clip(RoundedCornerShape(TvTheme.corner))
+                            Box(Modifier.size(58.dp, 78.dp).clip(smoothRoundedShape(TvTheme.corner))
                                     // **No border** and `area` instead of `erhoeht`: `erhoeht` is what lies on a surface, and
                                     // nothing lies beneath here.
                                     .background(Theme.area),
@@ -284,7 +280,7 @@ fun TvQuickConnectPage(app: SwiftlyApplication, newServer: Boolean = false, clos
                 error != null -> Text(error.orEmpty(), style = TvTheme.body, color = Theme.warning, textAlign = TextAlign.Center,
                                        modifier = Modifier.widthIn(max = 560.dp).padding(top = 32.dp))
                 // The code is coming; until then its shape is shown.
-                else -> Box(Modifier.padding(top = 40.dp).size(280.dp, 78.dp).clip(RoundedCornerShape(TvTheme.corner)).background(Theme.area))
+                else -> Box(Modifier.padding(top = 40.dp).size(280.dp, 78.dp).clip(smoothRoundedShape(TvTheme.corner)).background(Theme.area))
             }
 
             Column(Modifier.padding(top = 32.dp).widthIn(max = 460.dp)) {

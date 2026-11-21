@@ -20,6 +20,8 @@ pub enum Command {
     Scroll(swiftly_ui::shortcuts::ScrollKey),
     /// The Delete key with no text field focused: removes the selected downloads in edit mode.
     Delete,
+    /// Alt + Up / Down: moves the focused row of a reorderable list (the Start rows in Settings) one place.
+    MoveRow(i32),
 }
 
 /// An IME event as the shell sees it (mapped from winit's `Ime`).
@@ -244,6 +246,11 @@ impl Shell {
     /// What the system's media widgets show (`None` when no player plays).
     pub fn now_playing(&self) -> Option<crate::media_keys::NowPlaying> {
         self.suite.as_ref().and_then(|s| s.now_playing())
+    }
+
+    /// Whether the Discord presence is switched on.
+    pub fn discord_allowed(&self) -> bool {
+        self.suite.as_ref().is_some_and(|s| s.discord_allowed())
     }
 
     /// A button of the system's media widgets: an intent for the player.
@@ -617,6 +624,7 @@ impl Shell {
             Command::Forward => self.suite.as_mut().is_some_and(|s| s.forward(now)),
             Command::Scroll(k) => self.suite.as_mut().is_some_and(|s| s.scroll_key(k, now)),
             Command::Delete => self.suite.as_mut().is_some_and(|s| s.delete_key(now)),
+            Command::MoveRow(d) => self.suite.as_mut().is_some_and(|s| s.move_row(d)),
         }
     }
 

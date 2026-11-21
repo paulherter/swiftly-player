@@ -1,5 +1,6 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.playOnChosen
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
@@ -178,13 +179,19 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                              heroTrim = 20.dp /* 40 pt: the series rail starts higher than the film one */) {
                     // Never locked while loading: the button must stay a focus target.
                     // Mirrors `SeriesView.starte`: without a plan it reports instead of silently doing nothing.
-                    val menu = de.paulherter.swiftly.LocalTileMenu.current
                     TvButton(series?.buttonText?.ifEmpty { null } ?: translated(if (disrupted) "Erneut versuchen" else "Lädt…"), Glyph.Play, Modifier.focusRequester(main),
-                            // Long OK or the menu key: the series' tile menu, as on its tile.
-                            lengthy = menu?.let { m -> {
-                                m(de.paulherter.swiftly.TileMenuRequest(target.id, name, "Series", series?.let { it.backdrop ?: it.headerImage },
-                                    true, series?.secondaryLine, afterwards = { run.launch { load() } }))
-                            } }) {
+                            // Long OK or the menu key: the versions of the episode this button starts, nothing else (tvOS `versionsNext`,
+                            // phone `SeriesPage`). A series has no versions of its own, so the state episode is asked per press;
+                            // with one version nothing opens and the held OK is swallowed.
+                            lengthy = {
+                                val st = series?.state
+                                if (st != null) run.launch {
+                                    val episode = withContext(Dispatchers.IO) {
+                                        runCatching { de.paulherter.swiftly.titleRead(app.rk.title(st.id).await()) }.getOrNull()
+                                    }
+                                    de.paulherter.swiftly.versionMenu(app, episode, st.id, st.since)?.invoke()
+                                }
+                            }) {
                         if (series == null && disrupted) { disrupted = false; run.launch { load() }; return@TvButton }
                         val st = series?.state
                         if (st != null && (series?.planPresent == true || series?.seed == true)) de.paulherter.swiftly.playDefault(app, st.id, st.since)
@@ -236,16 +243,8 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                         }
                         // `TitleActions.forSeries`: "Watched" first (from the button row, see `gesehenHandlung`),
                         // then episode/season actions, metadata last.
-                        val entries = buildList {
-                            alt.state?.let {
-                                add(Choice("vonvorn", translated("Folge von vorn abspielen")))
-                                add(Choice("naechste", translated("Nächste Folge abspielen")))
-                            }
-                            add(Choice("metadaten", translated("Metadaten neu einlesen")))
-                        }
-                        TvMoreButton(entries,
-                            mapOf("vonvorn" to Glyph.Rewind, "naechste" to Glyph.Skip,
-                                  "metadaten" to Glyph.Reload)) { choice ->
+                        val more = tvMore(app, series = true, planKnown = alt.state != null, begun = false, together = row.together)
+                        TvMoreButton(more.choices, more.icons) { choice ->
                             run.launch {
                                 when (choice) {
                                     "vonvorn" -> alt.state?.let { st ->
@@ -262,6 +261,7 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                                         val reason = withContext(Dispatchers.IO) { app.rk.metadataRefresh(alt.id).await() }
                                         message = if (reason.isEmpty()) translated("Der Server liest die Metadaten neu ein.") else errorString(reason)
                                     }
+                                    else -> alt.state?.let { st -> app.playOnChosen(choice, st.id) }
                                 }
                             }
                         }

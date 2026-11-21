@@ -49,7 +49,7 @@ struct Backdrop: View {
             // Load first, then swap; never empty in between.
             _ = await ImageCache.shared.load(url)
             guard !Task.isCancelled else { return }
-            withAnimation(Theme.reveal) { shown = url }
+            InTravel.land { withAnimation(Theme.reveal) { shown = url } }
         }
     }
 

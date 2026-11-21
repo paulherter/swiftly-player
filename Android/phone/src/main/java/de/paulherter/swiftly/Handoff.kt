@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.requiredWidth
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +57,7 @@ import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
 import de.paulherter.swiftly.shared.Theme
+import de.paulherter.swiftly.shared.smoothRoundedShape
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -509,7 +509,7 @@ private fun Modifier.cardsStatus(density: Float, base: Float, status: () -> Floa
     translationY = l[1] * density - base * density / 2 * 9 / 16
     scaleX = m; scaleY = m
     // The visible corner `HandoffCard.corner`, computed before scaling (`cornerRadius * basis / breite`).
-    shape = RoundedCornerShape((l[3] / m.coerceAtLeast(0.001f)).dp)
+    shape = smoothRoundedShape((l[3] / m.coerceAtLeast(0.001f)).dp)
     clip = true
 }
 
@@ -577,13 +577,13 @@ private fun ArrivalStage(e: Handoff.Arrival) {
                 val since = e.loadLineSince
                 if (since != null) Box(Modifier.fillMaxWidth().height(2.dp).graphicsLayer {
                     alpha = linear(time, since, since + z.loadingBarShow)
-                }.clip(RoundedCornerShape(1.dp)).background(Theme.margin)) {
+                }.clip(smoothRoundedShape(1.dp)).background(Theme.margin)) {
                     val width = l.idle[2].toFloat()
                     Box(Modifier.requiredWidth((width * 0.3f).dp).height(2.dp).align(Alignment.TopStart).graphicsLayer {
                         val w = width * 0.3f
                         val u = (((time - since) / z.loadingBarTick) % 1.0).toFloat()
                         translationX = ((-w / 2) + (width + w) * u - w / 2) * density
-                    }.clip(RoundedCornerShape(1.dp)).background(Theme.accent))
+                    }.clip(smoothRoundedShape(1.dp)).background(Theme.accent))
                 }
             }, modifier = Modifier.align(Alignment.TopStart).graphicsLayer {
                 val t = time
@@ -619,7 +619,7 @@ private fun ExitStage(a: Handoff.Exit) {
                 translationX = status[0] * density - vb * density / 2
                 translationY = status[1] * density - (vb / a.pages.toFloat()) * density / 2
                 scaleX = m; scaleY = m
-                shape = RoundedCornerShape((status[3] / m.coerceAtLeast(0.001f)).dp)
+                shape = smoothRoundedShape((status[3] / m.coerceAtLeast(0.001f)).dp)
                 clip = true
             }
             if (a.calm) alpha = 1f - linear(time, 0.0, z.fadeOut)

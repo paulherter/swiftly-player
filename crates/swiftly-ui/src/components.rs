@@ -5,10 +5,20 @@ use crate::env::Env;
 use crate::focus::{FocusId, ScopeSpec};
 use crate::tuning;
 use crate::view::{Action, FocusLook, Key, Node, Paint};
-use swiftly_design::tokens::{colour, touch, tv};
+use swiftly_design::tokens::{touch, tv};
+use swiftly_design::tokens_generated::color;
 use swiftly_layout::{Align, Alignment, Axis, EdgeInsets, FlexFrame, Proposal, Size};
 use swiftly_render::Color;
 use swiftly_text::TextStyle;
+
+/// The ground behind everything (`surface.base`) as a render colour, for the clear colour of every renderer:
+/// the frame before the UI paints must already be the app's ground, never a separate hard-coded grey.
+pub const GROUND: Color = Color {
+    r: color::SURFACE_BASE.r,
+    g: color::SURFACE_BASE.g,
+    b: color::SURFACE_BASE.b,
+    a: 1.0,
+};
 
 /// A design colour as a render colour.
 pub fn color(c: swiftly_design::Colour) -> Color {
@@ -57,7 +67,7 @@ pub fn poster_tile(
         touch::CORNER_TILE,
     )
     .paint(Paint::Stroke {
-        color: color(colour::TILE_BORDER),
+        color: color(color::BORDER_TILE),
         width: 1.0,
         radius: touch::CORNER_TILE,
     });
@@ -65,7 +75,7 @@ pub fn poster_tile(
         cx,
         title,
         &TextStyle::from(touch::text::TILE),
-        color(colour::FONT),
+        color(color::TEXT_PRIMARY),
         Some(tuning::TILE_TITLE_LINES),
         swiftly_text::Align::Start,
     );
@@ -106,7 +116,7 @@ pub fn rail(
         cx,
         title,
         &TextStyle::from(touch::text::RAIL),
-        color(colour::FONT),
+        color(color::TEXT_PRIMARY),
         Some(1),
         swiftly_text::Align::Start,
     )
@@ -143,8 +153,8 @@ pub fn press_button(
     action: impl Into<Action>,
 ) -> Node {
     let (text_color, fill) = match style {
-        ButtonStyle::Primary => (colour::ORIGINAL_ON_ACCENT, colour::MARK_ACCENT),
-        ButtonStyle::Secondary => (colour::FONT, colour::SELECTED),
+        ButtonStyle::Primary => (color::TEXT_ON_ACCENT, color::ACCENT_SELECTION),
+        ButtonStyle::Secondary => (color::TEXT_PRIMARY, color::SURFACE_SELECTED),
     };
     let text = Node::text(
         cx,
@@ -159,7 +169,7 @@ pub fn press_button(
     let mut back = Node::rect(color(fill), 999.0);
     if style == ButtonStyle::Secondary {
         back = back.paint(Paint::Stroke {
-            color: color(colour::MARGIN),
+            color: color(color::SURFACE_FOCUS),
             width: 1.0,
             radius: 999.0,
         });
@@ -184,7 +194,10 @@ pub fn page(env: &Env, children: Vec<Node>) -> Node {
             align: Some(Alignment::TOP_LEADING),
             ..FlexFrame::default()
         })
-        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(color::SURFACE_BASE), 0.0),
+            Alignment::CENTER,
+        )
 }
 
 // ---- tv: focusable components --------------------------------------------------------------------------------------
@@ -212,7 +225,7 @@ pub fn tile_card(
     let key = key.into();
     let poster = Node::image(image, tv::POSTER_WIDTH, tv::POSTER_HEIGHT, TV_TILE_RADIUS).paint(
         Paint::Stroke {
-            color: color(colour::TILE_BORDER),
+            color: color(color::BORDER_TILE),
             width: 1.0,
             radius: TV_TILE_RADIUS,
         },
@@ -221,7 +234,7 @@ pub fn tile_card(
         cx,
         title,
         &TextStyle::from(tv::text::TILE),
-        color(colour::FONT),
+        color(color::TEXT_PRIMARY),
         Some(tuning::TILE_TITLE_LINES),
         swiftly_text::Align::Start,
     );
@@ -266,7 +279,7 @@ pub fn themed_button_height(
         cx,
         label,
         &TextStyle::from(tv::text::BUTTON),
-        color(colour::FONT),
+        color(color::TEXT_PRIMARY),
         Some(1),
         swiftly_text::Align::Center,
     );
@@ -284,8 +297,8 @@ pub fn themed_button_height(
             } => Paint::FocusText {
                 text,
                 style,
-                rest: color(colour::FONT),
-                focused: color(colour::REASON),
+                rest: color(color::TEXT_PRIMARY),
+                focused: color(color::SURFACE_BASE),
                 lines,
                 align,
             },
@@ -359,7 +372,7 @@ pub fn tv_rail(
         cx,
         title,
         &TextStyle::from(tv::text::RAIL),
-        color(colour::FONT),
+        color(color::TEXT_PRIMARY),
         Some(1),
         swiftly_text::Align::Start,
     )

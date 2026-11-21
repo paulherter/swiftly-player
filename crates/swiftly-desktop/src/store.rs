@@ -119,10 +119,18 @@ pub struct FileSecrets {
 impl FileSecrets {
     /// Opens (or starts) the file.
     pub fn open(path: PathBuf) -> FileSecrets {
-        let map = std::fs::read(&path)
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_default();
+        let map = match std::fs::read(&path) {
+            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+                // A damaged file is kept aside; the next write must not replace the only copy.
+                let kept = swiftly_atomic::set_aside(&path);
+                crate::crash::note_error(
+                    "secrets file damaged",
+                    &format!("{e}; kept as {kept:?}, started empty"),
+                );
+                BTreeMap::new()
+            }),
+            Err(_) => BTreeMap::new(),
+        };
         FileSecrets {
             path,
             map: Mutex::new(map),
@@ -384,6 +392,40 @@ mod set_logged_tests {
         assert_eq!(seen.len(), 1, "{seen:?}");
         assert!(seen[0].1.starts_with("playerLautstaerke"), "{seen:?}");
         assert_eq!(store.get("playerLautstaerke"), Some(Value::Double(0.4)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod damaged_secrets_tests {
+    use super::*;
+
+    /// A damaged secrets file is kept aside before the first write can replace it.
+    #[test]
+    fn a_damaged_secrets_file_is_kept_and_the_store_starts_empty() {
+        let dir =
+            std::env::temp_dir().join(format!("swiftly-secrets-damaged-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("secrets.json");
+        std::fs::write(&path, "{\"token\":\"abc").unwrap();
+        let secrets = FileSecrets::open(path.clone());
+        assert_eq!(secrets.get("token"), None);
+        secrets.set("token", "new");
+        let copy = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .find(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("secrets.json.broken-")
+            })
+            .expect("a copy of the damaged file");
+        assert_eq!(
+            std::fs::read_to_string(copy.path()).unwrap(),
+            "{\"token\":\"abc"
+        );
+        assert_eq!(FileSecrets::open(path).get("token").as_deref(), Some("new"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

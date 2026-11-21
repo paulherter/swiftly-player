@@ -220,7 +220,7 @@ pub struct HomeLibraryChoice {
 }
 
 /// The effective combined row order for the settings list: `stored` healed against the fixed rows that exist and
-/// the chosen libraries and, with `seerr` (Seerr connected), the sections of `seerr:arrival` and `seerr:requests` that `form` shows (handheld both, desktop only the banner, TV none). Save the result (after a move) under the per-server setting `startReihenfolge`.
+/// the chosen libraries and, with `seerr` (Seerr connected), the sections of `seerr:arrival` and `seerr:requests` that `form` shows (handheld both, desktop only "Meine Anfragen", TV none). Save the result (after a move) under the per-server setting `startReihenfolge`.
 #[uniffi::export]
 pub fn home_row_order(
     stored: Vec<String>,

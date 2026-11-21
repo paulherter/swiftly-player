@@ -118,7 +118,6 @@ class Looks(private val app: SwiftlyApplication) {
         palette.value = p
         // On the phone `LookToneAnimator` carries the tones over with `Motion.change`.
         if (!tonesAnimated) Theme.applyTones(p.accent.tones())
-        Theme.applyMarkGradient(p.logoGradient.takeIf { it.size > 1 })
         return answer
     }
 

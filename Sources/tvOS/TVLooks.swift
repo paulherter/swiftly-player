@@ -32,7 +32,7 @@ private struct TVGiftPresentation: ViewModifier {
     let model: AppModel
     @Bindable private var flow = GiftFlow.shared
 
-    private var blocked: Bool { model.playerOpen || SupportModel.shared.presented }
+    private var blocked: Bool { model.playerOpen || SupportModel.shared.presented || flow.pagesAboveStart > 0 }
 
     func body(content: Content) -> some View {
         content
@@ -104,7 +104,7 @@ private struct TVGiftView: View {
         .onExitCommand {
             // From the pick-up animation straight to the looks; everywhere else it closes.
             if case .claiming = flow.stage {
-                withAnimation(Motion.land) { flow.stage = .choosing(fromGift: true) }
+                flow.land()
             } else {
                 flow.close()
             }

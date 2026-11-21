@@ -454,6 +454,9 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         store.vaultRead(OwnHeaders).orEmpty().let { legacyOwnHeadersLoad(it) }
         val language = Texts.language
         rk = RustKern(this)
+        // The core-owned switches come from the store before the first list loads, not only once the settings page was opened.
+        settings.coreSwitchesChanged = { KernRules.storedSettingsApply(this) }
+        KernRules.storedSettingsApply(this)
         qualityReport()
         sessionEventsListen()
         sharedListen(run)

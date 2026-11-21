@@ -194,8 +194,6 @@ class MainActivity : ComponentActivity() {
             }
             // Signed out: back to server selection.
             androidx.compose.runtime.LaunchedEffect(app.signedOut.intValue) { if (app.signedOut.intValue > 0) phase = Phase.Server }
-            // Once per launch, not per rotation, hence remembered.
-            var started by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
             // The screen as a recorded layer: the account switch takes its freeze frame from it
             // (`AccountSwitchTransition`) without a second draw pass.
             val screen = androidx.compose.ui.graphics.rememberGraphicsLayer()
@@ -220,12 +218,6 @@ class MainActivity : ComponentActivity() {
                 HandoffLayer(inPlayer = false)
                 if (app.smallWindow.value) ImageImageHint {
                     startActivity(android.content.Intent(this@MainActivity, PlayerActivity::class.java))
-                }
-                // The curtain falls as a pure cross-fade, 0.45 s: no sliding, no growing.
-                androidx.compose.animation.AnimatedVisibility(!started,
-                    enter = androidx.compose.animation.EnterTransition.None,
-                    exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(450, easing = de.paulherter.swiftly.shared.Motion.soft))) {
-                    StartCurtain { started = true }
                 }
             }
         }

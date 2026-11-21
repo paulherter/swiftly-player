@@ -768,6 +768,57 @@ mod tests {
     fn u(index: i64, lang: &str) -> MediaStream {
         ut(index, lang, false, false, "subrip", None, false)
     }
+
+    /// The bench file `bm-pgs-mkv` (forced English PGS 2, full English PGS 3, English SRT 4, one audio
+    /// track without a language) with the start settings of an independent Linux check: the shared rule
+    /// is the one choice every platform's player starts with.
+    #[test]
+    fn the_pgs_bench_file_starts_with_the_shared_rules_choice() {
+        let streams = vec![
+            MediaStream {
+                type_: Some("Audio".into()),
+                codec: Some("aac".into()),
+                index: Some(1),
+                ..MediaStream::default()
+            },
+            ut(
+                2,
+                "eng",
+                true,
+                false,
+                "hdmv_pgs_subtitle",
+                Some("Forced"),
+                false,
+            ),
+            ut(3, "eng", false, false, "hdmv_pgs_subtitle", None, false),
+            ut(4, "eng", false, false, "subrip", None, false),
+        ];
+        let start =
+            |automatic: bool, subtitle_language: &'static str, device: Option<&'static str>| {
+                start_indices(
+                    &streams,
+                    &StartInput {
+                        remembered_audio: None,
+                        remembered_subtitle: None,
+                        server_audio: None,
+                        server_subtitle: None,
+                        automatic,
+                        audio_language: "",
+                        subtitle_language,
+                        device_language: device,
+                        original: OriginalStep::On(None),
+                    },
+                )
+                .subtitle
+            };
+        // Forced and full English PGS and an English SRT: the rule takes the first track the
+        // settings allow, the forced PGS (index 2), whatever the language setting or automatic mode says.
+        assert_eq!(start(true, "en", None), Some(2));
+        assert_eq!(start(true, "", None), Some(2));
+        assert_eq!(start(true, "", Some("de-DE")), Some(2));
+        assert_eq!(start(false, "en", None), Some(2));
+        assert_eq!(start(false, "", None), Some(2));
+    }
     fn uf(index: i64, lang: &str) -> MediaStream {
         ut(index, lang, true, false, "subrip", None, false)
     }
