@@ -606,6 +606,8 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
 /// back to the front; the desktop has no such moment when the server returns while the window stays in front, so an
 /// empty "server unreachable" page asks again after 3 s, 6 s, 12 s, 24 s and then every 30 s. It also stops waiting
 /// for the libraries of the account after 8 s (the grid then reads the bare section instead of staying on skeletons).
+/// The schedule runs on the frame time alone: a retry that is still on its way (`Answer::Pending`) neither restarts it nor
+/// holds it back, so it does not depend on how fast the load thread answers.
 #[derive(Default)]
 struct Recovery {
     /// Since when the page has been offline, and the time of the next retry (ms).
@@ -616,15 +618,31 @@ struct Recovery {
     gave_up: bool,
 }
 
+/// What the page knows about the server, as far as the retry schedule is concerned.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Answer {
+    /// The server did not answer and nothing is shown.
+    Offline,
+    /// A load is on its way and nothing is shown yet (the first one, or a retry of ours).
+    Pending,
+    /// Titles, an empty answer or no account: nothing to wait for.
+    Settled,
+}
+
 impl Recovery {
     const OFFERING_WAIT: f64 = 8000.0;
 
     /// Whether to ask again now.
-    fn retry_due(&mut self, offline: bool, now: f64) -> bool {
-        if !offline {
-            self.offline = None;
-            self.tries = 0;
-            return false;
+    fn retry_due(&mut self, answer: Answer, now: f64) -> bool {
+        match answer {
+            Answer::Settled => {
+                self.offline = None;
+                self.tries = 0;
+                return false;
+            }
+            // Only an offline page starts the schedule; a pending load keeps the one that runs.
+            Answer::Pending if self.offline.is_none() => return false,
+            Answer::Pending | Answer::Offline => {}
         }
         let (_, next) = *self.offline.get_or_insert((now, now + 3000.0));
         if now < next {
@@ -1692,9 +1710,16 @@ impl LibraryScreen {
     }
     /// Asks again when the server did not answer, and stops waiting for slow libraries (see [`Recovery`]).
     fn recover(&mut self, now: f64) {
-        let offline = matches!(self.vm.status().status, LibraryStatus::Offline)
-            && self.vm.grid().tiles.is_empty();
-        if self.recovery.retry_due(offline, now) {
+        let answer = if !self.vm.grid().tiles.is_empty() {
+            Answer::Settled
+        } else {
+            match self.vm.status().status {
+                LibraryStatus::Offline => Answer::Offline,
+                LibraryStatus::Loading => Answer::Pending,
+                _ => Answer::Settled,
+            }
+        };
+        if self.recovery.retry_due(answer, now) {
             self.auto_retries += 1;
             self.vm.send(LibraryIntent::Load);
         }
@@ -1939,6 +1964,38 @@ mod tests {
     use super::*;
     use swiftly_layout::Size;
     use swiftly_ui::Idiom;
+
+    /// The pauses depend on the frame time only: whether the load behind a retry has answered by the next frame
+    /// (offline again) or not yet (pending) must not change when the next retry happens.
+    #[test]
+    fn retry_pauses_do_not_depend_on_how_fast_a_load_answers() {
+        use Answer::{Offline, Pending, Settled};
+        let run = |between: Answer| {
+            let mut r = Recovery::default();
+            let mut due = Vec::new();
+            for (now, seen) in [
+                (0.0, Offline),
+                (3_100.0, Offline),
+                (8_000.0, between),
+                (9_200.0, between),
+                (21_300.0, between),
+            ] {
+                if r.retry_due(seen, now) {
+                    due.push(now);
+                }
+            }
+            due
+        };
+        assert_eq!(run(Offline), vec![3_100.0, 9_200.0, 21_300.0]);
+        assert_eq!(run(Pending), run(Offline));
+        // A first load that has not answered starts nothing; an answer ends the schedule.
+        let mut r = Recovery::default();
+        assert!(!r.retry_due(Pending, 10_000.0));
+        assert!(!r.retry_due(Offline, 10_000.0));
+        assert!(!r.retry_due(Settled, 11_000.0));
+        assert!(!r.retry_due(Offline, 12_000.0), "a new schedule starts from 3 s");
+        assert!(r.retry_due(Offline, 15_000.0));
+    }
 
     fn screen(idiom: Idiom, size: Size) -> LibraryScreen {
         let env = Env::new(size, 1.0, idiom);
