@@ -599,7 +599,7 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
             k,
             "hard-drive-x",
             swiftly_l10n::tr("Server ist abgetaucht"),
-            "Die Titel kommen gerade nicht an.",
+            swiftly_l10n::tr("Die Titel kommen gerade nicht an."),
             Some((swiftly_l10n::tr("Erneut versuchen"), "retry")),
         ));
     }
@@ -663,7 +663,7 @@ fn playlist_page(k: &Kit, p: &PlaylistPart) -> Node {
             k,
             "hard-drive-x",
             swiftly_l10n::tr("Server ist abgetaucht"),
-            "Der Server antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+            swiftly_l10n::tr("Der Server antwortet nicht. Läuft er noch, oder hängt das WLAN?"),
             Some((swiftly_l10n::tr("Erneut versuchen"), "retry")),
         )
     } else if let Some(e) = &p.empty {
@@ -744,7 +744,7 @@ fn grid_page(
             k,
             "hard-drive-x",
             swiftly_l10n::tr("Server ist abgetaucht"),
-            "Der Server antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+            swiftly_l10n::tr("Der Server antwortet nicht. Läuft er noch, oder hängt das WLAN?"),
             Some((swiftly_l10n::tr("Erneut versuchen"), "retry")),
         )
     } else if tiles.is_empty() {
@@ -1175,7 +1175,10 @@ fn seerr_page(k: &Kit, p: &SeerrPart, address: &str) -> Node {
             k,
             "hard-drive-x",
             swiftly_l10n::tr("Server ist abgetaucht"),
-            &format!("{address} antwortet nicht. L\u{e4}uft er noch, oder h\u{e4}ngt das WLAN?"),
+            &swiftly_l10n::t_args(
+                "%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                &[address.to_owned().into()],
+            ),
             Some((swiftly_l10n::tr("Erneut versuchen"), "retry")),
         ));
     }
@@ -1830,9 +1833,9 @@ impl PageScreen {
         let empty = if narrowed {
             (
                 swiftly_l10n::tr("Nichts gefunden").to_owned(),
-                format!(
-                    "Unter \u{201E}{}\u{201C} liegt gerade nichts. Nimm einen anderen Filter.",
-                    label(st.filter)
+                swiftly_l10n::t_args(
+                    "Unter „%@“ liegt gerade nichts. Nimm einen anderen Filter.",
+                    &[label(st.filter).to_owned().into()],
                 ),
                 Some((
                     swiftly_l10n::tr("Filter zurücksetzen").to_owned(),

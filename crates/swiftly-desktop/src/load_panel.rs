@@ -653,7 +653,7 @@ pub fn mac_load_panel(
             cx,
             icons,
             "hard-drive",
-            "Frei auf diesem PC",
+            swiftly_l10n::tr("Frei auf diesem PC"),
             &size(spec.free),
             true,
         ));

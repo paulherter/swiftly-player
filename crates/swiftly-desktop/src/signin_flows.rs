@@ -73,11 +73,11 @@ pub async fn emby_connect<T: HttpTransport + 'static>(
             &address,
             config(device, ServerKind::Emby),
         )
-        .map_err(|_| "Die Adresse ist nicht gültig.".to_owned())?;
+        .map_err(|_| swiftly_l10n::tr("Die Adresse ist nicht gültig.").to_owned())?;
         let answer = client.check_reachability().await;
         match emby_classify_attempt(&answer) {
             EmbyAttempt::Accepted => {
-                let info = answer.map_err(|_| EMBY_DOWN.to_owned())?;
+                let info = answer.map_err(|_| swiftly_l10n::tr(EMBY_DOWN).to_owned())?;
                 let host = address
                     .trim_start_matches("https://")
                     .trim_start_matches("http://")
@@ -104,10 +104,19 @@ pub async fn emby_connect<T: HttpTransport + 'static>(
 
 fn problem_text(p: &EmbyProblem) -> String {
     match p {
-        EmbyProblem::Unreachable { .. } => EMBY_DOWN.into(),
-        EmbyProblem::NotEmby { found } => format!("Hier antwortet {}, kein Emby. Nimm bei der Auswahl den passenden Server.", found.as_deref().unwrap_or("ein anderer Server")),
-        EmbyProblem::BadAddress => "Die Adresse ist nicht gültig.".into(),
-        EmbyProblem::LoginPage => "Vor dem Server sitzt eine Anmeldeseite. Trag unter Erweitert den Header ein, den sie verlangt.".into(),
+        EmbyProblem::Unreachable { .. } => swiftly_l10n::tr(EMBY_DOWN).into(),
+        EmbyProblem::NotEmby { found } => swiftly_l10n::t_args(
+            "Hier antwortet %@, kein Emby. Nimm bei der Auswahl den passenden Server.",
+            &[found
+                .as_deref()
+                .unwrap_or(swiftly_l10n::tr("ein anderer Server"))
+                .into()],
+        ),
+        EmbyProblem::BadAddress => swiftly_l10n::tr("Die Adresse ist nicht gültig.").into(),
+        EmbyProblem::LoginPage => swiftly_l10n::tr(
+            "Vor dem Server sitzt eine Anmeldeseite. Trag unter Erweitert den Header ein, den sie verlangt.",
+        )
+        .into(),
     }
 }
 
@@ -208,12 +217,17 @@ pub fn plex_text(e: &PlexError) -> String {
             ErrorKind::Certificate(_) => {
                 swiftly_l10n::tr("Dem Zertifikat wird nicht vertraut.").into()
             }
-            ErrorKind::Network { .. } => "Plex ist gerade nicht erreichbar. Läuft das Netz?".into(),
-            _ => "Plex hat nicht geantwortet. Versuch es noch mal.".into(),
+            ErrorKind::Network { .. } => {
+                swiftly_l10n::tr("Plex ist gerade nicht erreichbar. Läuft das Netz?").into()
+            }
+            _ => swiftly_l10n::tr("Plex hat nicht geantwortet. Versuch es noch mal.").into(),
         },
         other => other
             .text_key()
-            .unwrap_or("Das hat nicht geklappt.")
+            .map_or_else(
+                || swiftly_l10n::tr("Das hat nicht geklappt."),
+                swiftly_l10n::tr,
+            )
             .to_owned(),
     }
 }
@@ -304,7 +318,7 @@ pub async fn plex_pick<T: HttpTransport + 'static>(
     let (user, account_token) = {
         let s = state
             .lock()
-            .map_err(|_| "Das hat nicht geklappt.".to_owned())?;
+            .map_err(|_| swiftly_l10n::tr("Das hat nicht geklappt.").to_owned())?;
         (s.users.get(index).cloned(), s.account_token.clone())
     };
     let token = match &user {
@@ -342,7 +356,7 @@ pub async fn plex_finish<T: HttpTransport + 'static>(
     let (server, token, account_token, user) = {
         let s = state
             .lock()
-            .map_err(|_| "Das hat nicht geklappt.".to_owned())?;
+            .map_err(|_| swiftly_l10n::tr("Das hat nicht geklappt.").to_owned())?;
         (
             s.servers.get(index).cloned(),
             s.token.clone(),
@@ -350,7 +364,7 @@ pub async fn plex_finish<T: HttpTransport + 'static>(
             s.users.get(s.profile).cloned(),
         )
     };
-    let server = server.ok_or("Der Server ist nicht mehr in der Liste.")?;
+    let server = server.ok_or(swiftly_l10n::tr("Der Server ist nicht mehr in der Liste."))?;
     let connector = PlexConnector::with_transport(
         net,
         identity.clone(),

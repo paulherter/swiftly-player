@@ -54,7 +54,7 @@ fn downloaded_subtitles(
 /// The spec for a downloaded file; pure, so it can be tested without a server.
 pub fn offline_spec(item: &DownloadItem, file: &Path, since: f64) -> Result<PlayerSpec, String> {
     let url = swiftly_images::Url::from_file_path(file)
-        .map_err(|()| "Der Pfad der Datei ist nicht gültig.".to_owned())?;
+        .map_err(|()| swiftly_l10n::tr("Der Pfad der Datei ist nicht gültig.").to_owned())?;
     let runtime = item.runtime_ticks.map_or(0.0, |t| t as f64 / 1e7);
     let (streams, subtitle_files) = downloaded_subtitles(item, file);
     Ok(PlayerSpec {
@@ -94,8 +94,9 @@ pub fn offline_spec(item: &DownloadItem, file: &Path, since: f64) -> Result<Play
 /// # Errors
 /// Text when the title is not (or no longer) on the device.
 pub fn prepare_offline(core: &Core, account: &AccountRef, id: &str) -> Result<Prepared, String> {
-    let (item, file) = finished(&downloads_dir(), &account.key(), id)
-        .ok_or("Dieser Titel liegt nicht mehr auf dem Gerät.")?;
+    let (item, file) = finished(&downloads_dir(), &account.key(), id).ok_or(swiftly_l10n::tr(
+        "Dieser Titel liegt nicht mehr auf dem Gerät.",
+    ))?;
     let spec = offline_spec(&item, &file, item.resume_from())?;
     let second = match (item.season, item.episode) {
         (Some(s), Some(e)) => format!("S{s} · F{e}"),

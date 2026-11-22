@@ -519,7 +519,7 @@ impl SignInBackend for Backend {
         let (core, base, kind) = (Arc::clone(&self.core), self.base(), self.kind());
         let (user, password) = (user.to_owned(), password.to_owned());
         self.spawn(async move {
-            let base = base.ok_or("Erst die Serveradresse eingeben.")?;
+            let base = base.ok_or(swiftly_l10n::tr("Erst die Serveradresse eingeben."))?;
             let client = core.client(&base, kind).map_err(|e| say(&e))?;
             let session = client
                 .authenticate(&user, &password)
@@ -534,7 +534,7 @@ impl SignInBackend for Backend {
     fn quick_start(&self) -> Pending<Result<String, String>> {
         let (core, base, state) = (Arc::clone(&self.core), self.base(), Arc::clone(&self.state));
         self.spawn(async move {
-            let base = base.ok_or("Erst die Serveradresse eingeben.")?;
+            let base = base.ok_or(swiftly_l10n::tr("Erst die Serveradresse eingeben."))?;
             let client = core
                 .client(&base, ServerKind::Jellyfin)
                 .map_err(|e| say(&e))?;

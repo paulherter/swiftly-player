@@ -904,7 +904,7 @@ fn address_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts, emby: bool
             .padding(ins(22.0, 0.0, 0.0, 0.0)),
         );
         if let Some(e) = &p.error {
-            if e == crate::signin_flows::EMBY_DOWN {
+            if e == swiftly_l10n::tr(crate::signin_flows::EMBY_DOWN) {
                 b.push(disturb(cx, icons, f, &p.address, e));
             } else {
                 b.push(warn_error(cx, e));
@@ -1007,8 +1007,9 @@ fn disturb(cx: &Cx, icons: &Icons, f: &Fm, address: &str, _error: &str) -> Node 
         .padding(ins(10.0, 0.0, 0.0, 0.0)),
         t(
             cx,
-            &format!(
-                "{address} antwortet nicht. L\u{00E4}uft er noch, oder h\u{00E4}ngt das WLAN?"
+            &swiftly_l10n::t_args(
+                "%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                &[address.to_owned().into()],
             ),
             15.0,
             400,
@@ -1444,7 +1445,7 @@ fn quick_rows(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
             Alignment::CENTER,
         );
         b.push(copyable(cx, boxed, f, p.mac.copied).padding(ins(14.0, 0.0, 0.0, 0.0)));
-        let line = format!("L\u{00E4}uft ab in {}:{:02}", p.left / 60, p.left % 60);
+        let line = crate::login_screen::expires_in(p.left);
         b.push(
             left(tt(
                 cx,
@@ -1845,7 +1846,7 @@ fn plex_waiting(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
                 ),
                 tt(
                     cx,
-                    &format!("Warte auf Plex \u{00B7} noch {}:{:02}", l / 60, l % 60),
+                    &crate::login_screen::waiting_for_plex(l),
                     12.0,
                     400,
                     color::TEXT_SECONDARY,
@@ -2104,7 +2105,7 @@ fn plex_servers(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
         card,
         left(t(
             cx,
-            &format!("Als {name}"),
+            &swiftly_l10n::t_args("Als %@", &[name.to_owned().into()]),
             12.0,
             400,
             color::TEXT_TERTIARY,
@@ -2252,9 +2253,9 @@ fn plex_failed(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
             f,
             "warning.fill",
             swiftly_l10n::tr("Anmeldung hat nicht geklappt"),
-            p.error
-                .as_deref()
-                .unwrap_or("Die Anmeldung bei Plex hat nicht geklappt."),
+            p.error.as_deref().unwrap_or(swiftly_l10n::tr(
+                "Die Anmeldung bei Plex hat nicht geklappt.",
+            )),
             (swiftly_l10n::tr("Erneut versuchen"), "plexagain"),
             None,
         ),

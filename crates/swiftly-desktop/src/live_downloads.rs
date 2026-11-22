@@ -231,7 +231,7 @@ impl Inner {
             let r = match tokio::time::timeout(STALL, req.send()).await {
                 Ok(Ok(r)) => r,
                 Ok(Err(e)) => return self.failed(&parts, transfer_reason(e)),
-                Err(_) => return self.failed(&parts, "Zeitüberschreitung."),
+                Err(_) => return self.failed(&parts, swiftly_l10n::tr("Zeitüberschreitung.")),
             };
             match r.status().as_u16() {
                 200 | 206 => break r,
@@ -240,7 +240,15 @@ impl Inner {
                     let _ = std::fs::remove_file(&part);
                     (have, retried) = (0, true);
                 }
-                code => return self.failed(&parts, format!("Der Server antwortet mit {code}.")),
+                code => {
+                    return self.failed(
+                        &parts,
+                        swiftly_l10n::t_args(
+                            "Der Server hat mit %lld geantwortet.",
+                            &[i64::from(code).into()],
+                        ),
+                    );
+                }
             }
         };
         let append = resp.status().as_u16() == 206 && have > 0;
@@ -285,7 +293,7 @@ impl Inner {
             match tokio::time::timeout(Duration::from_millis(250), resp.chunk()).await {
                 Err(_) => {
                     if quiet_since.elapsed() > STALL {
-                        return self.failed(&parts, "Zeitüberschreitung.");
+                        return self.failed(&parts, swiftly_l10n::tr("Zeitüberschreitung."));
                     }
                 }
                 Ok(Err(e)) => return self.failed(&parts, transfer_reason(e)),

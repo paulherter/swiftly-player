@@ -252,7 +252,10 @@ fn looks_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
             "look:effects",
             "sparkle",
             swiftly_l10n::tr("Fledermäuse und Spinnennetz"),
-            Some(&format!("Bis {end} dabei. Farbe und Icon bleiben.")),
+            Some(&swiftly_l10n::t_args(
+                "Bis %@ dabei. Farbe und Icon bleiben.",
+                &[end.to_owned().into()],
+            )),
             Trail::Switch(p.look.effects),
             true,
         ));
@@ -331,28 +334,35 @@ fn settings_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
         );
         let (title, under, trail) = match &p.update {
             UpdateState::Idle => (
-                "Nach Updates suchen".to_owned(),
-                Some("Swiftly fragt bei GitHub, ob es eine neuere Version gibt".to_owned()),
+                swiftly_l10n::tr("Nach Updates suchen").to_owned(),
+                Some(
+                    swiftly_l10n::tr("Swiftly fragt bei GitHub, ob es eine neuere Version gibt")
+                        .to_owned(),
+                ),
                 Trail::None,
             ),
-            UpdateState::Checking => ("Wird gesucht …".to_owned(), None, Trail::None),
+            UpdateState::Checking => (
+                swiftly_l10n::tr("Wird gesucht …").to_owned(),
+                None,
+                Trail::None,
+            ),
             UpdateState::UpToDate => (
-                "Swiftly ist aktuell".to_owned(),
+                swiftly_l10n::tr("Swiftly ist aktuell").to_owned(),
                 Some(env!("CARGO_PKG_VERSION").to_owned()),
                 Trail::None,
             ),
             UpdateState::Available { version, headline } => (
-                format!("Swiftly {version} ist da"),
+                swiftly_l10n::t_args("Swiftly %@ ist da", &[version.to_owned().into()]),
                 Some(
                     headline
                         .clone()
-                        .unwrap_or_else(|| "Auf GitHub nachlesen".to_owned()),
+                        .unwrap_or_else(|| swiftly_l10n::tr("Auf GitHub nachlesen").to_owned()),
                 ),
                 Trail::External,
             ),
             UpdateState::Failed => (
-                "Hat nicht geklappt".to_owned(),
-                Some("GitHub antwortet nicht.".to_owned()),
+                swiftly_l10n::tr("Hat nicht geklappt").to_owned(),
+                Some(swiftly_l10n::tr("GitHub antwortet nicht.").to_owned()),
                 Trail::None,
             ),
         };
@@ -523,15 +533,15 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                 r(
                     "go:accounts",
                     "users",
-                    "Konto wechseln",
-                    "Andere Profile und Server",
+                    swiftly_l10n::tr("Konto wechseln"),
+                    swiftly_l10n::tr("Andere Profile und Server"),
                     Trail::Chevron,
                 ),
                 r(
                     "go:server",
                     "plug",
                     swiftly_l10n::tr("Server hinzufügen"),
-                    "Du bleibst auch beim anderen angemeldet",
+                    swiftly_l10n::tr("Du bleibst auch beim anderen angemeldet"),
                     Trail::Chevron,
                 ),
             ],
@@ -617,15 +627,15 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                 r(
                     "go:accounts",
                     "users",
-                    "Konto wechseln",
-                    "Andere Profile und Server",
+                    swiftly_l10n::tr("Konto wechseln"),
+                    swiftly_l10n::tr("Andere Profile und Server"),
                     Trail::Chevron,
                 ),
                 r(
                     "go:server",
                     "plug",
                     swiftly_l10n::tr("Server hinzufügen"),
-                    "Du bleibst auch beim anderen angemeldet",
+                    swiftly_l10n::tr("Du bleibst auch beim anderen angemeldet"),
                     Trail::Chevron,
                 ),
                 signout,
@@ -843,11 +853,20 @@ fn value_list(cx: &Cx, f: &Fm, icons: &Icons, control: &RowControl) -> Node {
     .opacity(1.0, swiftly_ui::feel::leap())
 }
 
-/// The groups of the sections named in `titles`, in that order, as one column of the Mac page.
-fn desk_groups(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx, titles: &[&str]) -> Vec<Node> {
+/// The sections of each column of the pages, by their German key (`Section::title_key`, the catalogue key). The heading a
+/// group draws is the translated `Section::title`; a section is never looked up by a translated text.
+const PLAYBACK_LEFT: [&str; 2] = ["Qualität", "Sprache"];
+const PLAYBACK_RIGHT: [&str; 3] = ["Ablauf", "Im Player", "Verhalten"];
+const PRESENTATION_TOP: [&str; 2] = ["Filme und Serien", "Allgemein"];
+const PRESENTATION_NEW: [&str; 1] = ["Neuzugänge"];
+const GENERAL_LEFT: [&str; 1] = ["Offline"];
+const GENERAL_RIGHT: [&str; 2] = ["Server und Dienste", "Synchronisierung"];
+
+/// The groups of the sections with the German keys `keys`, in that order, as one column of the Mac page.
+fn desk_groups(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx, keys: &[&str]) -> Vec<Node> {
     let mut out = Vec::new();
-    for t in titles {
-        let Some(s) = p.sections.sections.iter().find(|s| s.title_key == *t) else {
+    for key in keys {
+        let Some(s) = p.sections.sections.iter().find(|s| s.title_key == *key) else {
             continue;
         };
         let rows = s
@@ -1030,12 +1049,18 @@ fn home_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
     let mut ghost: Option<Node> = None;
     for (i, r) in shown.iter().enumerate() {
         let (symbol, title, switch, remove) = match &r.kind {
-            HomeRowKind::Fixed { rail, on } => {
-                (rail_symbol(*rail), rail.lists_name(), Some(*on), None)
-            }
-            HomeRowKind::Seerr { section, on } => {
-                ("arrow-down", section.lists_name(), Some(*on), None)
-            }
+            HomeRowKind::Fixed { rail, on } => (
+                rail_symbol(*rail),
+                swiftly_l10n::tr(rail.lists_name()),
+                Some(*on),
+                None,
+            ),
+            HomeRowKind::Seerr { section, on } => (
+                "arrow-down",
+                swiftly_l10n::tr(section.lists_name()),
+                Some(*on),
+                None,
+            ),
             HomeRowKind::Library {
                 name, collection, ..
             } => (
@@ -1613,24 +1638,8 @@ fn desktop_view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>, f: &Fm) -> Node {
             0.0,
             forms::Cols::Equal,
             vec![
-                desk_groups(
-                    cx,
-                    f,
-                    p,
-                    ctx,
-                    &[swiftly_l10n::tr("Qualität"), swiftly_l10n::tr("Sprache")],
-                ),
-                desk_groups(
-                    cx,
-                    f,
-                    p,
-                    ctx,
-                    &[
-                        swiftly_l10n::tr("Ablauf"),
-                        swiftly_l10n::tr("Im Player"),
-                        swiftly_l10n::tr("Verhalten"),
-                    ],
-                ),
+                desk_groups(cx, f, p, ctx, &PLAYBACK_LEFT),
+                desk_groups(cx, f, p, ctx, &PLAYBACK_RIGHT),
             ],
             vec![],
         ),
@@ -1639,49 +1648,27 @@ fn desktop_view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>, f: &Fm) -> Node {
             0.0,
             forms::Cols::Equal,
             {
-                let mut left = desk_groups(
-                    cx,
-                    f,
-                    p,
-                    ctx,
-                    &[
-                        swiftly_l10n::tr("Filme und Serien"),
-                        swiftly_l10n::tr("Allgemein"),
-                    ],
-                );
+                let mut left = desk_groups(cx, f, p, ctx, &PRESENTATION_TOP);
                 left.push(looks_group(cx, f, p, ctx));
                 left.push(home_group(cx, f, p, ctx));
                 left.push(forms::note(
                     cx,
                     f,
-                    "Zum Umsortieren eine Zeile ziehen oder mit Alt und Pfeil verschieben.",
+                    swiftly_l10n::tr(
+                        "Zum Umsortieren eine Zeile ziehen oder mit Alt und Pfeil verschieben.",
+                    ),
                     false,
                     false,
                 ));
-                left.extend(desk_groups(
-                    cx,
-                    f,
-                    p,
-                    ctx,
-                    &[swiftly_l10n::tr("Neuzugänge")],
-                ));
+                left.extend(desk_groups(cx, f, p, ctx, &PRESENTATION_NEW));
                 vec![left, vec![genres_group(cx, f, p, ctx)]]
             },
             vec![],
         ),
         _ => {
             // The support entry is on the Profile page; Allgemein has no second copy of it.
-            let left = desk_groups(cx, f, p, ctx, &[swiftly_l10n::tr("Offline")]);
-            let right = desk_groups(
-                cx,
-                f,
-                p,
-                ctx,
-                &[
-                    swiftly_l10n::tr("Server und Dienste"),
-                    swiftly_l10n::tr("Synchronisierung"),
-                ],
-            );
+            let left = desk_groups(cx, f, p, ctx, &GENERAL_LEFT);
+            let right = desk_groups(cx, f, p, ctx, &GENERAL_RIGHT);
             (
                 swiftly_l10n::tr("Allgemein"),
                 0.0,

@@ -364,9 +364,11 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                 cx,
                 &ctx.icons,
                 "magnifying-glass",
-                &format!(
-                    "Nichts gefunden zu \u{201E}{}\u{201C}",
-                    if term.is_empty() { typed } else { &term }
+                &swiftly_l10n::t_args(
+                    "Nichts gefunden zu „%@“",
+                    &[(if term.is_empty() { typed } else { &term })
+                        .to_owned()
+                        .into()],
                 ),
                 swiftly_l10n::tr(
                     "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe.",
@@ -403,9 +405,9 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                 &ctx.icons,
                 "hard-drive-x",
                 swiftly_l10n::tr("Server ist abgetaucht"),
-                &format!(
-                    "{} antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                    crate::desk::card().server_name()
+                &swiftly_l10n::t_args(
+                    "%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                    &[crate::desk::card().server_name().to_owned().into()],
                 ),
                 swiftly_l10n::tr("Erneut versuchen"),
             )
@@ -844,9 +846,9 @@ fn tv_body(cx: &Cx, m: &Metrics, p: &Parts, ctx: &Ctx) -> Node {
             w,
             "hard-drive-x",
             swiftly_l10n::tr("Server ist abgetaucht"),
-            &format!(
-                "{} antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                crate::desk::card().server_name()
+            &swiftly_l10n::t_args(
+                "%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                &[crate::desk::card().server_name().to_owned().into()],
             ),
             Some(swiftly_l10n::tr("Erneut versuchen")),
         )),
@@ -856,9 +858,11 @@ fn tv_body(cx: &Cx, m: &Metrics, p: &Parts, ctx: &Ctx) -> Node {
                 ctx,
                 w,
                 "magnifying-glass",
-                &format!(
-                    "Nichts gefunden zu \u{201E}{}\u{201C}",
-                    shortened(if term.is_empty() { typed } else { &term })
+                &swiftly_l10n::t_args(
+                    "Nichts gefunden zu „%@“",
+                    &[shortened(if term.is_empty() { typed } else { &term })
+                        .to_owned()
+                        .into()],
                 ),
                 swiftly_l10n::tr(
                     "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe.",

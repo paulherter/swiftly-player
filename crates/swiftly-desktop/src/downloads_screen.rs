@@ -525,9 +525,9 @@ fn line(cx: &Cx, ctx: &Ctx, f: &Fm, env: &Env, l: &Line) -> Node {
     let value = match l.picked {
         Some(on) => {
             let state = if on {
-                "Ausgewählt"
+                swiftly_l10n::tr("Ausgewählt")
             } else {
-                "Nicht ausgewählt"
+                swiftly_l10n::tr("Nicht ausgewählt")
             };
             if l.sub.is_empty() {
                 state.to_owned()

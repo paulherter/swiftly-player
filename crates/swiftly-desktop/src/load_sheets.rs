@@ -980,7 +980,10 @@ fn footer(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
                     .a11y_hidden(),
                 mono(
                     cx,
-                    &format!("{} zu wenig", DownloadRules::size(missing, ",")),
+                    &swiftly_l10n::t_args(
+                        "%@ zu wenig",
+                        &[DownloadRules::size(missing, ",").into()],
+                    ),
                     12.0,
                     color::STATE_WARNING,
                 ),

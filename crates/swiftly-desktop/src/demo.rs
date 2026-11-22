@@ -99,7 +99,7 @@ fn ground(content: Node) -> Node {
 fn home(cx: &Cx, env: &Env, art: &Rc<Art>) -> Node {
     let mut children = vec![inset(text(
         cx,
-        "Zurück zur Startseite",
+        swiftly_l10n::tr("Zurück zur Startseite"),
         touch::text::TITLE_LARGE,
         color::TEXT_PRIMARY,
         Some(1),
@@ -144,7 +144,7 @@ fn detail(cx: &Cx, env: &Env, art: &Rc<Art>, r: usize, i: usize) -> Node {
                 press_button(
                     cx,
                     "back",
-                    "Zurück zur Startseite",
+                    swiftly_l10n::tr("Zurück zur Startseite"),
                     ButtonStyle::Secondary,
                     back_action(),
                 ),
@@ -190,7 +190,7 @@ fn detail(cx: &Cx, env: &Env, art: &Rc<Art>, r: usize, i: usize) -> Node {
             press_button(
                 cx,
                 "list",
-                "Zur Merkliste",
+                swiftly_l10n::tr("Zur Merkliste"),
                 ButtonStyle::Secondary,
                 "detail.list",
             ),

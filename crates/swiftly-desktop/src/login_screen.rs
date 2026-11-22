@@ -223,11 +223,7 @@ fn quick_body(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
                         dot(8.0),
                         tabular_text(
                             cx,
-                            &format!(
-                                "Warte auf Freigabe \u{00B7} noch {}:{:02}",
-                                p.left / 60,
-                                p.left % 60
-                            ),
+                            &waiting_for_approval(p.left),
                             st(13.0, 400),
                             color::TEXT_SECONDARY,
                             Some(1),
@@ -640,7 +636,7 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
         rows.push(
             tabular_text(
                 cx,
-                &format!("Läuft ab in {}:{:02}", p.left / 60, p.left % 60),
+                &expires_in(p.left),
                 st(24.0, 400),
                 color::TEXT_TERTIARY,
                 Some(1),
@@ -884,7 +880,10 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
         ),
         Step::Credentials => ("demo.swiftly.test", credentials_body(cx, &f, p, ctx)),
         Step::Quick => ("Quick Connect", quick_body(cx, &f, p)),
-        Step::Accounts => ("Konto wechseln", accounts_body(cx, &f, p, ctx)),
+        Step::Accounts => (
+            swiftly_l10n::tr("Konto wechseln"),
+            accounts_body(cx, &f, p, ctx),
+        ),
         Step::Share => (
             "Quick Connect",
             login_mac::share_rows(cx, &ctx.icons, &f, p),
@@ -990,7 +989,7 @@ pub trait SignInBackend {
     /// Checks the typed Emby address.
     fn emby_connect(&self, _typed: &str) -> Pending<Result<EmbyFound, String>> {
         let (tx, rx) = Pending::channel();
-        let _ = tx.send(Err(signin_flows::EMBY_DOWN.to_owned()));
+        let _ = tx.send(Err(swiftly_l10n::tr(signin_flows::EMBY_DOWN).to_owned()));
         rx
     }
     /// The picture address of each user `emby_users` answered with (same order; `None`: no picture).
@@ -1020,13 +1019,13 @@ pub trait SignInBackend {
         _pin: &str,
     ) -> Pending<Result<Vec<(String, String)>, String>> {
         let (tx, rx) = Pending::channel();
-        let _ = tx.send(Err("Das hat nicht geklappt.".to_owned()));
+        let _ = tx.send(Err(swiftly_l10n::tr("Das hat nicht geklappt.").to_owned()));
         rx
     }
     /// Picks a Plex server and stores the account. Answer: the profile name.
     fn plex_finish(&self, _index: usize) -> Pending<Result<String, String>> {
         let (tx, rx) = Pending::channel();
-        let _ = tx.send(Err("Das hat nicht geklappt.".to_owned()));
+        let _ = tx.send(Err(swiftly_l10n::tr("Das hat nicht geklappt.").to_owned()));
         rx
     }
 }
@@ -1117,7 +1116,8 @@ impl LoginScreen {
                     }
                     Err(Disconnected) => {
                         self.p.checking = false;
-                        self.p.error = Some("Die Verbindung ist abgebrochen.".into());
+                        self.p.error =
+                            Some(swiftly_l10n::tr("Die Verbindung ist abgebrochen.").into());
                         self.sync();
                         return;
                     }
@@ -1193,9 +1193,11 @@ impl LoginScreen {
                     self.p.mac.pin_state = PinState::Idle;
                 }
                 Err(e)
-                    if e == swiftly_plex::PlexError::ProfilePinWrong
-                        .text_key()
-                        .unwrap_or_default() =>
+                    if e == swiftly_l10n::tr(
+                        swiftly_plex::PlexError::ProfilePinWrong
+                            .text_key()
+                            .unwrap_or_default(),
+                    ) =>
                 {
                     self.p.mac.pin.clear();
                     self.p.mac.pin_state = PinState::Wrong;
@@ -1710,9 +1712,9 @@ impl LoginScreen {
         let emby = self.p.step == Step::EmbyAddress;
         if self.p.address.contains("offline") {
             self.p.error = Some(if emby {
-                signin_flows::EMBY_DOWN.into()
+                swiftly_l10n::tr(signin_flows::EMBY_DOWN).into()
             } else {
-                signin_flows::JELLYFIN_DOWN.into()
+                swiftly_l10n::tr(signin_flows::JELLYFIN_DOWN).into()
             });
         } else {
             self.p.error = None;
@@ -2321,4 +2323,33 @@ impl LoginScreen {
     }
 
     crate::form_io!();
+}
+
+/// The two arguments of a countdown text (`%lld:%@`, seconds as two digits).
+fn countdown_args(left: u64) -> [swiftly_l10n::Arg; 2] {
+    [
+        swiftly_l10n::Arg::Int((left / 60) as i64),
+        swiftly_l10n::Arg::Str(format!("{:02}", left % 60)),
+    ]
+}
+
+/// "Läuft ab in 4:59" under the Quick Connect code.
+pub(crate) fn expires_in(left: u64) -> String {
+    swiftly_l10n::t_args("Läuft ab in %lld:%@", &countdown_args(left))
+}
+
+/// "Warte auf Freigabe · noch 4:59".
+pub(crate) fn waiting_for_approval(left: u64) -> String {
+    swiftly_l10n::t_args(
+        "Warte auf Freigabe \u{00B7} noch %lld:%@",
+        &countdown_args(left),
+    )
+}
+
+/// "Warte auf Plex · noch 4:59".
+pub(crate) fn waiting_for_plex(left: u64) -> String {
+    swiftly_l10n::t_args(
+        "Warte auf Plex \u{00B7} noch %lld:%@",
+        &countdown_args(left),
+    )
 }

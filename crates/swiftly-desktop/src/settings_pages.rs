@@ -1172,17 +1172,17 @@ pub fn licences_page(
         "lic.offer",
         "text-align-left",
         swiftly_l10n::tr("Quelltext und schriftliches Angebot"),
-        Some("Woher libmpv kommt und wie du es ersetzt"),
+        Some(swiftly_l10n::tr("Woher libmpv kommt und wie du es ersetzt")),
         Trail::Chevron,
         true,
     ));
     let mut body = vec![
         wide(
-            label(cx, "Swiftly Player spielt mit libmpv und FFmpeg (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.", 15.0, 400, color(color::TEXT_SECONDARY), None, swiftly_text::Align::Start),
+            label(cx, swiftly_l10n::tr("Swiftly Player spielt mit libmpv und FFmpeg (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber."), 15.0, 400, color(color::TEXT_SECONDARY), None, swiftly_text::Align::Start),
             Alignment::LEADING,
         )
         .padding(ins(10.0, 0.0, 4.0, 0.0)),
-        forms::setting_group(cx, f, "libmpv und FFmpeg", 22.0, player),
+        forms::setting_group(cx, f, swiftly_l10n::tr("libmpv und FFmpeg"), 22.0, player),
         wide(
             label(cx, swiftly_l10n::tr("Frühere Versionen enthielten VLCKit und libVLC (LGPL 2.1 oder später). Das schriftliche Angebot für ihren Quelltext gilt weiter, siehe „Quelltext und schriftliches Angebot“."), 15.0, 400, color(color::TEXT_SECONDARY), None, swiftly_text::Align::Start),
             Alignment::LEADING,

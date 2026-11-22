@@ -398,7 +398,7 @@ impl SwitchState {
             Ok(a) => a,
             Err(std::sync::mpsc::TryRecvError::Empty) => return None,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                Err("Der Titel lässt sich gerade nicht abspielen.".to_owned())
+                Err(swiftly_l10n::tr("Der Titel lässt sich gerade nicht abspielen.").to_owned())
             }
         };
         let SwitchState::Planning(ask, _) = std::mem::take(self) else {

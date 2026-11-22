@@ -332,7 +332,9 @@ async fn prepare(
     )
     .await
     .map_err(|e| crate::live::say(&e))?
-    .ok_or("Der Server nennt keine Datei zu diesem Titel.")?;
+    .ok_or(swiftly_l10n::tr(
+        "Der Server hat keine Datei zu diesem Titel.",
+    ))?;
     let item = client
         .item(&req.item_id)
         .await
@@ -371,7 +373,8 @@ async fn prepare(
         .or_else(|| {
             streams
                 .iter()
-                .find(|m| m.type_.as_deref() == Some(swiftly_l10n::tr("Audio")))
+                // The server's stream type (`MediaStream.Type`), not a screen text: never translated.
+                .find(|m| m.type_.as_deref() == Some("Audio")) // l10n:keep
                 .and_then(|m| m.index)
         });
     // A transcode carries no bitmap subtitle unless the request names it: ask again with the chosen track (shared rule).
@@ -531,10 +534,15 @@ async fn prepare_plex(
             .map_err(|e| crate::live::say(&e))?;
     let ready = match answer {
         StartAnswer::Ready(r) => r,
-        StartAnswer::NoSource => return Err("Der Server nennt keine Datei zu diesem Titel.".into()),
+        StartAnswer::NoSource => {
+            return Err(swiftly_l10n::tr("Der Server hat keine Datei zu diesem Titel.").into());
+        }
         // Never asked for (`ask_versions` is off), but the answer type has it.
         StartAnswer::Choose { .. } | StartAnswer::VersionsFailed => {
-            return Err("Die Fassungen des Titels lassen sich nicht laden.".into());
+            return Err(swiftly_l10n::tr(
+                "Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal.",
+            )
+            .into());
         }
         StartAnswer::Failed(e) => return Err(crate::live::say(&e)),
     };
@@ -601,7 +609,7 @@ async fn prepare_plex(
     let server =
         match swiftly_vm::make_client(&net, &host, &account).map_err(|e| crate::live::say(&e))? {
             s @ Server::Plex(_) => s,
-            Server::Jellyfin(_) => return Err("Kein Plex-Konto.".into()),
+            Server::Jellyfin(_) => return Err(swiftly_l10n::tr("Kein Plex-Konto.").into()),
         };
     // The preview pictures (BIF of the part): `None` when the server made none; the sheets are fetched while scrubbing.
     let trickplay = match &server {
@@ -725,8 +733,8 @@ pub fn episode_card(e: &swiftly_model::Item) -> crate::player_host::EpisodeCardD
         _ => None,
     };
     let sub = [
-        minutes.map(|m| format!("{m} Min.")),
-        rest.map(|r| format!("Noch {r} Min.")),
+        minutes.map(|m| swiftly_l10n::t_args("%lld Min.", &[m.into()])),
+        rest.map(|r| swiftly_l10n::t_args("Noch %lld Min.", &[r.into()])),
     ]
     .into_iter()
     .flatten()
@@ -1572,7 +1580,7 @@ fn engine() -> Result<Engines, String> {
 
 #[cfg(not(feature = "mpv"))]
 fn engine() -> Result<Engines, String> {
-    Err("Dieser Bau hat keine Video-Engine (Feature mpv).".into())
+    Err(swiftly_l10n::tr("Dieser Bau hat keine Video-Engine (Feature mpv).").into())
 }
 
 /// Plex numbers a stream by its stream id (`MediaStream::index`) and the place in the file is `container_index`, while

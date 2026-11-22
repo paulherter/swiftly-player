@@ -883,7 +883,8 @@ fn rail_node(
                 .a11y(swiftly_ui::a11y::A11yNode::new(
                     "",
                     swiftly_ui::a11y::Role::Button,
-                    format!("Alle anzeigen: {}", rail.title).as_str(),
+                    swiftly_l10n::t_args("Alle anzeigen: %@", &[rail.title.to_owned().into()])
+                        .as_str(),
                 ))
                 .key(format!("all:{}", rail.id).as_str())
                 .on_tap(Action::from(format!("all:{}", rail.id).as_str()));

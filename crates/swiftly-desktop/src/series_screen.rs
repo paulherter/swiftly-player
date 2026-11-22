@@ -441,9 +441,9 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
                     .padding(ins(0.0, 0.0, 6.0, 0.0)),
                     txt_center(
                         k.cx,
-                        &format!(
-                            "{} antwortet nicht. L\u{e4}uft er noch, oder h\u{e4}ngt das WLAN?",
-                            crate::desk::card().server_name()
+                        &swiftly_l10n::t_args(
+                            "%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                            &[crate::desk::card().server_name().to_owned().into()],
                         ),
                         lk.body,
                         color::TEXT_TERTIARY,
@@ -474,7 +474,7 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
             k,
             "hard-drive-x",
             swiftly_l10n::tr("Server ist abgetaucht"),
-            "Die Folgen kommen gerade nicht an.",
+            swiftly_l10n::tr("Die Folgen kommen gerade nicht an."),
             swiftly_l10n::tr("Erneut versuchen"),
             "retry-episodes",
         )
@@ -778,7 +778,7 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
                 .frame(None, Some(200.0), Alignment::TOP_LEADING)
             } else if d.more.similar.is_empty() {
                 let s = if d.more.similar_failed {
-                    "Das ging schief. Der Server antwortet nicht."
+                    swiftly_l10n::tr("Das ging schief. Der Server antwortet nicht.")
                 } else {
                     swiftly_l10n::tr("Nichts Ähnliches gefunden.")
                 };

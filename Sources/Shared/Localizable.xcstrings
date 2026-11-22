@@ -30528,6 +30528,1248 @@
           }
         }
       }
+    },
+    "Unter dieser Adresse antwortet kein Jellyfin-Server. Stimmt die Adresse?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unter dieser Adresse antwortet kein Jellyfin-Server. Stimmt die Adresse?"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Jellyfin server answers at this address. Is the address right?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По этому адресу Jellyfin-сервер не отвечает. Адрес верный?"
+          }
+        }
+      }
+    },
+    "Die Adresse ist nicht gültig.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Adresse ist nicht gültig."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That address isn’t valid."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Адрес недействителен."
+          }
+        }
+      }
+    },
+    "Hier antwortet %@, kein Emby. Nimm bei der Auswahl den passenden Server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hier antwortet %@, kein Emby. Nimm bei der Auswahl den passenden Server."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ answers here, not Emby. Pick the matching server type."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Здесь отвечает %@, а не Emby. Выбери подходящий тип сервера."
+          }
+        }
+      }
+    },
+    "ein anderer Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ein anderer Server"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "another server"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "другой сервер"
+          }
+        }
+      }
+    },
+    "Vor dem Server sitzt eine Anmeldeseite. Trag unter Erweitert den Header ein, den sie verlangt.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vor dem Server sitzt eine Anmeldeseite. Trag unter Erweitert den Header ein, den sie verlangt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A sign-in page sits in front of the server. Enter the header it asks for under Advanced."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перед сервером стоит страница входа. Укажи в разделе «Дополнительно» заголовок, который она требует."
+          }
+        }
+      }
+    },
+    "Plex ist gerade nicht erreichbar. Läuft das Netz?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plex ist gerade nicht erreichbar. Läuft das Netz?"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plex can’t be reached right now. Is the network up?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plex сейчас недоступен. Сеть работает?"
+          }
+        }
+      }
+    },
+    "Plex hat nicht geantwortet. Versuch es noch mal.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plex hat nicht geantwortet. Versuch es noch mal."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plex didn’t answer. Try again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plex не ответил. Попробуй ещё раз."
+          }
+        }
+      }
+    },
+    "Das hat nicht geklappt.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das hat nicht geklappt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That didn’t work."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не получилось."
+          }
+        }
+      }
+    },
+    "Der Server ist nicht mehr in der Liste.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server ist nicht mehr in der Liste."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server is no longer in the list."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сервера больше нет в списке."
+          }
+        }
+      }
+    },
+    "Die Anmeldung bei Plex hat nicht geklappt.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Anmeldung bei Plex hat nicht geklappt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signing in to Plex didn’t work."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Войти в Plex не удалось."
+          }
+        }
+      }
+    },
+    "Die Verbindung ist abgebrochen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Verbindung ist abgebrochen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The connection was lost."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Соединение прервано."
+          }
+        }
+      }
+    },
+    "Der Server antwortet nicht. Läuft er noch, oder hängt das WLAN?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server antwortet nicht. Läuft er noch, oder hängt das WLAN?"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server isn’t answering. Is it still running, or is the Wi-Fi stuck?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сервер не отвечает. Он ещё работает, или завис Wi-Fi?"
+          }
+        }
+      }
+    },
+    "Die Titel kommen gerade nicht an.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Titel kommen gerade nicht an."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The titles aren’t coming through right now."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Названия сейчас не загружаются."
+          }
+        }
+      }
+    },
+    "Die Folgen kommen gerade nicht an.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Folgen kommen gerade nicht an."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The episodes aren’t coming through right now."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Серии сейчас не загружаются."
+          }
+        }
+      }
+    },
+    "Das ging schief. Der Server antwortet nicht.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das ging schief. Der Server antwortet nicht."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That went wrong. The server isn’t answering."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Что-то пошло не так. Сервер не отвечает."
+          }
+        }
+      }
+    },
+    "Dieser Bau hat keine Video-Engine (Feature mpv).": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Bau hat keine Video-Engine (Feature mpv)."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This build has no video engine (feature mpv)."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В этой сборке нет видеодвижка (функция mpv)."
+          }
+        }
+      }
+    },
+    "Du bist gerade nicht mit dem Server verbunden.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du bist gerade nicht mit dem Server verbunden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You aren’t connected to the server right now."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сейчас нет подключения к серверу."
+          }
+        }
+      }
+    },
+    "Das Gerät spielt nichts mehr.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Gerät spielt nichts mehr."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The device isn’t playing anything anymore."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройство больше ничего не воспроизводит."
+          }
+        }
+      }
+    },
+    "Der Titel lässt sich hier gerade nicht abspielen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Titel lässt sich hier gerade nicht abspielen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This title can’t be played here right now."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это название сейчас нельзя воспроизвести здесь."
+          }
+        }
+      }
+    },
+    "Das Gerät ist nicht mehr erreichbar.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Gerät ist nicht mehr erreichbar."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The device can’t be reached anymore."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устройство больше недоступно."
+          }
+        }
+      }
+    },
+    "Der Titel lässt sich gerade nicht abspielen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Titel lässt sich gerade nicht abspielen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This title can’t be played right now."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это название сейчас нельзя воспроизвести."
+          }
+        }
+      }
+    },
+    "Erst die Serveradresse eingeben.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erst die Serveradresse eingeben."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the server address first."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сначала введи адрес сервера."
+          }
+        }
+      }
+    },
+    "Der Pfad der Datei ist nicht gültig.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Pfad der Datei ist nicht gültig."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file path isn’t valid."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Путь к файлу недействителен."
+          }
+        }
+      }
+    },
+    "Dieser Titel liegt nicht mehr auf dem Gerät.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Titel liegt nicht mehr auf dem Gerät."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This title is no longer on the device."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этого названия больше нет на устройстве."
+          }
+        }
+      }
+    },
+    "Es läuft schon ein Titel. Schließe ihn, dann öffnet der Link.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es läuft schon ein Titel. Schließe ihn, dann öffnet der Link."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A title is already playing. Close it and the link will open."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Уже воспроизводится название. Закрой его, и ссылка откроется."
+          }
+        }
+      }
+    },
+    "Was ist neu": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Was ist neu"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What’s new"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Что нового"
+          }
+        }
+      }
+    },
+    "Nach Updates suchen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach Updates suchen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check for updates"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверить обновления"
+          }
+        }
+      }
+    },
+    "Wird gesucht …": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird gesucht …"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking …"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Проверяем …"
+          }
+        }
+      }
+    },
+    "Auf GitHub nachlesen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf GitHub nachlesen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read more on GitHub"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подробнее на GitHub"
+          }
+        }
+      }
+    },
+    "Swiftly fragt bei GitHub, ob es eine neuere Version gibt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly fragt bei GitHub, ob es eine neuere Version gibt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly asks GitHub whether there is a newer version"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly спрашивает GitHub, есть ли новая версия"
+          }
+        }
+      }
+    },
+    "Swiftly ist aktuell": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly ist aktuell"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly is up to date"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly обновлён"
+          }
+        }
+      }
+    },
+    "Swiftly %@ ist da": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly %@ ist da"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly %@ is here"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вышел Swiftly %@"
+          }
+        }
+      }
+    },
+    "Hat nicht geklappt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hat nicht geklappt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Didn’t work"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не получилось"
+          }
+        }
+      }
+    },
+    "GitHub antwortet nicht.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub antwortet nicht."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub isn’t answering."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub не отвечает."
+          }
+        }
+      }
+    },
+    "Konto wechseln": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konto wechseln"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch account"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сменить учётную запись"
+          }
+        }
+      }
+    },
+    "Andere Profile und Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Andere Profile und Server"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other profiles and servers"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Другие профили и серверы"
+          }
+        }
+      }
+    },
+    "Du bleibst auch beim anderen angemeldet": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du bleibst auch beim anderen angemeldet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You stay signed in to the other one too"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ты остаёшься в системе и на другом"
+          }
+        }
+      }
+    },
+    "Zum Umsortieren eine Zeile ziehen oder mit Alt und Pfeil verschieben.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Umsortieren eine Zeile ziehen oder mit Alt und Pfeil verschieben."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag a row, or move it with Alt and an arrow key, to reorder."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Чтобы изменить порядок, перетащи строку или сдвинь её клавишами Alt и стрелкой."
+          }
+        }
+      }
+    },
+    "Auf anderem Gerät fortsetzen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf anderem Gerät fortsetzen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue on another device"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Продолжить на другом устройстве"
+          }
+        }
+      }
+    },
+    "Ton und Untertitel (T)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton und Untertitel (T)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio and subtitles (T)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Звук и субтитры (T)"
+          }
+        }
+      }
+    },
+    "Player schließen (Esc)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Player schließen (Esc)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close player (Esc)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть плеер (Esc)"
+          }
+        }
+      }
+    },
+    "Schließen (Esc)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schließen (Esc)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close (Esc)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть (Esc)"
+          }
+        }
+      }
+    },
+    "Ausgewählt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausgewählt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выбрано"
+          }
+        }
+      }
+    },
+    "Nicht ausgewählt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht ausgewählt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not selected"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не выбрано"
+          }
+        }
+      }
+    },
+    "Frei auf diesem PC": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Frei auf diesem PC"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free on this PC"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Свободно на этом компьютере"
+          }
+        }
+      }
+    },
+    "Woher libmpv kommt und wie du es ersetzt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Woher libmpv kommt und wie du es ersetzt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where libmpv comes from and how to replace it"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откуда берётся libmpv и как его заменить"
+          }
+        }
+      }
+    },
+    "Swiftly Player spielt mit libmpv und FFmpeg (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly Player spielt mit libmpv und FFmpeg (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly Player plays with libmpv and FFmpeg (LGPL 2.1 or later). What else is inside is listed below, with license and author."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly Player воспроизводит через libmpv и FFmpeg (LGPL 2.1 или новее). Что ещё внутри, указано ниже, с лицензией и автором."
+          }
+        }
+      }
+    },
+    "libmpv und FFmpeg": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "libmpv und FFmpeg"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "libmpv and FFmpeg"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "libmpv и FFmpeg"
+          }
+        }
+      }
+    },
+    "Zurück zur Startseite": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zurück zur Startseite"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to Home"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Назад на главную"
+          }
+        }
+      }
+    },
+    "Zur Merkliste": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zur Merkliste"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To the watchlist"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В список"
+          }
+        }
+      }
+    },
+    "Alle anzeigen: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle anzeigen: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show all: %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показать все: %@"
+          }
+        }
+      }
+    },
+    "Zeitüberschreitung.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeitüberschreitung."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timed out."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Время ожидания истекло."
+          }
+        }
+      }
+    },
+    "Kein Plex-Konto.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Plex-Konto."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Plex account."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет учётной записи Plex."
+          }
+        }
+      }
+    },
+    "Noch %lld Min.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch %lld Min."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld min left"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ещё %lld мин."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

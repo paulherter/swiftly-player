@@ -68,9 +68,9 @@ struct Place {
 /// What the strip says when the server gave no plan to play (`PlayControls.swift:113`): it names the server, not just
 /// "failed", so with several servers it is clear which one is meant.
 pub fn plan_refused_text(server: Option<&str>) -> String {
-    format!(
-        "Die Wiedergabe hat nicht geklappt. Von {} kamen keine Daten zum Abspielen.",
-        server.unwrap_or(swiftly_l10n::tr("dem Server"))
+    swiftly_l10n::t_args(
+        "Die Wiedergabe hat nicht geklappt. Von %@ kamen keine Daten zum Abspielen.",
+        &[server.unwrap_or(swiftly_l10n::tr("dem Server")).into()],
     )
 }
 
@@ -3659,7 +3659,10 @@ impl Suite {
             Action::PlayerBusy => {
                 if let Some(p) = &mut self.player {
                     p.announce(
-                        "Es läuft schon ein Titel. Schließe ihn, dann öffnet der Link.".to_owned(),
+                        swiftly_l10n::tr(
+                            "Es läuft schon ein Titel. Schließe ihn, dann öffnet der Link.",
+                        )
+                        .to_owned(),
                         now,
                     );
                 }
@@ -4481,7 +4484,7 @@ impl Suite {
             );
         }
         if self.player.is_none() && self.whats_new.open() {
-            return ("Was ist neu", self.whats_new.a11y_nodes());
+            return (swiftly_l10n::tr("Was ist neu"), self.whats_new.a11y_nodes());
         }
         // The together panel is modal over the whole window (it takes every click and key): it alone is reachable.
         if self.player.is_none() && self.together_ui.open() {

@@ -186,3 +186,59 @@ fn fixed_screen_texts_go_through_the_catalogue() {
         bad.join("\n")
     );
 }
+
+/// The other way round: a literal handed to `swiftly_l10n::tr` / `t` / `t_args` / `plural` must be a catalogue key. A
+/// typo or a reworded German sentence would otherwise come back as the key itself, in German, under every language
+/// (`tr` and `t` fall back to the key without a sound).
+#[test]
+fn translated_literals_are_catalogue_keys() {
+    let keys: std::collections::HashSet<&str> =
+        Catalog::builtin().entries().iter().map(|e| e.key).collect();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut bad = Vec::new();
+    for entry in std::fs::read_dir(&src).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "rs") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let body = text.split("#[cfg(test)]").next().unwrap();
+        for call in [
+            "swiftly_l10n::tr(",
+            "swiftly_l10n::t(",
+            "swiftly_l10n::t_args(",
+            "swiftly_l10n::plural(",
+        ] {
+            for (at, _) in body.match_indices(call) {
+                let rest = body[at + call.len()..].trim_start();
+                if !rest.starts_with('"') {
+                    continue; // a variable or a table entry: its literal is checked where it is written
+                }
+                let end = rest[1..]
+                    .char_indices()
+                    .scan(false, |esc, (i, c)| {
+                        let stop = !*esc && c == '"';
+                        *esc = !*esc && c == '\\';
+                        Some((i, stop))
+                    })
+                    .find(|(_, stop)| *stop)
+                    .map(|(i, _)| i + 1);
+                let Some(end) = end else { continue };
+                let lit = unescape(&rest[1..end]);
+                if !keys.contains(lit.as_str()) {
+                    let line = body[..at].matches('\n').count() + 1;
+                    bad.push(format!(
+                        "{}:{line}: {lit:?}",
+                        path.file_name().unwrap().to_string_lossy()
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "literals passed to the translator that are not catalogue keys ({}):\n{}",
+        bad.len(),
+        bad.join("\n")
+    );
+}

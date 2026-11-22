@@ -326,9 +326,12 @@ pub fn subline(i: &DownloadItem, loaded: i64) -> String {
     match i.state {
         DownloadState::Loads => {
             let (done, total) = DownloadRules::progress(loaded, i.bytes, SEP);
-            parts = vec![format!(
-                "{done} von {}{total}",
-                if i.streamed() { "\u{2248} " } else { "" }
+            parts = vec![swiftly_l10n::t_args(
+                "%@ von %@",
+                &[
+                    done.into(),
+                    format!("{}{total}", if i.streamed() { "\u{2248} " } else { "" }).into(),
+                ],
             )];
         }
         DownloadState::Waits => {

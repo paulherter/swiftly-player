@@ -30,9 +30,9 @@ fn key_counts_match_the_sources() {
     } else {
         DIRECT_ONLY_KEYS
     };
-    assert_eq!(cat.entries().len(), 1367 - hidden);
+    assert_eq!(cat.entries().len(), 1421 - hidden);
     for lang in ["de", "en", "ru"] {
-        assert_eq!(cat.key_count(lang), 1367 - hidden, "{lang}");
+        assert_eq!(cat.key_count(lang), 1421 - hidden, "{lang}");
     }
     assert_eq!(cat.languages(), vec!["de", "en", "ru"]);
     assert_eq!(cat.info_plist().len(), 3);
@@ -52,12 +52,12 @@ fn key_counts_match_the_sources() {
         .filter(|e| e.origin == Origin::Package)
         .count();
     if cfg!(feature = "supporter-key") {
-        assert_eq!((app_only, both, package_only), (1231, 67, 69));
+        assert_eq!((app_only, both, package_only), (1285, 67, 69));
     }
 
     let Some(parsed) = sources() else { return };
     for lang in ["de", "en", "ru"] {
-        assert_eq!(source::count(&parsed.app, lang), 1298, "xcstrings {lang}");
+        assert_eq!(source::count(&parsed.app, lang), 1352, "xcstrings {lang}");
         assert_eq!(source::count(&parsed.info, lang), 3, "InfoPlist {lang}");
         let union = parsed
             .merged
@@ -97,7 +97,7 @@ fn key_counts_match_the_sources() {
     assert!(fresh.contains(&SourceStat {
         source: "Localizable.xcstrings",
         lang: "ru",
-        keys: 1298
+        keys: 1352
     }));
 }
 

@@ -2458,7 +2458,7 @@ fn disturbed(k: &Kit, title: &str, retry: &str) -> Node {
         vec![
             txt(
                 k.cx,
-                "Das ging schief. Der Server antwortet nicht.",
+                swiftly_l10n::tr("Das ging schief. Der Server antwortet nicht."),
                 k.lk.body,
                 color::TEXT_SECONDARY,
                 Some(2),
@@ -2531,7 +2531,10 @@ pub(crate) fn watchers_rail(k: &Kit, ws: &[swiftly_vm::WatcherTile]) -> Node {
                     && all > 0
                     && done < all
                 {
-                    parts.push(format!("{done} von {all} Folgen"));
+                    parts.push(swiftly_l10n::t_args(
+                        "%lld von %lld Folgen",
+                        &[done.into(), all.into()],
+                    ));
                 } else if w.ring > 0.0 && w.ring < 1.0 {
                     parts.push(format!("{} %", (w.ring * 100.0).round() as i64));
                 }

@@ -323,7 +323,10 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
             &ctx.icons,
             "hard-drive-x",
             swiftly_l10n::tr("Server ist abgetaucht"),
-            &format!("{} antwortet nicht. Läuft er noch, oder hängt das WLAN?", crate::desk::card().server_name()),
+            &swiftly_l10n::t_args(
+                "%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                &[crate::desk::card().server_name().to_owned().into()],
+            ),
             swiftly_l10n::tr("Erneut versuchen"),
         )
         .padding(ins(80.0, 0.0, 0.0, 0.0))),
@@ -348,7 +351,10 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                     if narrowed { "funnel" } else { "tray" },
                     if narrowed { swiftly_l10n::tr("Nichts gefunden") } else { swiftly_l10n::tr("Hier ist noch nichts") },
                     &if narrowed {
-                        format!("Unter \u{201E}{}\u{201C} liegt gerade nichts. Nimm einen anderen Filter.", p.filter.pill)
+                        swiftly_l10n::t_args(
+                            "Unter „%@“ liegt gerade nichts. Nimm einen anderen Filter.",
+                            &[p.filter.pill.to_owned().into()],
+                        )
                     } else {
                         swiftly_l10n::tr("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf.").to_owned()
                     },

@@ -807,8 +807,8 @@ fn act(c: &Ctx<'_>, n: Node, on: bool, key: &str, action: &str) -> Node {
     let name = match action {
         "toggle" if matches!(c.p.t.phase, Phase::Playing) => swiftly_l10n::tr("Pause").to_owned(),
         "toggle" => swiftly_l10n::tr("Wiedergabe").to_owned(),
-        "back" => format!("{} Sekunden zurück", c.p.c.jump_seconds.0),
-        "fwd" => format!("{} Sekunden vor", c.p.c.jump_seconds.1),
+        "back" => swiftly_l10n::t_args("%lld Sekunden zurück", &[c.p.c.jump_seconds.0.into()]),
+        "fwd" => swiftly_l10n::t_args("%lld Sekunden vor", &[c.p.c.jump_seconds.1.into()]),
         "tracks" => swiftly_l10n::tr("Ton und Untertitel").to_owned(),
         "fullscreen" if c.p.fullscreen => swiftly_l10n::tr("Vollbild verlassen").to_owned(),
         "fullscreen" => swiftly_l10n::tr("Vollbild").to_owned(),
@@ -817,7 +817,7 @@ fn act(c: &Ctx<'_>, n: Node, on: bool, key: &str, action: &str) -> Node {
         "episodes" | "folgen" => swiftly_l10n::tr("Folgen").to_owned(),
         "chapters" => swiftly_l10n::t("Kapitel"),
         "settings" => swiftly_l10n::tr("Einstellungen").to_owned(),
-        "handover" => "Auf anderem Gerät fortsetzen".to_owned(),
+        "handover" => swiftly_l10n::tr("Auf anderem Gerät fortsetzen").to_owned(),
         "close" => swiftly_l10n::tr("Player schließen").to_owned(),
         "layer-close" | "fail-close" => swiftly_l10n::tr("Schließen").to_owned(),
         other => other.to_owned(),
@@ -1082,7 +1082,7 @@ fn bar_capsule(c: &Ctx<'_>, ok: bool) -> Node {
         c,
         "captions",
         "tracks",
-        "Ton und Untertitel (T)",
+        swiftly_l10n::tr("Ton und Untertitel (T)"),
         open == Some(Half::Tracks),
         ok,
     ));
@@ -1135,7 +1135,14 @@ fn bar_system(c: &Ctx<'_>, ok: bool) -> Node {
     };
     let halves = vec![
         capsule_half(c, fs_glyph, "fullscreen", fs_tip, false, ok),
-        capsule_half(c, "x", "close", "Player schließen (Esc)", false, ok),
+        capsule_half(
+            c,
+            "x",
+            "close",
+            swiftly_l10n::tr("Player schließen (Esc)"),
+            false,
+            ok,
+        ),
     ];
     Node::hstack(Align::Center, Some(0.0), halves)
         .background(bar_glass(hh / 2.0), Alignment::CENTER)
@@ -1149,7 +1156,7 @@ fn bar_x(c: &Ctx<'_>, ok: bool) -> Node {
         .background(bar_glass(hh / 2.0), Alignment::CENTER);
     let x = if ok {
         x.hover_surface(color(color::SURFACE_HOVER), hh / 2.0)
-            .tooltip("Player schließen (Esc)")
+            .tooltip(swiftly_l10n::tr("Player schließen (Esc)"))
     } else {
         x
     };
@@ -1677,10 +1684,12 @@ fn footer(c: &Ctx<'_>) -> Node {
             swiftly_l10n::tr("Position"),
         )
         .with_range(p.t.position, 0.0, p.t.duration.max(1.0))
-        .with_value(format!(
-            "{} von {}",
-            play_time(p.t.position),
-            play_time(p.t.duration)
+        .with_value(swiftly_l10n::t_args(
+            "%@ von %@",
+            &[
+                play_time(p.t.position).into(),
+                play_time(p.t.duration).into(),
+            ],
         )),
     );
     let row = Node::hstack(Align::Center, Some(m.bar_gap), vec![left, sl, right])
@@ -1771,7 +1780,10 @@ fn pill(c: &Ctx<'_>) -> Node {
             seconds_left,
         } => (
             swiftly_l10n::tr("Nächste Folge").to_owned(),
-            Some(format!("{title} · Startet in {seconds_left} Sekunden")),
+            Some(format!(
+                "{title} \u{00B7} {}",
+                swiftly_l10n::plural("Startet in %lld Sekunden", *seconds_left, &[])
+            )),
             Some(*share),
             true,
             None,
@@ -2894,7 +2906,15 @@ fn layer_desktop(c: &Ctx<'_>, which: PlayerLayer) -> Node {
         )),
         Alignment::TOP,
     );
-    let x = rail_button(c, "x", "layer-x", "layer-close", "Schließen (Esc)", true).padding(ins(
+    let x = rail_button(
+        c,
+        "x",
+        "layer-x",
+        "layer-close",
+        swiftly_l10n::tr("Schließen (Esc)"),
+        true,
+    )
+    .padding(ins(
         m.rail_top,
         0.0,
         0.0,
@@ -7070,12 +7090,14 @@ impl PlayerScreen {
         let next = Delay::from_milliseconds(ms).shifted(bearing, 1);
         // `postpone` (`PlayerScreen.swift:1581-1590`): the new value is announced through `notify`.
         let word = if subtitle {
-            "Untertitelverzögerung"
+            // l10n:keep catalogue key, handed to `t_args` below
+            "Untertitelverzögerung %@"
         } else {
-            "Tonverzögerung"
+            // l10n:keep catalogue key, handed to `t_args` below
+            "Tonverzögerung %@"
         };
         self.notice = Some((
-            format!("{word} {}", delay_text(next.milliseconds())),
+            swiftly_l10n::t_args(word, &[delay_text(next.milliseconds()).into()]),
             now / 1000.0 + NOTICE_SECONDS,
         ));
         self.send(

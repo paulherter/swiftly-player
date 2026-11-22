@@ -939,10 +939,12 @@ impl Inner {
             lock(&self.vm).takeover_event(TakeoverEvent::Failed(message));
         };
         let Ok(c) = self.core.client_for(&self.account) else {
-            return failed("Du bist gerade nicht mit dem Server verbunden.".into());
+            return failed(
+                swiftly_l10n::tr("Du bist gerade nicht mit dem Server verbunden.").into(),
+            );
         };
         let Some(chosen) = lock(&self.vm).takeover_session(session_id) else {
-            return failed("Das Gerät spielt nichts mehr.".into());
+            return failed(swiftly_l10n::tr("Das Gerät spielt nichts mehr.").into());
         };
         let Some(item_id) = chosen
             .running
@@ -950,7 +952,7 @@ impl Inner {
             .map(|i| i.id.clone())
             .filter(|i| !i.is_empty())
         else {
-            return failed("Das Gerät spielt nichts mehr.".into());
+            return failed(swiftly_l10n::tr("Das Gerät spielt nichts mehr.").into());
         };
         // The plan first (`handed_over`, `TakeoverModel.wish`): if this device cannot play the title, the other one is
         // not stopped, otherwise the film would be gone from both.
@@ -965,13 +967,17 @@ impl Inner {
         match planned.0.recv_timeout(Duration::from_secs(30)) {
             Ok(Ok(_)) => {}
             Ok(Err(e)) => {
-                return failed(if e.starts_with("Der Server") {
+                return failed(if e.starts_with(swiftly_l10n::tr("Der Server")) {
                     e
                 } else {
-                    "Der Titel lässt sich hier gerade nicht abspielen.".to_owned()
+                    swiftly_l10n::tr("Der Titel lässt sich hier gerade nicht abspielen.").to_owned()
                 });
             }
-            Err(_) => return failed("Der Titel lässt sich hier gerade nicht abspielen.".into()),
+            Err(_) => {
+                return failed(
+                    swiftly_l10n::tr("Der Titel lässt sich hier gerade nicht abspielen.").into(),
+                );
+            }
         }
         let spot = chosen.state.as_ref().map_or(0.0, |s| s.spot());
         let (saved, fresh) = futures_executor::block_on(futures_util::future::join(
@@ -1030,7 +1036,7 @@ impl Inner {
         targets
             .into_iter()
             .find(|s| s.device_id.as_deref() == Some(device_id))
-            .ok_or_else(|| "Das Gerät ist nicht mehr erreichbar.".to_owned())
+            .ok_or_else(|| swiftly_l10n::tr("Das Gerät ist nicht mehr erreichbar.").to_owned())
     }
 
     fn deliver(
