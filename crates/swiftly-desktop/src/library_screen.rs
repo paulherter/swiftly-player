@@ -1993,7 +1993,10 @@ mod tests {
         assert!(!r.retry_due(Pending, 10_000.0));
         assert!(!r.retry_due(Offline, 10_000.0));
         assert!(!r.retry_due(Settled, 11_000.0));
-        assert!(!r.retry_due(Offline, 12_000.0), "a new schedule starts from 3 s");
+        assert!(
+            !r.retry_due(Offline, 12_000.0),
+            "a new schedule starts from 3 s"
+        );
         assert!(r.retry_due(Offline, 15_000.0));
     }
 
