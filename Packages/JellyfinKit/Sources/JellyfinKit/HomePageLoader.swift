@@ -227,12 +227,11 @@ public enum HomeLoader {
     /// the log.
     static func new(from source: some HomePageSource, in library: String?,
                     art: String) async -> [Item]? {
-        // **The same in reverse:** in the movie row, episodes and series that the mixed
-        // fallback brings along drop out.
+        // Only movies belong in the movie row, including every fallback and merged response.
         guard art == "tvshows" else {
             let fetched = await newLevels(from: source, in: library, art: art)
             guard art == "movies" else { return fetched }
-            return fetched?.filter { !["Episode", "Series", "Season"].contains($0.type ?? "") }
+            return fetched?.filter { $0.type == "Movie" }
         }
         // **The series row asks for series, not libraries.**
         // If a user's series are not cleanly in libraries of type “tvshows”, the last

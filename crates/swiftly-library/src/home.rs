@@ -274,9 +274,7 @@ impl HomeLoader {
             }
             return fetched.map(|f| {
                 f.into_iter()
-                    .filter(|i| {
-                        !matches!(i.type_.as_deref(), Some("Episode" | "Series" | "Season"))
-                    })
+                    .filter(|i| i.type_.as_deref() == Some("Movie"))
                     .collect()
             });
         }
@@ -625,8 +623,8 @@ mod tests {
         let q = Source {
             new: map(&[
                 ("", vec![t("x")]),
-                ("filme", vec![t("f")]),
-                ("serien", vec![t("s")]),
+                ("filme", vec![film("f")]),
+                ("serien", vec![episode("s")]),
             ]),
             ..Source::base()
         };
@@ -648,8 +646,8 @@ mod tests {
         let q = Source {
             new: map(&[
                 ("", vec![t("film")]),
-                ("filme", vec![t("f")]),
-                ("serien", vec![t("s")]),
+                ("filme", vec![film("f")]),
+                ("serien", vec![episode("s")]),
                 ("mix", vec![t("m")]),
             ]),
             review: Some(vec![
@@ -791,6 +789,48 @@ mod tests {
         // Never movies under "New series", not even in the last fallback.
         assert_eq!(ids(&s.new_series), Some(vec!["v1"]));
     }
+    #[test]
+    fn selected_movie_library_allows_only_movies_in_server_order() {
+        let mixed = vec![
+            film("f1"),
+            Item::new("collection", "Sammlung", Some("BoxSet")),
+            episode("e1"),
+            Item::new("series", "Serie", Some("Series")),
+            Item::new("season", "Staffel", Some("Season")),
+            Item::new("video", "Video", Some("Video")),
+            t("unknown"),
+            film("f2"),
+        ];
+        let q = Source {
+            new: map(&[("filme", mixed)]),
+            ..Source::base()
+        };
+        let home = run(&q, &LoadRequest::new(true).film_library(Some("filme")));
+        assert_eq!(ids(&home.new_movies), Some(vec!["f1", "f2"]));
+    }
+
+    #[test]
+    fn mixed_movie_fallback_also_excludes_collections() {
+        let q = Source {
+            new: map(&[
+                ("filme", vec![]),
+                (
+                    "",
+                    vec![
+                        Item::new("collection", "Sammlung", Some("BoxSet")),
+                        film("f1"),
+                        Item::new("video", "Video", Some("Video")),
+                        film("f2"),
+                    ],
+                ),
+            ]),
+            typed: map(&[("Movie", vec![])]),
+            ..Source::base()
+        };
+        let home = run(&q, &LoadRequest::new(true).film_library(Some("filme")));
+        assert_eq!(ids(&home.new_movies), Some(vec!["f1", "f2"]));
+    }
+
     #[test]
     fn series_query_carries_the_row() {
         let movies: Vec<Item> = (1..=24).map(|i| film(&format!("f{i}"))).collect();
