@@ -2,7 +2,7 @@
 //! `startRails`, `startGenres`, `HomeRowOrder`): one combined order of fixed rows and library rows, the libraries
 //! chosen per server, the genres chosen once.
 
-use swiftly_library::start_libraries::{StartLibraries, StartLibrary};
+use swiftly_library::start_libraries::{StartLibraries, StartLibrary, normalized_id};
 use swiftly_library::start_order::library_row_id;
 use swiftly_library::{HomeForm, SeerrSection, StartOrder, StartRail};
 use swiftly_settings::{KeyValueStore, Settings, StoreError, keys};
@@ -111,6 +111,17 @@ pub fn view<S: KeyValueStore>(
     seerr: bool,
     form: HomeForm,
 ) -> HomeView {
+    view_with_libraries(settings, server, seerr, form, &[])
+}
+
+/// [`view`] with the current runtime selections resolved by `HomeLoader`.
+pub fn view_with_libraries<S: KeyValueStore>(
+    settings: &Settings<S>,
+    server: &str,
+    seerr: bool,
+    form: HomeForm,
+    resolved: &[StartLibrary],
+) -> HomeView {
     let off = settings.get(&keys::START_AUS);
     let libs = libraries(settings, server);
     let rows = order(settings, server, seerr, form)
@@ -128,9 +139,13 @@ pub fn view<S: KeyValueStore>(
                 }
             } else {
                 let lib = libs.iter().find(|l| library_row_id(l) == id)?;
+                let current = resolved
+                    .iter()
+                    .find(|current| normalized_id(&current.id) == normalized_id(&lib.id))
+                    .filter(|current| !current.name.is_empty());
                 HomeRowKind::Library {
                     id: lib.id.clone(),
-                    name: lib.name.clone(),
+                    name: current.map_or_else(|| lib.name.clone(), |current| current.name.clone()),
                     collection: lib.collection,
                 }
             };
@@ -367,6 +382,50 @@ mod tests {
                 .iter()
                 .all(|r| r.id != "library:L1")
         );
+    }
+
+    #[test]
+    fn selected_rows_use_resolved_names_but_keep_stable_ids() {
+        let s = settings();
+        add_library(&s, "srv", StartLibrary::new("L1", "Kino alt", false)).unwrap();
+        add_library(&s, "srv", StartLibrary::new("C1", "Marvel alt", true)).unwrap();
+        let resolved = [
+            StartLibrary::new("c1", "Marvel aktuell", true),
+            StartLibrary::new("l1", "Kino aktuell", false),
+        ];
+        let rows = view_with_libraries(&s, "srv", false, HomeForm::Handheld, &resolved).rows;
+        let libraries: Vec<_> = rows
+            .into_iter()
+            .filter_map(|row| match row.kind {
+                HomeRowKind::Library {
+                    id,
+                    name,
+                    collection,
+                } => Some((row.id, id, name, collection)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            libraries,
+            [
+                (
+                    "library:L1".to_string(),
+                    "L1".to_string(),
+                    "Kino aktuell".to_string(),
+                    false,
+                ),
+                (
+                    "library:C1".to_string(),
+                    "C1".to_string(),
+                    "Marvel aktuell".to_string(),
+                    true,
+                ),
+            ]
+        );
+        remove_library(&s, "srv", "L1").unwrap();
+        let rows = view_with_libraries(&s, "srv", false, HomeForm::Handheld, &resolved).rows;
+        assert!(rows.iter().all(|row| row.id != "library:L1"));
+        assert!(rows.iter().any(|row| row.id == "library:C1"));
     }
 
     #[test]

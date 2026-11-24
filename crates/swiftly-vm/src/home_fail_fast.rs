@@ -93,6 +93,12 @@ impl<S: HomePageSource> HomePageSource for FailFast<'_, S> {
         }
         self.source.libraries().await
     }
+    async fn items_by_ids(&self, ids: &[String]) -> Option<Vec<Item>> {
+        if self.unreachable.get().is_some() {
+            return None;
+        }
+        self.source.items_by_ids(ids).await
+    }
     async fn new_arrivals(&self, genre: &str, fetch: i64, show_item: i64) -> Option<Vec<Item>> {
         if self.unreachable.get().is_some() {
             return None;
@@ -174,6 +180,10 @@ mod tests {
             self.hit();
             Some(Vec::new())
         }
+        async fn items_by_ids(&self, _ids: &[String]) -> Option<Vec<Item>> {
+            self.hit();
+            Some(Vec::new())
+        }
         async fn new_arrivals(&self, _g: &str, _f: i64, _s: i64) -> Option<Vec<Item>> {
             self.hit();
             Some(Vec::new())
@@ -205,6 +215,7 @@ mod tests {
         assert_eq!(block_on(source.last_added(None, 200, 24)), None);
         assert_eq!(block_on(source.title("Drama", 24)), None);
         assert_eq!(block_on(source.libraries()), None);
+        assert_eq!(block_on(source.items_by_ids(&["lib".into()])), None);
         assert_eq!(block_on(source.new_arrivals("Movie", 200, 24)), None);
         assert_eq!(block_on(source.new_series(None, 24)), None);
         assert_eq!(block_on(source.latest_title("lib", false, 24)), None);

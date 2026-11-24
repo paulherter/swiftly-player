@@ -344,6 +344,7 @@ type EffectSink = Arc<dyn Fn(SettingsEffect) + Send + Sync>;
 struct Live {
     context: SettingsContext,
     confirm: Option<Confirm>,
+    resolved_libraries: Vec<swiftly_library::start_libraries::StartLibrary>,
 }
 
 /// What the view reads. Behind its own small lock that is never held across the store: the store is a foreign
@@ -391,6 +392,7 @@ impl<S: KeyValueStore + 'static> SettingsVm<S> {
             live: Mutex::new(Live {
                 context,
                 confirm: None,
+                resolved_libraries: Vec::new(),
             }),
             shown: Mutex::new(Shown {
                 sections: Arc::new(SectionsPart {
@@ -420,17 +422,23 @@ impl<S: KeyValueStore + 'static> SettingsVm<S> {
         Arc::clone(&self.inner.shown().sections)
     }
 
+    /// Supplies the runtime selections resolved by the Home load for the selected-row labels.
+    pub fn set_start_libraries(&self, choice: Vec<swiftly_library::start_libraries::StartLibrary>) {
+        self.inner.live().resolved_libraries = choice;
+    }
+
     /// The Home rows and the chosen genres of the Appearance page, as stored for the current server.
     pub fn home(&self) -> crate::home_rows::HomeView {
-        let (server, seerr, form) = {
+        let (server, seerr, form, resolved) = {
             let live = self.inner.live();
             (
                 live.context.server.clone(),
                 live.context.seerr_connected,
                 live.context.home_form(),
+                live.resolved_libraries.clone(),
             )
         };
-        crate::home_rows::view(&self.inner.settings, &server, seerr, form)
+        crate::home_rows::view_with_libraries(&self.inner.settings, &server, seerr, form, &resolved)
     }
 
     /// The pending question.
@@ -475,7 +483,7 @@ impl<S: KeyValueStore + 'static> SettingsVm<S> {
                 SettingsIntent::MoveRow { key, delta } => {
                     inner.move_row(&live, &key, delta, &mut effects)
                 }
-                SettingsIntent::Home(edit) => inner.edit_home(&live, &edit, &mut effects),
+                SettingsIntent::Home(edit) => inner.edit_home(&mut live, &edit, &mut effects),
             };
             inner.publish(&mut live);
             result
@@ -691,7 +699,7 @@ impl<S: KeyValueStore + 'static> Inner<S> {
     /// The edits of the Home rows and genres; each one that changes something reports the keys it wrote.
     fn edit_home(
         &self,
-        live: &Live,
+        live: &mut Live,
         edit: &HomeEdit,
         fx: &mut Vec<SettingsEffect>,
     ) -> Result<(), Rejected> {
@@ -713,10 +721,16 @@ impl<S: KeyValueStore + 'static> Inner<S> {
             ),
             HomeEdit::AddLibrary(l) => {
                 h::add_library(settings, &server, l.clone()).map_err(|e| store_error(&e))?;
+                live.resolved_libraries.retain(|library| {
+                    swiftly_library::start_libraries::normalized_id(&library.id)
+                        != swiftly_library::start_libraries::normalized_id(&l.id)
+                });
+                live.resolved_libraries.push(l.clone());
                 (true, &["startBibliotheken"])
             }
             HomeEdit::RemoveLibrary(id) => {
                 h::remove_library(settings, &server, id).map_err(|e| store_error(&e))?;
+                live.resolved_libraries.retain(|library| &library.id != id);
                 (true, &["startBibliotheken"])
             }
             HomeEdit::AddGenre(g) => {
@@ -2098,6 +2112,38 @@ mod tests {
         assert!(on(&vm, "technikschild"));
         vm.send(SettingsIntent::Reload).unwrap();
         assert_eq!(vm.version(), v + 1);
+    }
+
+    #[test]
+    fn home_rows_use_runtime_names_without_persisting_them() {
+        let ctx = SettingsContext {
+            server: "srv".into(),
+            ..SettingsContext::default()
+        };
+        let (vm, _, store) = vm_with(ctx);
+        vm.send(SettingsIntent::Home(HomeEdit::AddLibrary(
+            swiftly_library::start_libraries::StartLibrary::new("L1", "Kino", false),
+        )))
+        .unwrap();
+        let name = |vm: &SettingsVm<Mem>| {
+            vm.home().rows.into_iter().find_map(|row| match row.kind {
+                crate::home_rows::HomeRowKind::Library { name, .. } => Some(name),
+                _ => None,
+            })
+        };
+        assert_eq!(name(&vm).as_deref(), Some("Kino"));
+        vm.set_start_libraries(vec![swiftly_library::start_libraries::StartLibrary::new(
+            "L1",
+            "Kino aktuell",
+            false,
+        )]);
+        assert_eq!(name(&vm).as_deref(), Some("Kino aktuell"));
+        let stored = store.get("startBibliotheken|srv").unwrap();
+        let swiftly_settings::Value::Data(data) = stored else {
+            panic!("library selection was not stored as data")
+        };
+        let text = String::from_utf8(data).unwrap();
+        assert_eq!(text, r#"[{"id":"L1","sammlung":false}]"#);
     }
 
     #[test]

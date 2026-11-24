@@ -163,6 +163,11 @@ impl Net {
                         "ImageTags": {"Primary": format!("p-{id}")}}),
                     );
                 }
+                if ids.contains(&"lib-1") {
+                    found.push(serde_json::json!({
+                        "Id": "lib-1", "Name": "Filme aktuell", "Type": "CollectionFolder"
+                    }));
+                }
                 return list(&found);
             }
             if self.many.load(Ordering::SeqCst) {

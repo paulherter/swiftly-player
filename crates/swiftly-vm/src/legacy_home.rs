@@ -260,12 +260,12 @@ async fn home_with(
     let mut shown: Vec<Item> = Vec::new();
     let words = Words::new(host.locale.clone());
     let text = TitleText::new(host.locale.clone());
-    let choice = StartLibraries::read(Some(&args.libraries));
+    let mut choice = StartLibraries::read(Some(&args.libraries));
     let library_rails = async {
         if choice.is_empty() {
             Vec::new()
         } else {
-            HomeLoader::library_rails(client, &choice).await
+            HomeLoader::library_rails_resolved(client, &mut choice).await
         }
     };
     let none_if_empty = |s: &str| (!s.is_empty()).then(|| s.to_owned());
@@ -315,7 +315,7 @@ async fn home_with(
         rails.push(LegacyRail {
             id: format!("library:{}", w.id),
             title_key: None,
-            name: Some(w.name.clone()),
+            name: Some(r.name.clone()),
             landscape: false,
             tiles: {
                 let tiles: Vec<LegacyTile> = r

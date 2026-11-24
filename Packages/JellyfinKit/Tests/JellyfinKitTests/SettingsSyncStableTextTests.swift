@@ -16,8 +16,10 @@ struct SettingsSyncStableTextTests {
         for _ in 0..<500 {
             #expect(StartLibraries.data(choice) == first)
         }
-        // And what is sent is read back to the same choice.
-        #expect(StartLibraries.read(first) == choice)
+        // The stable selection survives; the runtime name is resolved again.
+        #expect(StartLibraries.read(first) == choice.map {
+            StartLibrary(id: $0.id, name: "", collection: $0.collection)
+        })
     }
 
     @Test("Ein Wert aus Startbibliotheken ändert den Schnappschuss nicht")

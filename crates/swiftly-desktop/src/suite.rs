@@ -1346,6 +1346,9 @@ impl Suite {
             }
             _ => SettingsScreen::new(self.env, self.cx.clone(), false),
         };
+        screen
+            .vm()
+            .set_start_libraries(self.home.vm().start_libraries());
         if let (Some(core), true) = (&self.core, self.live.is_some()) {
             screen.set_accounts(
                 core.accounts_list()

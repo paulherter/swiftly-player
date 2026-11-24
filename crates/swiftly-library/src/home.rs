@@ -1,7 +1,7 @@
 //! The home loader (Swift `HomePageLoader.swift`): the fetches that make up the home page, with
 //! their fallback levels. One rule for all platforms.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 
 use futures_util::future::{join_all, join5};
@@ -9,7 +9,7 @@ use swiftly_model::Item;
 use swiftly_net::ErrorKind;
 
 use crate::list_rules::ListRules;
-use crate::start_libraries::{StartLibraries, StartLibrary};
+use crate::start_libraries::{StartLibraries, StartLibrary, normalized_id};
 
 /// The fetches that make up the home page (`HomePageSource`, :8-27). A trait so the loader runs
 /// without a server. `None` means "the fetch failed", never "empty".
@@ -30,6 +30,10 @@ pub trait HomePageSource: Send + Sync {
     fn title(&self, genre: &str, limit: i64) -> impl Future<Output = Option<Vec<Item>>> + Send;
     /// The account's libraries, or `None` if the fetch failed.
     fn libraries(&self) -> impl Future<Output = Option<Vec<Item>>> + Send;
+    /// Current items for a batch of ids, or `None` if the fetch failed.
+    fn items_by_ids(&self, _ids: &[String]) -> impl Future<Output = Option<Vec<Item>>> + Send {
+        async { None }
+    }
     /// New additions across all libraries, only of this kind (`Movie`, `Episode`).
     fn new_arrivals(
         &self,
@@ -181,13 +185,59 @@ impl HomeLoader {
             .collect()
     }
 
+    /// Resolves the current selections with one batched request. Missing items drop out; an empty
+    /// server name never replaces a known runtime name. Ids, kinds and order stay unchanged.
+    pub async fn resolve_libraries(
+        source: &impl HomePageSource,
+        choice: &[StartLibrary],
+    ) -> Option<Vec<StartLibrary>> {
+        let choice = StartLibraries::clean(choice);
+        if choice.is_empty() {
+            return Some(Vec::new());
+        }
+        let ids: Vec<String> = choice.iter().map(|library| library.id.clone()).collect();
+        let fetched = source.items_by_ids(&ids).await?;
+        let by_id: HashMap<String, Item> = fetched
+            .into_iter()
+            .map(|item| (normalized_id(&item.id), item))
+            .collect();
+        Some(
+            choice
+                .iter()
+                .filter_map(|library| {
+                    let item = by_id.get(&normalized_id(&library.id))?;
+                    let name = if item.name.is_empty() {
+                        library.name.clone()
+                    } else {
+                        item.name.clone()
+                    };
+                    (!name.is_empty())
+                        .then(|| StartLibrary::new(&library.id, &name, library.collection))
+                })
+                .collect(),
+        )
+    }
+
     /// The chosen libraries as rows, all at once, in the chosen order; a failed or empty one
     /// drops out silently (:165-182).
     pub async fn library_rails(
         source: &impl HomePageSource,
         choice: &[StartLibrary],
     ) -> Vec<LibraryRail> {
-        let choice = StartLibraries::clean(choice);
+        let mut resolved = choice.to_vec();
+        Self::library_rails_resolved(source, &mut resolved).await
+    }
+
+    /// [`HomeLoader::library_rails`] that also updates the caller's runtime selection with the
+    /// resolved names. A failed lookup keeps the previous runtime names as a fallback.
+    pub async fn library_rails_resolved(
+        source: &impl HomePageSource,
+        choice: &mut Vec<StartLibrary>,
+    ) -> Vec<LibraryRail> {
+        let cleaned = StartLibraries::clean(choice);
+        *choice = Self::resolve_libraries(source, &cleaned)
+            .await
+            .unwrap_or(cleaned);
         let fetched = join_all(
             choice
                 .iter()
@@ -198,6 +248,9 @@ impl HomeLoader {
             .iter()
             .zip(fetched)
             .filter_map(|(w, title)| {
+                if w.name.is_empty() {
+                    return None;
+                }
                 let title = title.filter(|t| !t.is_empty())?;
                 Some(LibraryRail {
                     id: w.id.clone(),
@@ -438,6 +491,8 @@ pub(crate) mod testing {
         pub typed: HashMap<String, Vec<Item>>,
         pub series_list: HashMap<String, Vec<Item>>,
         pub latest: HashMap<String, Vec<Item>>,
+        pub by_ids: Option<Vec<Item>>,
+        pub id_requests: Mutex<Vec<Vec<String>>>,
         pub log: Mutex<Vec<String>>,
     }
 
@@ -470,6 +525,12 @@ pub(crate) mod testing {
         }
         async fn libraries(&self) -> Option<Vec<Item>> {
             self.review.clone()
+        }
+        async fn items_by_ids(&self, ids: &[String]) -> Option<Vec<Item>> {
+            if let Ok(mut requests) = self.id_requests.lock() {
+                requests.push(ids.to_vec());
+            }
+            self.by_ids.clone()
         }
         async fn new_arrivals(&self, genre: &str, _f: i64, _s: i64) -> Option<Vec<Item>> {
             self.typed.get(genre).cloned().or_else(|| {
@@ -884,5 +945,83 @@ mod tests {
             r[0].items.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(),
             ["1", "2"]
         );
+    }
+
+    #[test]
+    fn library_rails_resolve_current_names_in_one_batch() {
+        let q = Source {
+            latest: map(&[("a-b", vec![t("1")]), ("c1", vec![t("2")])]),
+            by_ids: Some(vec![
+                Item::new("C1", "Neue Sammlung", Some("BoxSet")),
+                Item::new("A-B", "Neue Filme", Some("CollectionFolder")),
+            ]),
+            ..Source::base()
+        };
+        let mut choice = vec![
+            StartLibrary::new("c1", "Alte Sammlung", true),
+            StartLibrary::new("a-b", "Alte Filme", false),
+        ];
+        let rails = block_on(HomeLoader::library_rails_resolved(&q, &mut choice));
+        assert_eq!(
+            rails
+                .iter()
+                .map(|rail| (rail.id.as_str(), rail.name.as_str()))
+                .collect::<Vec<_>>(),
+            [("c1", "Neue Sammlung"), ("a-b", "Neue Filme")]
+        );
+        assert_eq!(choice[0].item().name, "Neue Sammlung");
+        assert!(choice[0].collection);
+        assert!(!choice[1].collection);
+        assert_eq!(
+            q.id_requests.lock().map(|requests| requests.clone()).ok(),
+            Some(vec![vec!["c1".to_string(), "a-b".to_string()]])
+        );
+    }
+
+    #[test]
+    fn failed_name_lookup_uses_only_a_known_runtime_name() {
+        let q = Source {
+            latest: map(&[("known", vec![t("1")]), ("cold", vec![t("2")])]),
+            by_ids: None,
+            ..Source::base()
+        };
+        let choice = [
+            StartLibrary::new("known", "Schon aufgelöst", false),
+            StartLibrary::new("cold", "", true),
+        ];
+        let rails = block_on(HomeLoader::library_rails(&q, &choice));
+        assert_eq!(rails.len(), 1);
+        assert_eq!(rails[0].name, "Schon aufgelöst");
+    }
+
+    #[test]
+    fn missing_item_drops_out_without_moving_the_other_rows() {
+        let q = Source {
+            latest: map(&[("a", vec![t("1")]), ("b", vec![t("2")])]),
+            by_ids: Some(vec![Item::new("b", "B aktuell", None)]),
+            ..Source::base()
+        };
+        let choice = [
+            StartLibrary::new("a", "A alt", false),
+            StartLibrary::new("b", "B alt", false),
+        ];
+        let rails = block_on(HomeLoader::library_rails(&q, &choice));
+        assert_eq!(rails.len(), 1);
+        assert_eq!(
+            (rails[0].id.as_str(), rails[0].name.as_str()),
+            ("b", "B aktuell")
+        );
+    }
+
+    #[test]
+    fn an_empty_server_name_does_not_replace_a_known_name() {
+        let q = Source {
+            latest: map(&[("a", vec![t("1")])]),
+            by_ids: Some(vec![Item::new("a", "", None)]),
+            ..Source::base()
+        };
+        let choice = [StartLibrary::new("a", "Bekannt", false)];
+        let rails = block_on(HomeLoader::library_rails(&q, &choice));
+        assert_eq!(rails[0].name, "Bekannt");
     }
 }

@@ -2,13 +2,11 @@ import Foundation
 
 /// **A library or collection the user pulled onto the home page as its own row.**
 ///
-/// Both ID **and name** are remembered: collections are not in the server's
-/// library list, and the settings page should be able to name the row even
-/// when the server is not answering.
+/// Only the stable ID and kind are remembered. The display name is runtime state,
+/// resolved from the server when Home loads.
 public struct StartLibrary: Codable, Sendable, Equatable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id
-        case name
         case collection = "sammlung"
     }
     public let id: String
@@ -20,6 +18,19 @@ public struct StartLibrary: Codable, Sendable, Equatable, Identifiable {
         self.id = id
         self.name = name
         self.collection = collection
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = ""
+        collection = try c.decode(Bool.self, forKey: .collection)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(collection, forKey: .collection)
     }
 
     /// From what the picker shows.
@@ -41,6 +52,11 @@ public struct StartLibrary: Codable, Sendable, Equatable, Identifiable {
 /// library returns, so does the row.
 public enum StartLibraries {
 
+    /// The comparison form of a Jellyfin id, insensitive to dash formatting and casing.
+    public static func normalizedID(_ id: String) -> String {
+        id.replacingOccurrences(of: "-", with: "").lowercased()
+    }
+
     /// Each ID once, in order of first appearance.
     public static func clean(_ choice: [StartLibrary]) -> [StartLibrary] {
         var watched = Set<String>()
@@ -56,7 +72,7 @@ public enum StartLibraries {
               let raw = try? JSONDecoder().decode([Record].self, from: data) else { return [] }
         return clean(raw.compactMap { e in
             guard let id = e.id else { return nil }
-            return StartLibrary(id: id, name: e.name ?? "", collection: e.collection ?? false)
+            return StartLibrary(id: id, name: "", collection: e.collection ?? false)
         })
     }
 
@@ -71,15 +87,13 @@ public enum StartLibraries {
 
     private struct Record: Decodable {
         let id: String?
-        let name: String?
         let collection: Bool?
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
             id = try c.decodeIfPresent(String.self, forKey: .id)
-            name = try c.decodeIfPresent(String.self, forKey: .name)
             collection = try c.decodeIfPresent(Bool.self, forKey: .collection)
         }
-        enum Keys: String, CodingKey { case id, name, collection = "sammlung" }
+        enum Keys: String, CodingKey { case id, collection = "sammlung" }
     }
 
     /// Whether a library has titles to show; music, playlists and live TV carry no

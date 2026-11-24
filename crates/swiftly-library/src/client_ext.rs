@@ -631,6 +631,16 @@ impl<T: HttpTransport> HomePageSource for JellyfinClient<T> {
     async fn libraries(&self) -> Option<Vec<Item>> {
         self.user_views(false).await.ok()
     }
+    async fn items_by_ids(&self, ids: &[String]) -> Option<Vec<Item>> {
+        self.items(&ItemsQuery {
+            limit: i64::try_from(ids.len()).unwrap_or(i64::MAX),
+            ids: ids.to_vec(),
+            ..ItemsQuery::default()
+        })
+        .await
+        .ok()
+        .map(|response| response.items)
+    }
     async fn new_arrivals(&self, genre: &str, fetch: i64, show_item: i64) -> Option<Vec<Item>> {
         last_added(self, None, fetch, show_item, genre).await
     }

@@ -137,6 +137,11 @@ impl<T: HttpTransport + 'static> HomeVm<T> {
         self.inner.live().libraries = choice;
     }
 
+    /// The runtime selections, including the names resolved by the latest Home load.
+    pub fn start_libraries(&self) -> Vec<swiftly_library::start_libraries::StartLibrary> {
+        self.inner.live().libraries.clone()
+    }
+
     /// The details line of one title (year/runtime/genre, description, stars, age rating, time left, episode
     /// name) for the focused tile: one request for the full title. Additive; `Tile` is unchanged. `None` when no
     /// server is connected or the title cannot be read.
@@ -929,11 +934,13 @@ impl<T: HttpTransport + 'static> RunCtx<T> {
             (wish, prefs.start_genres.clone())
         };
         let choice = inner.live().libraries.clone();
-        let mut library_rows = pin!(maybe_done(async {
+        let mut library_rows = pin!(maybe_done(async move {
             if choice.is_empty() {
-                Vec::new()
+                (Vec::new(), choice)
             } else {
-                HomeLoader::library_rails(client, &choice).await
+                let mut resolved = choice;
+                let rails = HomeLoader::library_rails_resolved(client, &mut resolved).await;
+                (rails, resolved)
             }
         }));
         let chips = prefs.genre_chips;
@@ -980,11 +987,21 @@ impl<T: HttpTransport + 'static> RunCtx<T> {
         let fresh = genres.as_mut().take_output().unwrap_or_default();
         library_rows.as_mut().await;
         let choice_empty = inner.live().libraries.is_empty();
-        let fresh_libraries = library_rows.as_mut().take_output().unwrap_or_default();
+        let (fresh_libraries, resolved_choice) =
+            library_rows.as_mut().take_output().unwrap_or_default();
+        drop(library_rows);
 
         // 4. The end of the run: first appearance in one go, or the standing page's tail.
         let mut guard = inner.live();
         let live = &mut *guard;
+        for current in &mut live.libraries {
+            if let Some(resolved) = resolved_choice.iter().find(|resolved| {
+                swiftly_library::start_libraries::normalized_id(&resolved.id)
+                    == swiftly_library::start_libraries::normalized_id(&current.id)
+            }) {
+                current.name = resolved.name.clone();
+            }
+        }
         let switch = live.switch;
         let finish = HomeFinish {
             account_key: Some(&self.key),

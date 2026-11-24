@@ -145,6 +145,7 @@ struct StartRailsTests {
 struct StartLibrariesTests {
     private struct Source: HomePageSource {
         var je: [String: [Item]] = [:]
+        var byIDs: [Item]?
         struct Route: Error {}
         func resumeItems(limit: Int) async throws -> [Item] { [] }
         func nextUp(limit: Int) async throws -> [Item] { [] }
@@ -154,6 +155,7 @@ struct StartLibrariesTests {
         func newArrivals(genre: String, fetch: Int, showItem: Int) async -> [Item]? { [] }
         func newSeries(in library: String?, showItem: Int) async -> [Item]? { [] }
         func latestTitle(in library: String, collection: Bool, showItem: Int) async -> [Item]? { je[library] }
+        func itemsByIDs(_ ids: [String]) async -> [Item]? { byIDs }
     }
     private func t(_ id: String) -> Item { Item(id: id, name: id) }
 
@@ -172,7 +174,9 @@ struct StartLibrariesTests {
     @Test("Schreiben und Lesen gehen hin und zurück")
     func toAndBack() {
         let w = [StartLibrary(id: "x", name: "Filme"), StartLibrary(id: "y", name: "Marvel")]
-        #expect(StartLibraries.read(StartLibraries.data(w)) == w)
+        #expect(StartLibraries.read(StartLibraries.data(w)) == w.map {
+            StartLibrary(id: $0.id, name: "", collection: $0.collection)
+        })
     }
 
     @Test("Die Reihen kommen in der gewählten Folge; Verschwundene und Leere fallen still weg")
@@ -183,6 +187,20 @@ struct StartLibrariesTests {
         let r = await HomeLoader.libraryRails(from: q, choice: w)
         #expect(r.map(\.id) == ["a"])
         #expect(r.first?.items.map(\.id) == ["1", "2"])
+    }
+
+    @Test("Umbenannte Bibliotheken und Sammlungen lösen ihre Namen neu auf")
+    func renamedLibraries() async {
+        let q = Source(
+            je: ["a-b": [t("1")], "c1": [t("2")]],
+            byIDs: [Item(id: "C1", name: "Neue Sammlung", type: "BoxSet"),
+                    Item(id: "A-B", name: "Neue Filme", type: "CollectionFolder")])
+        let choice = [StartLibrary(id: "c1", name: "Alt", collection: true),
+                      StartLibrary(id: "a-b", name: "Alt")]
+        let rails = await HomeLoader.libraryRails(from: q, choice: choice)
+        #expect(rails.map(\.id) == ["c1", "a-b"])
+        #expect(rails.map(\.name) == ["Neue Sammlung", "Neue Filme"])
+        #expect(rails.first.map { StartLibrary(id: $0.id, name: $0.name, collection: true).item.name } == "Neue Sammlung")
     }
 
     @Test("Die Auswahl lässt Gewähltes weg")

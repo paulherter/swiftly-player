@@ -124,11 +124,11 @@ class Settings(store: Store) {
     /** The current account's server, lowercase and without trailing slash; the choice belongs to it. Set by the application. */
     var serverKey: () -> String = { "" }
     private val librariesState = mutableIntStateOf(0)
-    private var librariesRaw: String? = null
+    private var librariesRuntime: List<StartLibraryItem>? = null
     private var librariesLoaded = false
     private fun librariesKey() = "startBibliotheken|" + serverKey()
     /** After an account or server switch: read the new server's choice. */
-    fun librariesNewRead() { librariesLoaded = false; librariesState.intValue++ }
+    fun librariesNewRead() { librariesLoaded = false; librariesRuntime = null; librariesState.intValue++ }
     /**
          * Libraries and collections as their own home rows, in the chosen order, per server
          * (`startLibraries|<server>`), as on Apple. Reading is tolerant: a missing key or a broken
@@ -138,27 +138,30 @@ class Settings(store: Store) {
     var startLibraries: List<StartLibraryItem>
         get() {
             librariesState.intValue
-            if (!librariesLoaded) { librariesRaw = a.rememberValue(librariesKey()); librariesLoaded = true }
-            return librariesRaw?.let { raw ->
-                runCatching { JSONArray(raw) }.getOrNull()?.let { j ->
-                    (0 until j.length()).mapNotNull { i ->
-                        val o = j.optJSONObject(i) ?: return@mapNotNull null
-                        val id = o.optString("id").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-                        StartLibraryItem(id, o.optString("name"), o.optBoolean("sammlung", false))
+            if (!librariesLoaded) {
+                librariesRuntime = a.rememberValue(librariesKey())?.let { raw ->
+                    runCatching { JSONArray(raw) }.getOrNull()?.let { j ->
+                        (0 until j.length()).mapNotNull { i ->
+                            val o = j.optJSONObject(i) ?: return@mapNotNull null
+                            val id = o.optString("id").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                            StartLibraryItem(id, "", o.optBoolean("sammlung", false))
+                        }
                     }
-                }
-            }?.distinctBy { it.id } ?: emptyList()
+                }?.distinctBy { it.id }
+                librariesLoaded = true
+            }
+            return librariesRuntime.orEmpty()
         }
         set(value) {
             val clean = value.filter { it.id.isNotEmpty() }.distinctBy { it.id }
-            val raw = JSONArray(clean.map { org.json.JSONObject().put("id", it.id).put("name", it.name).put("sammlung", it.collection) }).toString()
-            librariesRaw = raw; librariesLoaded = true
+            val raw = JSONArray(clean.map { org.json.JSONObject().put("id", it.id).put("sammlung", it.collection) }).toString()
+            librariesRuntime = clean; librariesLoaded = true
             a.remember(librariesKey(), raw)
             librariesState.intValue++
         }
     /** The stored choice as JSON for the core. */
     fun startLibrariesJson(): String = JSONArray(startLibraries.map {
-        org.json.JSONObject().put("id", it.id).put("name", it.name).put("sammlung", it.collection) }).toString()
+        org.json.JSONObject().put("id", it.id).put("sammlung", it.collection) }).toString()
     /** Genres as chips above the rows instead of as rows of their own; never both. */
     var genreChips by RememberValue(a, "genreChips", bool("genreChips", false), yesNo)
     /** Title as logo on movie and series pages (`titleAsLogo`); off by default. */
@@ -234,7 +237,7 @@ class Settings(store: Store) {
                 startLibraries = (0 until j.length()).mapNotNull { i ->
                     val o = j.optJSONObject(i) ?: return@mapNotNull null
                     val id = o.optString("id").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-                    StartLibraryItem(id, o.optString("name"), o.optBoolean("sammlung", false))
+                    StartLibraryItem(id, "", o.optBoolean("sammlung", false))
                 }
             }
         }
