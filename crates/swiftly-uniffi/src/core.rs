@@ -752,6 +752,8 @@ impl Core {
         genres: Vec<String>,
         as_chips: bool,
         libraries: String,
+        next_up_rewatching: bool,
+        next_up_max_days: i64,
     ) -> Result<String, CoreError> {
         let args = swiftly_vm::LegacyHomeArgs {
             disconnected,
@@ -762,6 +764,8 @@ impl Core {
             genres,
             as_chips,
             libraries: libraries.into_bytes(),
+            next_up_rewatching,
+            next_up_max_days,
         };
         let transport = Arc::new(self.transport.clone());
         Ok(swiftly_vm::legacy_home_json(&transport, &self.host(&locale)?, &account, &args).await?)

@@ -39,6 +39,19 @@ struct SettingsSyncTests {
         #expect(SubtitleLook.read(data) == look)
     }
 
+    @Test("Next-Up-Einstellungen reisen mit ihren Typen")
+    func nextUpPreferencesTravel() {
+        let values: [String: SettingsSync.Value] = [
+            "naechsteFolgeRewatching": .bool(false),
+            "naechsteFolgeTage": .int(0),
+        ]
+        let back = SettingsSync.remote(from: SettingsSync.fields(
+            for: values, changed: Date(timeIntervalSince1970: 5)))
+        #expect(back.values == values)
+        #expect(SettingsSync.entry(forDeviceKey: "naechsteFolgeRewatching")?.kind == .bool)
+        #expect(SettingsSync.entry(forDeviceKey: "naechsteFolgeTage")?.kind == .int)
+    }
+
     @Test("Fremde Schlüssel bleiben außen vor")
     func ignoresForeign() {
         let r = SettingsSync.remote(from: [

@@ -138,6 +138,8 @@ class AndroidSettingsStore(
         "tonSprache" to Kind.TEXT,
         "utSprache" to Kind.TEXT,
         "naechsteAuto" to Kind.BOOL,
+        "naechsteFolgeRewatching" to Kind.BOOL,
+        "naechsteFolgeTage" to Kind.INT,
         "utJeTitel" to Kind.MAP,
         "tonJeTitel" to Kind.MAP,
         "pufferstufe" to Kind.TEXT,

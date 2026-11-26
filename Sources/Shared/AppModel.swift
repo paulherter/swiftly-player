@@ -115,6 +115,17 @@ final class AppModel {
     /// `false` on first launch: `UserDefaults` returns `false` for an unknown key
     /// anyway, but this states the intent instead of relying on chance.
     var newAccessDisconnected: Bool { didSet { remember(newAccessDisconnected, "neuGetrennt") } }
+    var nextUpRewatching: Bool { didSet { remember(nextUpRewatching, "naechsteFolgeRewatching") } }
+    var nextUpMaxDays: Int {
+        didSet {
+            let bounded = max(0, min(1000, nextUpMaxDays))
+            if nextUpMaxDays != bounded {
+                nextUpMaxDays = bounded
+                return
+            }
+            remember(nextUpMaxDays, "naechsteFolgeTage")
+        }
+    }
 
     // MARK: Home page as desired
 
@@ -771,6 +782,9 @@ final class AppModel {
         // **Split is the default.** Whoever explicitly turned it off keeps that;
         // whoever never touched it gets the two rows.
         newAccessDisconnected = store.object(forKey: "neuGetrennt") as? Bool ?? true
+        nextUpRewatching = store.object(forKey: "naechsteFolgeRewatching") as? Bool ?? true
+        nextUpMaxDays = store.object(forKey: "naechsteFolgeTage") == nil ? 365
+            : max(0, min(1000, store.integer(forKey: "naechsteFolgeTage")))
         // **The computation lives in the package** (`StartRailsEpisode.applicable`): a
         // row that did not exist when stored is appended, and anything duplicated in
         // the stored list comes out once. A second version of the same computation used

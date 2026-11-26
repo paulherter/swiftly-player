@@ -209,6 +209,27 @@ struct PresentationView: View {
                           an: feed.binding("neuGetrennt"))
                     .row(handleSpace: true)
             }
+            if let row = feed.row("naechsteFolgeRewatching") {
+                ChoiceRow(symbol: SettingsRowsFeed.symbol(row.key), title: row.titleText,
+                          an: feed.binding(row.key))
+                    .row(handleSpace: true)
+            }
+            if let row = feed.row("naechsteFolgeTage") {
+                Menu {
+                    ForEach(feed.choices(row.key)) { choice in
+                        Button {
+                            feed.choose(row.key, choice.value)
+                        } label: {
+                            Text(verbatim: choice.label)
+                            if choice.selected { Image(icon: "checkmark") }
+                        }
+                    }
+                } label: {
+                    ValueRow(symbol: SettingsRowsFeed.symbol(row.key), title: row.titleText,
+                             value: feed.shown(row.key))
+                }
+                .row(handleSpace: true)
+            }
         } header: {
             Category(text: "Startseite")
         } footer: {

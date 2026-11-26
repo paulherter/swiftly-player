@@ -50,6 +50,28 @@ fn subtitle_look_travels_as_one_json_value() {
 }
 
 #[test]
+fn next_up_preferences_travel_with_their_types() {
+    let values = BTreeMap::from([
+        (
+            "naechsteFolgeRewatching".to_owned(),
+            SyncValue::Bool(false),
+        ),
+        ("naechsteFolgeTage".to_owned(), SyncValue::Int(0)),
+    ]);
+    let sent = fields_for(&values, 5);
+    let back = remote_from(&sent);
+    assert_eq!(back.values, values);
+    assert_eq!(
+        entry_for_device_key("naechsteFolgeRewatching").map(|e| e.kind),
+        Some(Kind::Bool)
+    );
+    assert_eq!(
+        entry_for_device_key("naechsteFolgeTage").map(|e| e.kind),
+        Some(Kind::Int)
+    );
+}
+
+#[test]
 fn foreign_keys_stay_outside() {
     let r = remote_from(&map(&[
         ("swiftly.vorSek", "45"),

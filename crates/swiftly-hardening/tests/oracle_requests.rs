@@ -320,7 +320,11 @@ fn requests_http() {
                 "next_series" => drop(client.next_episode_series(&id).await),
                 "episode_post" => drop(client.episode_post(&id, &sv(a, "series")).await),
                 "resume" => drop(client.resume_items(i(a, "limit").unwrap_or(20)).await),
-                "next_up" => drop(client.next_up(i(a, "limit").unwrap_or(20)).await),
+                "next_up" => drop(
+                    client
+                        .next_up(i(a, "limit").unwrap_or(20), true, "2025-11-26")
+                        .await,
+                ),
                 "newly" => drop(
                     client
                         .newly_joined(

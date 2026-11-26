@@ -1025,13 +1025,16 @@ public actor JellyfinClient {
         return await jeItemInTimes(try await send(req, as: ItemsResponse.self).items)
     }
 
-    /// The next unwatched episode of running series.
-    public func nextUp(limit: Int = 20) async throws -> [Item] {
+    /// The next episode of running series, with the same server-side limits as Jellyfin Web.
+    public func nextUp(limit: Int, enableRewatching: Bool, dateCutoff: String) async throws -> [Item] {
         let s = try requireSession()
         let req = try request("Shows/NextUp", query: [
             .init(name: "userId", value: s.userID),
             .init(name: "Limit", value: String(limit)),
             .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds"),
+            .init(name: "EnableRewatching", value: String(enableRewatching)),
+            .init(name: "EnableResumable", value: "false"),
+            .init(name: "NextUpDateCutoff", value: dateCutoff),
         ])
         // Across all libraries: once per work (``Items``).
         return await jeItemInTimes(try await send(req, as: ItemsResponse.self).items)

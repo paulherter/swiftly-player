@@ -147,7 +147,7 @@ struct StartLibrariesTests {
         var je: [String: [Item]] = [:]
         struct Route: Error {}
         func resumeItems(limit: Int) async throws -> [Item] { [] }
-        func nextUp(limit: Int) async throws -> [Item] { [] }
+        func nextUp(limit: Int, enableRewatching: Bool, dateCutoff: String) async throws -> [Item] { [] }
         func lastAdded(in library: String?, fetch: Int, showItem: Int) async -> [Item]? { [] }
         func title(genre: String, limit: Int) async -> [Item]? { [] }
         func libraries() async -> [Item]? { [] }

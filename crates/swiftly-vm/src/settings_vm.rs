@@ -801,6 +801,7 @@ impl<S: KeyValueStore + 'static> Inner<S> {
         match key {
             "zurueckSek" => self.put(&keys::ZURUECK_SEK, number()?, fx),
             "vorSek" => self.put(&keys::VOR_SEK, number()?, fx),
+            "naechsteFolgeTage" => self.put(&keys::NAECHSTE_FOLGE_TAGE, number()?, fx),
             "bitratenGrenze" => {
                 self.put_server(&keys::BITRATEN_GRENZE, &live.context.server, number()?, fx)
             }
@@ -1203,12 +1204,35 @@ impl<S: KeyValueStore + 'static> Inner<S> {
             ],
             if chips { "chips" } else { "rails" },
         );
+        let next_up_rows = || {
+            let days = self.get(&keys::NAECHSTE_FOLGE_TAGE).clamp(0, 1000);
+            vec![
+                self.switch(
+                    "naechsteFolgeRewatching",
+                    "Wiederholungen in „Nächste Folge“",
+                    None,
+                    self.get(&keys::NAECHSTE_FOLGE_REWATCHING),
+                ),
+                self.choice(
+                    "naechsteFolgeTage",
+                    "Maximale Tage in „Nächste Folge“",
+                    [0, 7, 30, 90, 180, 365, 1000]
+                        .into_iter()
+                        .map(|n| ChoiceOption {
+                            value: n.to_string(),
+                            label: self.translator.plural("%lld Tage", n, &[]),
+                        })
+                        .collect(),
+                    &days.to_string(),
+                ),
+            ]
+        };
         if desk {
             // The Mac has the groups "Startseite" (the rows, on or off, in the stored order), "Neuzugänge" and
             // "Genres" (`AppearanceView.swift`).
             let disconnected = self.get(&keys::NEU_GETRENNT);
             let off = self.get(&keys::START_AUS);
-            let rows: Vec<Row> = self
+            let mut rows: Vec<Row> = self
                 .home_order(c)
                 .iter()
                 .filter_map(|id| {
@@ -1230,11 +1254,14 @@ impl<S: KeyValueStore + 'static> Inner<S> {
                     ))
                 })
                 .collect();
+            rows.extend(next_up_rows());
             out.push(self.section("Startseite", rows));
             out.push(self.section("Neuzugänge", vec![separate]));
             out.push(self.section("Genres", vec![form]));
         } else {
-            out.push(self.section("Startseite", vec![separate, form]));
+            let mut rows = vec![separate, form];
+            rows.extend(next_up_rows());
+            out.push(self.section("Startseite", rows));
         }
 
         if tv {
@@ -1402,6 +1429,7 @@ fn bool_key(name: &str) -> Option<&'static Key<bool>> {
         "askProfileAtLaunch" => &keys::ASK_PROFILE_AT_LAUNCH,
         "nurUeberWLAN" => &keys::NUR_UEBER_WLAN,
         "naechsteFolgeLaden" => &keys::NAECHSTE_FOLGE_LADEN,
+        "naechsteFolgeRewatching" => &keys::NAECHSTE_FOLGE_REWATCHING,
         "einstellungenSync" => &keys::EINSTELLUNGEN_SYNC,
         "leereSerienAusblenden" => &keys::LEERE_SERIEN_AUSBLENDEN,
         "loeschenSperren" => &keys::LOESCHEN_SPERREN,
@@ -1416,6 +1444,7 @@ fn known_key(name: &str) -> bool {
             name,
             "immerDirectPlay"
                 | "naechsteAuto"
+                | "naechsteFolgeTage"
                 | "downloadsAn"
                 | "zurueckSek"
                 | "vorSek"
@@ -2056,6 +2085,49 @@ mod tests {
             vm.send(SettingsIntent::ConfirmDisableDownloads { delete: false }),
             Err(Rejected::NotAllowed)
         );
+    }
+
+    #[test]
+    fn next_up_preferences_are_persistent_and_clamped() {
+        let (vm, _, store) = vm_with(SettingsContext::default());
+        assert!(on(&vm, "naechsteFolgeRewatching"));
+        let RowControl::Choice {
+            selected, options, ..
+        } = &row(&vm, "naechsteFolgeTage").unwrap().control
+        else {
+            panic!()
+        };
+        assert_eq!(selected, "365");
+        assert_eq!(
+            options.iter().map(|o| o.value.as_str()).collect::<Vec<_>>(),
+            ["0", "7", "30", "90", "180", "365", "1000"]
+        );
+
+        vm.send(SettingsIntent::SetSwitch {
+            key: "naechsteFolgeRewatching".into(),
+            on: false,
+        })
+        .unwrap();
+        vm.send(SettingsIntent::SetChoice {
+            key: "naechsteFolgeTage".into(),
+            value: "30".into(),
+        })
+        .unwrap();
+        assert_eq!(store.get_bool("naechsteFolgeRewatching"), Some(false));
+        assert_eq!(store.get_int("naechsteFolgeTage"), Some(30));
+
+        for (stored, expected) in [(-1, "0"), (1001, "1000")] {
+            store
+                .set("naechsteFolgeTage", swiftly_settings::Value::Int(stored))
+                .unwrap();
+            vm.send(SettingsIntent::Reload).unwrap();
+            let RowControl::Choice { selected, .. } =
+                &row(&vm, "naechsteFolgeTage").unwrap().control
+            else {
+                panic!()
+            };
+            assert_eq!(selected, expected);
+        }
     }
 
     #[test]

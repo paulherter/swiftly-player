@@ -17,8 +17,13 @@ pub trait HomePageSource: Send + Sync {
     /// Started titles (`resumeItems`, throws).
     fn resume_items(&self, limit: i64)
     -> impl Future<Output = Result<Vec<Item>, ErrorKind>> + Send;
-    /// Next unwatched episodes (`nextUp`, throws).
-    fn next_up(&self, limit: i64) -> impl Future<Output = Result<Vec<Item>, ErrorKind>> + Send;
+    /// Next episodes (`nextUp`, throws), optionally including watched ones and limited by the series' last watched date.
+    fn next_up(
+        &self,
+        limit: i64,
+        enable_rewatching: bool,
+        date_cutoff: &str,
+    ) -> impl Future<Output = Result<Vec<Item>, ErrorKind>> + Send;
     /// Recently added titles of a library (`library` `None`: all), mixed movies and episodes.
     fn last_added(
         &self,
@@ -116,6 +121,12 @@ pub struct LoadRequest {
     pub genres: Option<Vec<String>>,
     /// What was last in "continue watching".
     pub until_from_continue_watching: Vec<Item>,
+    /// Include already watched episodes in Next Up.
+    pub next_up_rewatching: bool,
+    /// Maximum age in days of a series' last watched episode in Next Up.
+    pub next_up_max_days: i64,
+    /// Host wall-clock time in seconds since 1970, used for the Next Up cutoff.
+    pub now: f64,
 }
 
 impl LoadRequest {
@@ -128,7 +139,18 @@ impl LoadRequest {
             series_library: None,
             genres: None,
             until_from_continue_watching: Vec::new(),
+            next_up_rewatching: true,
+            next_up_max_days: 365,
+            now: 0.0,
         }
+    }
+    /// Sets the Next Up preferences and the host-clock time of this load.
+    #[must_use]
+    pub fn next_up(mut self, rewatching: bool, max_days: i64, now: f64) -> Self {
+        self.next_up_rewatching = rewatching;
+        self.next_up_max_days = max_days;
+        self.now = now;
+        self
     }
     /// Sets the movie library, dropping the pseudo values.
     #[must_use]
@@ -148,6 +170,33 @@ fn library(stored: Option<&str>) -> Option<String> {
     stored
         .filter(|s| !["", "alle", "sammlungen", "wiedergabelisten"].contains(s))
         .map(String::from)
+}
+
+/// The `NextUpDateCutoff` for a host-clock timestamp in seconds since 1970 and a number of days.
+/// The stored number is clamped to the range supported by Jellyfin Web, including an explicit zero.
+#[must_use]
+pub fn next_up_date_cutoff(now: f64, max_days: i64) -> String {
+    let seconds = if now.is_finite() { now.floor() } else { 0.0 };
+    let today = (seconds as i64).div_euclid(86_400);
+    let cutoff = today.saturating_sub(max_days.clamp(0, 1000));
+    let (year, month, day) = civil_from_days(cutoff);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    let z = days.saturating_add(719_468);
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let mut year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    if month <= 2 {
+        year += 1;
+    }
+    (year, month, day)
 }
 
 /// `HomeLoader` namespace.
@@ -354,9 +403,14 @@ impl HomeLoader {
     /// side; the genre rows are fetched afterwards from `wish.genres`.
     pub async fn load(source: &impl HomePageSource, wish: &LoadRequest) -> Home {
         let disconnected = wish.disconnected;
+        let date_cutoff = next_up_date_cutoff(wish.now, wish.next_up_max_days);
         let (begun, next, shared, movies, series_list) = join5(
             async { source.resume_items(20).await },
-            async { source.next_up(20).await },
+            async {
+                source
+                    .next_up(20, wish.next_up_rewatching, &date_cutoff)
+                    .await
+            },
             async {
                 if disconnected {
                     None
@@ -439,6 +493,7 @@ pub(crate) mod testing {
         pub series_list: HashMap<String, Vec<Item>>,
         pub latest: HashMap<String, Vec<Item>>,
         pub log: Mutex<Vec<String>>,
+        pub next_up_calls: Mutex<Vec<(bool, String)>>,
     }
 
     impl Source {
@@ -459,7 +514,16 @@ pub(crate) mod testing {
         async fn resume_items(&self, _limit: i64) -> Result<Vec<Item>, ErrorKind> {
             self.proceed.clone().ok_or(ErrorKind::Cancelled)
         }
-        async fn next_up(&self, _limit: i64) -> Result<Vec<Item>, ErrorKind> {
+        async fn next_up(
+            &self,
+            _limit: i64,
+            enable_rewatching: bool,
+            date_cutoff: &str,
+        ) -> Result<Vec<Item>, ErrorKind> {
+            self.next_up_calls
+                .lock()
+                .unwrap()
+                .push((enable_rewatching, date_cutoff.to_owned()));
             self.next.clone().ok_or(ErrorKind::Cancelled)
         }
         async fn last_added(&self, library: Option<&str>, _f: i64, _s: i64) -> Option<Vec<Item>> {
@@ -532,6 +596,40 @@ mod tests {
     }
     fn run(q: &Source, wish: &LoadRequest) -> Home {
         block_on(HomeLoader::load(q, wish))
+    }
+
+    #[test]
+    fn next_up_cutoff_covers_the_supported_days() {
+        let now = 1_795_651_200.0; // 2026-11-26 00:00:00 UTC
+        for (days, expected) in [
+            (0, "2026-11-26"),
+            (7, "2026-11-19"),
+            (365, "2025-11-26"),
+            (1000, "2024-03-01"),
+        ] {
+            assert_eq!(next_up_date_cutoff(now, days), expected);
+        }
+    }
+
+    #[test]
+    fn next_up_cutoff_crosses_months_years_and_leap_day_and_clamps() {
+        assert_eq!(next_up_date_cutoff(1_704_067_200.0, 7), "2023-12-25");
+        assert_eq!(next_up_date_cutoff(1_709_251_200.0, 1), "2024-02-29");
+        assert_eq!(next_up_date_cutoff(1_795_651_200.0, -1), "2026-11-26");
+        assert_eq!(next_up_date_cutoff(1_795_651_200.0, 1001), "2024-03-01");
+    }
+
+    #[test]
+    fn next_up_receives_rewatching_and_cutoff() {
+        let q = Source::base();
+        run(
+            &q,
+            &LoadRequest::new(false).next_up(false, 7, 1_795_651_200.0),
+        );
+        assert_eq!(
+            q.next_up_calls.lock().unwrap().as_slice(),
+            [(false, "2026-11-19".to_owned())]
+        );
     }
 
     #[test]

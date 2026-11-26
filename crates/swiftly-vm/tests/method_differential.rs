@@ -432,7 +432,7 @@ fn every_client_method_equals_the_swift_golden() {
                 Err(_) => json!("ERR"),
             },
         );
-        let raw = c.next_up(20).await;
+        let raw = c.next_up(20, true, "2025-11-26").await;
         put(
             "next_up",
             match raw {

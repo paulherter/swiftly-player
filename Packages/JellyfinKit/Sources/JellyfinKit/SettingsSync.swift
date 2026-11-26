@@ -61,6 +61,8 @@ public enum SettingsSync {
         .init(name: "utAuto", kind: .bool, perServer: false),
         .init(name: "utAussehen", kind: .json, perServer: false),
         .init(name: "naechsteAuto", kind: .bool, perServer: false),
+        .init(name: "naechsteFolgeRewatching", kind: .bool, perServer: false),
+        .init(name: "naechsteFolgeTage", kind: .int, perServer: false),
         .init(name: "introAbspannAuto", kind: .bool, perServer: false),
         .init(name: "restzeitAlsEnde", kind: .bool, perServer: false),
         .init(name: "vorSek", kind: .int, perServer: false),

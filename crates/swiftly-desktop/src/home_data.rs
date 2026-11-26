@@ -262,10 +262,12 @@ pub fn wait_settled(vm: &HomeVm<crate::net::AppTransport>) {
 pub fn live_fingerprint(w: &crate::live::Wiring) -> String {
     let p = live_prefs(w);
     format!(
-        "{}|{}|{:?}|{:?}|{:?}|{:?}",
+        "{}|{}|{:?}|{}|{}|{:?}|{:?}|{:?}",
         p.disconnected,
         p.genre_chips,
         p.start_genres,
+        p.next_up_rewatching,
+        p.next_up_max_days,
         live_hidden(w),
         live_order(w),
         live_libraries(w)
@@ -281,11 +283,21 @@ fn live_prefs(w: &crate::live::Wiring) -> HomePrefs {
         Some(Value::StrList(g)) => g,
         _ => Vec::new(),
     };
+    let next_up_rewatching = !matches!(
+        store.get("naechsteFolgeRewatching"),
+        Some(Value::Bool(false))
+    );
+    let next_up_max_days = match store.get("naechsteFolgeTage") {
+        Some(Value::Int(days)) => days.clamp(0, 1000),
+        _ => 365,
+    };
     HomePrefs {
         // Together by default? No: `neuGetrennt` is on by default (separate rows), as the core key says.
         disconnected: !matches!(store.get("neuGetrennt"), Some(Value::Bool(false))),
         genre_chips: chips,
         start_genres: genres,
+        next_up_rewatching,
+        next_up_max_days,
     }
 }
 
@@ -359,6 +371,7 @@ mod chips_tests {
             disconnected: true,
             genre_chips: chips,
             start_genres: genres.iter().map(|g| (*g).to_owned()).collect(),
+            ..HomePrefs::default()
         }
     }
 

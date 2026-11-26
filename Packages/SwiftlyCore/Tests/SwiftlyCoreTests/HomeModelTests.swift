@@ -256,7 +256,8 @@ func eventuallyOnMain(_ condition: @MainActor () -> Bool) async -> Bool {
         let server = try await FixtureServer.start()
         defer { server.stop() }
         let genres = (1...9).map { "Genre\($0)" }
-        let prefs = HomePrefs(disconnected: false, genreChips: false, startGenres: genres)
+        let prefs = HomePrefs(disconnected: false, genreChips: false, startGenres: genres,
+                              nextUpRewatching: true, nextUpMaxDays: 365)
         let vm = try makeCore().homeVmWith(account: account(server), locale: "de", prefs: prefs)
         vm.send(intent: .load)
         let firstLoad = try await untilReady(vm)

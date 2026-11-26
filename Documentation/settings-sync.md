@@ -31,6 +31,8 @@ Every key is `swiftly.` plus the name below. Values are text.
 | `utAuto` | `true`/`false` | subtitles automatically |
 | `utAussehen` | JSON object | subtitle look: `{"size": "small\|normal\|large\|huge", "colour": "white\|yellow\|grey", "outline": "off\|thin\|normal", "shadow": false, "background": false, "position": "bottom\|raised", "keepFileStyle": true}`; a missing or unknown field reads as its default (`SubtitleLook`) |
 | `naechsteAuto` | `true`/`false` | next episode automatically (only present once chosen in the app) |
+| `naechsteFolgeRewatching` | `true`/`false` | include already watched episodes in Next Up |
+| `naechsteFolgeTage` | integer 0 to 1000 | maximum age in days of a series' last watched episode in Next Up |
 | `introAbspannAuto` | `true`/`false` | skip intro and credits automatically |
 | `restzeitAlsEnde` | `true`/`false` | show the end time instead of the time left |
 | `vorSek` | integer 0 to 3600 | seconds forward |

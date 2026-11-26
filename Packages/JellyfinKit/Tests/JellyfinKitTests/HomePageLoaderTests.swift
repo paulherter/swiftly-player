@@ -16,7 +16,7 @@ struct HomePageLoaderTests {
         func resumeItems(limit: Int) async throws -> [Item] {
             guard let proceed else { throw Route() }; return proceed
         }
-        func nextUp(limit: Int) async throws -> [Item] {
+        func nextUp(limit: Int, enableRewatching: Bool, dateCutoff: String) async throws -> [Item] {
             guard let next else { throw Route() }; return next
         }
         func lastAdded(in library: String?, fetch: Int, showItem: Int) async -> [Item]? {
@@ -39,6 +39,18 @@ struct HomePageLoaderTests {
     }
 
     private func t(_ id: String) -> Item { Item(id: id, name: id) }
+
+    @Test("Next-Up-Abgrenzung klemmt und rechnet kalendergenau")
+    func nextUpCutoff() {
+        let now = Date(timeIntervalSince1970: 1_795_651_200)
+        #expect(HomeLoader.nextUpDateCutoff(now: now, maxDays: 0) == "2026-11-26")
+        #expect(HomeLoader.nextUpDateCutoff(now: now, maxDays: 7) == "2026-11-19")
+        #expect(HomeLoader.nextUpDateCutoff(now: now, maxDays: 365) == "2025-11-26")
+        #expect(HomeLoader.nextUpDateCutoff(now: now, maxDays: 1000) == "2024-03-01")
+        #expect(HomeLoader.nextUpDateCutoff(now: now, maxDays: -1) == "2026-11-26")
+        #expect(HomeLoader.nextUpDateCutoff(now: now, maxDays: 1001) == "2024-03-01")
+        #expect(HomeLoader.nextUpDateCutoff(now: Date(timeIntervalSince1970: 1_709_251_200), maxDays: 1) == "2024-02-29")
+    }
 
     @Test("Was in Weiterschauen steht, fehlt in Nächste Folge")
     func nextWithoutStarted() async {

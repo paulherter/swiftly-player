@@ -28,6 +28,7 @@ struct PresentationView: View {
 
     /// What the dragged row is currently hovering over; the line goes there.
     @State private var over: String?
+    @State private var nextUpDaysOpen = false
     /// The Seerr sections of the Startseite list: the same keys the core and the Start page read.
     @AppStorage(SeerrArrival.hintKey) private var arrivalOn = true
     @AppStorage(SeerrArrival.requestsKey) private var requestsOn = false
@@ -160,6 +161,19 @@ struct PresentationView: View {
                                accent: true, arrow: true, hoverable: true)
                 }
                 .buttonStyle(Theme.PressRow())
+                SheetLine().padding(.leading, Theme.separatorInsetCard)
+                switchRow("naechsteFolgeRewatching", "arrow.counterclockwise")
+                if feed.row("naechsteFolgeTage") != nil {
+                    SheetLine().padding(.leading, Theme.separatorInsetCard)
+                    ValuesRow(symbol: "calendar", title: feed.title("naechsteFolgeTage"),
+                              value: feed.shown("naechsteFolgeTage"), arrow: true,
+                              action: { nextUpDaysOpen.toggle() })
+                    if nextUpDaysOpen {
+                        ValuesList(entries: feed.choices("naechsteFolgeTage"), label: { $0.label },
+                                   isSelected: { $0.selected },
+                                   select: { feed.choose("naechsteFolgeTage", $0.value); nextUpDaysOpen = false })
+                    }
+                }
             }
             Footer(text: "Zum Umsortieren eine Zeile ziehen oder mit dem Kontextmenü verschieben.")
 

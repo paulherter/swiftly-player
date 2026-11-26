@@ -282,7 +282,9 @@ enum ShadowHome {
                 disconnected: model.newAccessDisconnected,
                 filmLibrary: model.startLibrary(art: "movies")?.id,
                 seriesLibrary: model.startLibrary(art: "tvshows")?.id,
-                genres: nil, untilFromContinueWatching: []))
+                genres: nil, untilFromContinueWatching: [],
+                nextUpRewatching: model.nextUpRewatching,
+                nextUpMaxDays: model.nextUpMaxDays))
         let swift: [String: [Item]?] = [
             "continueWatching": old.continueWatching, "nextEpisode": old.nextEpisode, "recent": old.recent,
             "newMovies": old.newMovies, "newSeries": old.newSeries,

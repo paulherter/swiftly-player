@@ -1393,7 +1393,7 @@ public protocol CoreProtocol: AnyObject, Sendable {
      * Compose code has always parsed (`Kern.home`): all rails with all their tiles. Same loader
      * and text rules as `HomeVm`; the Android adapter returns this string unchanged.
      */
-    func legacyHome(account: AccountRef, locale: String, disconnected: Bool, stored: [String], hidden: [String], filmLibrary: String, seriesLibrary: String, genres: [String], asChips: Bool, libraries: String) async throws  -> String
+    func legacyHome(account: AccountRef, locale: String, disconnected: Bool, stored: [String], hidden: [String], filmLibrary: String, seriesLibrary: String, genres: [String], asChips: Bool, libraries: String, nextUpRewatching: Bool, nextUpMaxDays: Int64) async throws  -> String
     
     /**
      * The library section state of an account (`sectionOffering`, `sectionPage`, collections, playlists), as the old
@@ -2157,12 +2157,12 @@ open func legacyGenres(account: AccountRef, locale: String)async throws  -> Stri
      * Compose code has always parsed (`Kern.home`): all rails with all their tiles. Same loader
      * and text rules as `HomeVm`; the Android adapter returns this string unchanged.
      */
-open func legacyHome(account: AccountRef, locale: String, disconnected: Bool, stored: [String], hidden: [String], filmLibrary: String, seriesLibrary: String, genres: [String], asChips: Bool, libraries: String)async throws  -> String  {
+open func legacyHome(account: AccountRef, locale: String, disconnected: Bool, stored: [String], hidden: [String], filmLibrary: String, seriesLibrary: String, genres: [String], asChips: Bool, libraries: String, nextUpRewatching: Bool, nextUpMaxDays: Int64)async throws  -> String  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_swiftly_uniffi_fn_method_core_legacy_home(
-                        self.uniffiCloneHandle(),FfiConverterTypeAccountRef_lower(account),FfiConverterString.lower(locale),FfiConverterBool.lower(disconnected),FfiConverterSequenceString.lower(stored),FfiConverterSequenceString.lower(hidden),FfiConverterString.lower(filmLibrary),FfiConverterString.lower(seriesLibrary),FfiConverterSequenceString.lower(genres),FfiConverterBool.lower(asChips),FfiConverterString.lower(libraries)
+                        self.uniffiCloneHandle(),FfiConverterTypeAccountRef_lower(account),FfiConverterString.lower(locale),FfiConverterBool.lower(disconnected),FfiConverterSequenceString.lower(stored),FfiConverterSequenceString.lower(hidden),FfiConverterString.lower(filmLibrary),FfiConverterString.lower(seriesLibrary),FfiConverterSequenceString.lower(genres),FfiConverterBool.lower(asChips),FfiConverterString.lower(libraries),FfiConverterBool.lower(nextUpRewatching),FfiConverterInt64.lower(nextUpMaxDays)
                 )
             },
             pollFunc: ffi_swiftly_uniffi_rust_future_poll_rust_buffer,
@@ -31860,13 +31860,17 @@ public struct HomePrefs: Equatable, Hashable {
     public var disconnected: Bool
     public var genreChips: Bool
     public var startGenres: [String]
+    public var nextUpRewatching: Bool
+    public var nextUpMaxDays: Int64
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(disconnected: Bool, genreChips: Bool, startGenres: [String]) {
+    public init(disconnected: Bool, genreChips: Bool, startGenres: [String], nextUpRewatching: Bool, nextUpMaxDays: Int64) {
         self.disconnected = disconnected
         self.genreChips = genreChips
         self.startGenres = startGenres
+        self.nextUpRewatching = nextUpRewatching
+        self.nextUpMaxDays = nextUpMaxDays
     }
 
     
@@ -31887,7 +31891,9 @@ public struct FfiConverterTypeHomePrefs: FfiConverterRustBuffer {
             try HomePrefs(
                 disconnected: FfiConverterBool.read(from: &buf), 
                 genreChips: FfiConverterBool.read(from: &buf), 
-                startGenres: FfiConverterSequenceString.read(from: &buf)
+                startGenres: FfiConverterSequenceString.read(from: &buf), 
+                nextUpRewatching: FfiConverterBool.read(from: &buf), 
+                nextUpMaxDays: FfiConverterInt64.read(from: &buf)
         )
     }
 
@@ -31895,6 +31901,8 @@ public struct FfiConverterTypeHomePrefs: FfiConverterRustBuffer {
         FfiConverterBool.write(value.disconnected, into: &buf)
         FfiConverterBool.write(value.genreChips, into: &buf)
         FfiConverterSequenceString.write(value.startGenres, into: &buf)
+        FfiConverterBool.write(value.nextUpRewatching, into: &buf)
+        FfiConverterInt64.write(value.nextUpMaxDays, into: &buf)
     }
 }
 
@@ -79939,7 +79947,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_swiftly_uniffi_checksum_method_core_legacy_genres() != 42439) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_swiftly_uniffi_checksum_method_core_legacy_home() != 57623) {
+    if (uniffi_swiftly_uniffi_checksum_method_core_legacy_home() != 40694) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_core_legacy_library() != 5315) {

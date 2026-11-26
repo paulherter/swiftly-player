@@ -6,7 +6,7 @@ import Foundation
 /// without any change.
 public protocol HomePageSource: Sendable {
     func resumeItems(limit: Int) async throws -> [Item]
-    func nextUp(limit: Int) async throws -> [Item]
+    func nextUp(limit: Int, enableRewatching: Bool, dateCutoff: String) async throws -> [Item]
     func lastAdded(in library: String?, fetch: Int, showItem: Int) async -> [Item]?
     func title(genre: String, limit: Int) async -> [Item]?
     /// The account's libraries, or `nil` if the fetch failed.
@@ -107,6 +107,9 @@ public enum HomeLoader {
         /// What was last in “continue watching”. If the new fetch fails,
         /// “next up” filters against this state.
         public var untilFromContinueWatching: [Item]
+        public var nextUpRewatching: Bool
+        public var nextUpMaxDays: Int
+        public var now: Date
 
         private static func library(_ stored: String?) -> String? {
             guard let stored, !["", "alle", "sammlungen", "wiedergabelisten"].contains(stored) else { return nil }
@@ -114,7 +117,8 @@ public enum HomeLoader {
         }
 
         public init(disconnected: Bool, filmLibrary: String? = nil, seriesLibrary: String? = nil,
-                    genres: [String]? = nil, untilFromContinueWatching: [Item] = []) {
+                    genres: [String]? = nil, untilFromContinueWatching: [Item] = [],
+                    nextUpRewatching: Bool = true, nextUpMaxDays: Int = 365, now: Date = Date()) {
             self.disconnected = disconnected
             // The section choice also stores "All", "Collections" and "Playlists" under the
             // library name; none of them is a library, so the row asks every library.
@@ -122,7 +126,22 @@ public enum HomeLoader {
             self.seriesLibrary = Self.library(seriesLibrary)
             self.genres = genres
             self.untilFromContinueWatching = untilFromContinueWatching
+            self.nextUpRewatching = nextUpRewatching
+            self.nextUpMaxDays = nextUpMaxDays
+            self.now = now
         }
+    }
+
+    public static func nextUpDateCutoff(now: Date, maxDays: Int) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let cutoff = calendar.date(byAdding: .day, value: -max(0, min(1000, maxDays)), to: now) ?? now
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: cutoff)
     }
 
     /// **The genre rows on their own.** Apple shows the fixed rows immediately and the
@@ -270,7 +289,9 @@ public enum HomeLoader {
 
     public static func load(from source: some HomePageSource, _ wish: LoadRequest) async -> Home {
         async let begun = try? source.resumeItems(limit: 20)
-        async let next = try? source.nextUp(limit: 20)
+        async let next = try? source.nextUp(
+            limit: 20, enableRewatching: wish.nextUpRewatching,
+            dateCutoff: nextUpDateCutoff(now: wish.now, maxDays: wish.nextUpMaxDays))
         async let gemeinsam = wish.disconnected ? nil
             : source.lastAdded(in: nil, fetch: 200, showItem: 24)
         async let movies = wish.disconnected

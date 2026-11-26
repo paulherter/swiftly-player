@@ -613,8 +613,13 @@ impl<T: HttpTransport> HomePageSource for JellyfinClient<T> {
         let raw = JellyfinClient::resume_items(self, limit).await?;
         Ok(items_in_times(self, &raw, false, None).await)
     }
-    async fn next_up(&self, limit: i64) -> Result<Vec<Item>, ErrorKind> {
-        let raw = JellyfinClient::next_up(self, limit).await?;
+    async fn next_up(
+        &self,
+        limit: i64,
+        enable_rewatching: bool,
+        date_cutoff: &str,
+    ) -> Result<Vec<Item>, ErrorKind> {
+        let raw = JellyfinClient::next_up(self, limit, enable_rewatching, date_cutoff).await?;
         Ok(items_in_times(self, &raw, false, None).await)
     }
     async fn last_added(

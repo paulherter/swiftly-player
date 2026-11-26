@@ -128,7 +128,7 @@ struct HomeView: View {
         // One `task`, not two. It carries both the run on appear and the one due when rows are
         // rearranged (toggling changes which rows exist, known only after a new query). A second,
         // plain `task` next to it made everything run twice on open.
-        .task(id: "\(model.newAccessDisconnected)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startLibraries.map(\.id).joined(separator: "|"))") {
+        .task(id: "\(model.newAccessDisconnected)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startLibraries.map(\.id).joined(separator: "|"))|\(model.nextUpRewatching)|\(model.nextUpMaxDays)") {
             // While an account switch runs it does the loading, not the return to the page that
             // coincides with it.
             let counter = model.accountSwitch

@@ -24,9 +24,9 @@ class SettingsSyncRun(private val app: SwiftlyApplication, private val run: Coro
         const val TIME = "einstellungenSyncZeit"
         const val ACCOUNT = "einstellungenSyncKonto"
         const val REMOTE = "einstellungenSyncServer"
-        val bools = listOf("utAuto", "naechsteAuto", "introAbspannAuto", "endzeitImPlayer", "titelAlsLogo", "fortschritt",
+        val bools = listOf("utAuto", "naechsteAuto", "naechsteFolgeRewatching", "introAbspannAuto", "endzeitImPlayer", "titelAlsLogo", "fortschritt",
                            "merklisteAn", "alphabetAn", "neuGetrennt", "genreChips")
-        val ints = listOf("vorSek", "zurueckSek")
+        val ints = listOf("vorSek", "zurueckSek", "naechsteFolgeTage")
         val texts = listOf("tonSprache", "utSprache")
         val lists = listOf("startReihen", "startAus", "startGenres")
         val names = texts + bools.take(4) + ints + bools.drop(4) + lists + "startBibliotheken" + "utAussehen"

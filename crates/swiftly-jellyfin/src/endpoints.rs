@@ -898,12 +898,20 @@ impl<T: HttpTransport> JellyfinClient<T> {
     }
 
     /// `GET Shows/NextUp` (:1024). Raw, like [`resume_items`](Self::resume_items).
-    pub async fn next_up(&self, limit: i64) -> Result<Vec<Item>, ErrorKind> {
+    pub async fn next_up(
+        &self,
+        limit: i64,
+        enable_rewatching: bool,
+        date_cutoff: &str,
+    ) -> Result<Vec<Item>, ErrorKind> {
         let s = self.require_session()?;
         let mut q = Query::new()
             .add("userId", &s.user_id)
             .add("Limit", limit)
-            .add("Fields", self.row_fields());
+            .add("Fields", self.row_fields())
+            .add("EnableRewatching", enable_rewatching)
+            .add("EnableResumable", false)
+            .add("NextUpDateCutoff", date_cutoff);
         self.lean_row(&mut q, true);
         Ok(self
             .send::<ItemsResponse>(self.get("Shows/NextUp", &q)?)

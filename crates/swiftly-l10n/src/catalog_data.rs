@@ -62,6 +62,7 @@ static ENTRIES: &[Entry] = &[
     Entry { key: "%lld Staffeln", origin: Origin::Both, langs: &[("de", Text::Plural(&[(C::One, "%lld Staffel"), (C::Other, "%lld Staffeln")])), ("en", Text::Plural(&[(C::One, "%lld season"), (C::Other, "%lld seasons")])), ("ru", Text::Plural(&[(C::One, "%lld сезон"), (C::Few, "%lld сезона"), (C::Many, "%lld сезонов"), (C::Other, "%lld сезона")]))] },
     Entry { key: "%lld Staffeln anfragen", origin: Origin::App, langs: &[("de", Text::Simple("%lld Staffeln anfragen")), ("en", Text::Simple("Request %lld seasons")), ("ru", Text::Plural(&[(C::One, "Запросить %lld сезон"), (C::Few, "Запросить %lld сезона"), (C::Many, "Запросить %lld сезонов"), (C::Other, "Запросить %lld сезона")]))] },
     Entry { key: "%lld Std. %lld Min.", origin: Origin::Both, langs: &[("de", Text::Simple("%lld Std. %lld Min.")), ("en", Text::Simple("%lld h %lld min")), ("ru", Text::Simple("%lld ч %lld мин"))] },
+    Entry { key: "%lld Tage", origin: Origin::App, langs: &[("de", Text::Plural(&[(C::One, "%lld Tag"), (C::Other, "%lld Tage")])), ("en", Text::Plural(&[(C::One, "%lld day"), (C::Other, "%lld days")])), ("ru", Text::Plural(&[(C::One, "%lld день"), (C::Few, "%lld дня"), (C::Many, "%lld дней"), (C::Other, "%lld дня")]))] },
     Entry { key: "%lld Titel", origin: Origin::App, langs: &[("de", Text::Plural(&[(C::One, "%lld Titel"), (C::Other, "%lld Titel")])), ("en", Text::Plural(&[(C::One, "%lld title"), (C::Other, "%lld titles")])), ("ru", Text::Plural(&[(C::One, "%lld тайтл"), (C::Few, "%lld тайтла"), (C::Many, "%lld тайтлов"), (C::Other, "%lld тайтла")]))] },
     Entry { key: "%lld Titel auf diesem Gerät", origin: Origin::App, langs: &[("de", Text::Simple("%lld Titel auf diesem Gerät")), ("en", Text::Simple("%lld titles on this device")), ("ru", Text::Plural(&[(C::One, "%lld тайтл на этом устройстве"), (C::Few, "%lld тайтла на этом устройстве"), (C::Many, "%lld тайтлов на этом устройстве"), (C::Other, "%lld тайтла на этом устройстве")]))] },
     Entry { key: "%lld Titel auf diesem Mac", origin: Origin::App, langs: &[("de", Text::Simple("%lld Titel auf diesem Mac")), ("en", Text::Simple("%lld titles on this Mac")), ("ru", Text::Plural(&[(C::One, "%lld тайтл на этом Mac"), (C::Few, "%lld тайтла на этом Mac"), (C::Many, "%lld тайтлов на этом Mac"), (C::Other, "%lld тайтла на этом Mac")]))] },
@@ -807,6 +808,7 @@ static ENTRIES: &[Entry] = &[
     Entry { key: "Mai", origin: Origin::App, langs: &[("de", Text::Simple("Mai")), ("en", Text::Simple("May")), ("ru", Text::Simple("мая"))] },
     Entry { key: "Manchmal ist es nur ein Buchstabe.", origin: Origin::App, langs: &[("de", Text::Simple("Manchmal ist es nur ein Buchstabe.")), ("en", Text::Simple("Sometimes it’s just one letter.")), ("ru", Text::Simple("Иногда дело всего в одной букве."))] },
     Entry { key: "Matroska", origin: Origin::App, langs: &[("de", Text::Simple("Matroska")), ("en", Text::Simple("Matroska")), ("ru", Text::Simple("Matroska"))] },
+    Entry { key: "Maximale Tage in „Nächste Folge“", origin: Origin::App, langs: &[("de", Text::Simple("Maximale Tage in „Nächste Folge“")), ("en", Text::Simple("Maximum days in Next Up")), ("ru", Text::Simple("Максимум дней в «Следующем эпизоде»"))] },
     Entry { key: "Mediathek scannen", origin: Origin::App, langs: &[("de", Text::Simple("Mediathek scannen")), ("en", Text::Simple("Scan library")), ("ru", Text::Simple("Сканировать медиатеку"))] },
     Entry { key: "Mehr", origin: Origin::App, langs: &[("de", Text::Simple("Mehr")), ("en", Text::Simple("More")), ("ru", Text::Simple("Ещё"))] },
     Entry { key: "Mehr Folgen", origin: Origin::App, langs: &[("de", Text::Simple("Mehr Folgen")), ("en", Text::Simple("More episodes")), ("ru", Text::Simple("Ещё серии"))] },
@@ -1284,6 +1286,7 @@ static ENTRIES: &[Entry] = &[
     Entry { key: "Wiedergabelisten", origin: Origin::App, langs: &[("de", Text::Simple("Wiedergabelisten")), ("en", Text::Simple("Playlists")), ("ru", Text::Simple("Плейлисты"))] },
     Entry { key: "Wiedergaben", origin: Origin::App, langs: &[("de", Text::Simple("Wiedergaben")), ("en", Text::Simple("Now playing")), ("ru", Text::Simple("Сейчас смотрят"))] },
     Entry { key: "Wiederherstellen", origin: Origin::App, langs: &[("de", Text::Simple("Wiederherstellen")), ("en", Text::Simple("Restore")), ("ru", Text::Simple("Восстановить"))] },
+    Entry { key: "Wiederholungen in „Nächste Folge“", origin: Origin::App, langs: &[("de", Text::Simple("Wiederholungen in „Nächste Folge“")), ("en", Text::Simple("Rewatching in Next Up")), ("ru", Text::Simple("Повторные просмотры в «Следующем эпизоде»"))] },
     Entry { key: "Wir bauen Swiftly ohne Werbung und ohne Tracking. Wenn es deine Abende besser macht, hilft uns ein Kaffee, weiterzumachen.", origin: Origin::App, langs: &[("de", Text::Simple("Wir bauen Swiftly ohne Werbung und ohne Tracking. Wenn es deine Abende besser macht, hilft uns ein Kaffee, weiterzumachen.")), ("en", Text::Simple("We build Swiftly without ads or tracking. If it makes your evenings better, a coffee helps us keep going.")), ("ru", Text::Simple("Мы делаем Swiftly без рекламы и слежки. Если с ним ваши вечера стали лучше, чашка кофе поможет нам продолжать."))] },
     Entry { key: "Wird abgelehnt…", origin: Origin::App, langs: &[("de", Text::Simple("Wird abgelehnt…")), ("en", Text::Simple("Declining…")), ("ru", Text::Simple("Отклоняется…"))] },
     Entry { key: "Wird angefragt…", origin: Origin::App, langs: &[("de", Text::Simple("Wird angefragt…")), ("en", Text::Simple("Requesting…")), ("ru", Text::Simple("Отправка запроса…"))] },
@@ -1459,9 +1462,9 @@ static INFO_PLIST: &[Entry] = &[
 ];
 
 static STATS: &[SourceStat] = &[
-    SourceStat { source: "Localizable.xcstrings", lang: "de", keys: 1352 },
-    SourceStat { source: "Localizable.xcstrings", lang: "en", keys: 1352 },
-    SourceStat { source: "Localizable.xcstrings", lang: "ru", keys: 1352 },
+    SourceStat { source: "Localizable.xcstrings", lang: "de", keys: 1355 },
+    SourceStat { source: "Localizable.xcstrings", lang: "en", keys: 1355 },
+    SourceStat { source: "Localizable.xcstrings", lang: "ru", keys: 1355 },
     SourceStat { source: "InfoPlist.xcstrings", lang: "de", keys: 3 },
     SourceStat { source: "InfoPlist.xcstrings", lang: "en", keys: 3 },
     SourceStat { source: "InfoPlist.xcstrings", lang: "ru", keys: 3 },

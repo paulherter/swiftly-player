@@ -81,7 +81,7 @@ pub struct HomeRun {
 }
 
 /// The settings a step reads (`model.newAccessDisconnected`, `genreChips`, `startGenres`).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct HomePrefs {
     /// New movies and new series separately.
     pub disconnected: bool,
@@ -89,6 +89,22 @@ pub struct HomePrefs {
     pub genre_chips: bool,
     /// The chosen genres, in order.
     pub start_genres: Vec<String>,
+    /// Include already watched episodes in Next Up.
+    pub next_up_rewatching: bool,
+    /// Maximum age in days of a series' last watched episode in Next Up.
+    pub next_up_max_days: i64,
+}
+
+impl Default for HomePrefs {
+    fn default() -> Self {
+        Self {
+            disconnected: false,
+            genre_chips: false,
+            start_genres: Vec::new(),
+            next_up_rewatching: true,
+            next_up_max_days: 365,
+        }
+    }
 }
 
 /// What the home page shows and how it loads it (`HomeModel`).
@@ -933,6 +949,7 @@ mod tests {
             disconnected: true,
             genre_chips: false,
             start_genres: vec!["Horror".into(), "Fehlt".into()],
+            ..HomePrefs::default()
         };
         let Step::Continue(cmds) = s.store_read(run, 0, Some(&store), &prefs) else {
             panic!()

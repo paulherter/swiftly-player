@@ -361,6 +361,8 @@ extension AppModel {
             case ("utAuto", .bool(let b)): subtitleAutomatic = b
             case ("utAussehen", .json(let d)): subtitleLook = SubtitleLook.read(d)
             case ("naechsteAuto", .bool(let b)): nextAutomatic = b
+            case ("naechsteFolgeRewatching", .bool(let b)): nextUpRewatching = b
+            case ("naechsteFolgeTage", .int(let i)): nextUpMaxDays = i
             case ("vorSek", .int(let i)): forwardSeconds = i
             case ("zurueckSek", .int(let i)): backSeconds = i
             case ("fortschritt", .bool(let b)): progressOnTiles = b

@@ -9,6 +9,8 @@ const NAMES: &[(&str, &str)] = &[
     ("utAuto", "bool"),
     ("utAussehen", "json"),
     ("naechsteAuto", "bool"),
+    ("naechsteFolgeRewatching", "bool"),
+    ("naechsteFolgeTage", "int"),
     ("introAbspannAuto", "bool"),
     ("restzeitAlsEnde", "bool"),
     ("vorSek", "int"),
