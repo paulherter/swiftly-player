@@ -168,6 +168,12 @@ fn twenty_sample_round_trips() {
         ),
         ("ru", "%@ in %@", vec!["A".into(), "B".into()], "A в B"),
         ("en", "%@ in %@", vec!["A".into(), "B".into()], "A in B"),
+        (
+            "ru",
+            "Noch %lld Min.",
+            vec![12.into()],
+            "Осталось 12 мин.",
+        ),
     ];
     for (lang, key, args, want) in cases {
         let got = tr(lang).t_args(key, &args);
