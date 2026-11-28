@@ -40,7 +40,7 @@ Status is one of `in progress`, `not started` or `done`. The app collects no dat
 | SP-005 | 1 | Subtitles | Subtitles are sharp and always appear when selected. | not started |
 | SP-006 | 1 | Subtitles | Subtitles that follow each other directly show without a gap or flicker in between. | not started |
 | SP-007 | 1 | Reliability | Leaving the player while a downloaded film plays offline and other downloads are running no longer crashes. | not started |
-| SP-008 | 1 | Apple TV | Autoplay stops when the Apple TV goes to sleep, so it no longer starts the next episode and wakes the TV. | not started |
+| SP-008 | 1 | Apple TV | Autoplay stops when the Apple TV goes to sleep, so it no longer starts the next episode and wakes the TV. Autoplay also stops after three episodes in a row without anyone there, on every platform. | not started |
 | SP-009 | 1 | Apple TV | Sound from another app does not start again inside Swiftly Player after an episode ends. | not started |
 | SP-010 | 1 | Android | The Next Episode button starts the episode and does not mark it as watched. | not started |
 | SP-011 | 1 | Android | Opening a large series no longer crashes on Android TV devices with little memory. | not started |
