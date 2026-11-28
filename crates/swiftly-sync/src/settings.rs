@@ -161,12 +161,14 @@ impl SettingsSync {
     pub const SEERR_CHANGED_KEY: &'static str = "swiftly.seerrChanged";
 
     /// The synced keys (same list and order as Swift).
-    pub const ENTRIES: [Entry; 22] = [
+    pub const ENTRIES: [Entry; 24] = [
         e!("tonSprache", Text, false),
         e!("utSprache", Text, false),
         e!("utAuto", Bool, false),
         e!("utAussehen", Json, false),
         e!("naechsteAuto", Bool, false),
+        e!("naechsteFolgeRewatching", Bool, false),
+        e!("naechsteFolgeTage", Int, false),
         e!("introAbspannAuto", Bool, false),
         e!("restzeitAlsEnde", Bool, false),
         e!("vorSek", Int, false),

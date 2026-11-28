@@ -24,7 +24,7 @@ use crate::tile::Words;
 use crate::title_text::{TitleText, resume_from};
 
 /// What `Kern.home` was given.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct LegacyHomeArgs {
     pub disconnected: bool,
     /// The stored rail order (names).
@@ -37,6 +37,25 @@ pub struct LegacyHomeArgs {
     pub as_chips: bool,
     /// The stored choice of own library rows (JSON of `StartLibraries`).
     pub libraries: Vec<u8>,
+    pub next_up_rewatching: bool,
+    pub next_up_max_days: i64,
+}
+
+impl Default for LegacyHomeArgs {
+    fn default() -> Self {
+        Self {
+            disconnected: false,
+            stored: Vec::new(),
+            from: Vec::new(),
+            film_library: String::new(),
+            series_library: String::new(),
+            genres: Vec::new(),
+            as_chips: false,
+            libraries: Vec::new(),
+            next_up_rewatching: true,
+            next_up_max_days: 365,
+        }
+    }
 }
 
 /// `TileResponse`.
@@ -271,7 +290,12 @@ async fn home_with(
     let none_if_empty = |s: &str| (!s.is_empty()).then(|| s.to_owned());
     let mut wish = LoadRequest::new(args.disconnected)
         .film_library(none_if_empty(&args.film_library).as_deref())
-        .series_library(none_if_empty(&args.series_library).as_deref());
+        .series_library(none_if_empty(&args.series_library).as_deref())
+        .next_up(
+            args.next_up_rewatching,
+            args.next_up_max_days,
+            host.clock.now(),
+        );
     wish.genres = (!args.as_chips).then(|| args.genres.clone());
     let (library_state, state) =
         futures_util::future::join(library_rails, HomeLoader::load(client, &wish)).await;

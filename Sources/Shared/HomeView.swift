@@ -150,7 +150,7 @@ struct HomeView: View {
         // `.task { if !state.loaded … }`; both ran on appearing, the second still saw
         // `loaded` as false and fetched all rows a second time (two runs in the same
         // millisecond).
-        .task(id: "\(model.newAccessDisconnected)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startLibraries.map(\.id).joined(separator: "|"))") {
+        .task(id: "\(model.newAccessDisconnected)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startLibraries.map(\.id).joined(separator: "|"))|\(model.nextUpRewatching)|\(model.nextUpMaxDays)") {
             // If an account switch is running, it does the loading, not the return to the
             // page that coincides with it (otherwise it would fetch the old account again).
             let counter = model.accountSwitch

@@ -100,7 +100,7 @@ public protocol MediaServer: AnyObject, Sendable, HomePageSource {
     func search(_ term: String, limit: Int) async throws -> [Item]
     func genres() async throws -> [String]
     func resumeItems(limit: Int) async throws -> [Item]
-    func nextUp(limit: Int) async throws -> [Item]
+    func nextUp(limit: Int, enableRewatching: Bool, dateCutoff: String) async throws -> [Item]
     func lastAdded(in library: String?, fetch: Int, showItem: Int, genres: String) async -> [Item]?
     func playlistEntries(_ playlist: String, lean: Bool) async throws -> [Item]
     func playlistDirectory() async throws -> PlaylistDirectory
@@ -183,7 +183,10 @@ public extension MediaServer {
         try await search(term, limit: limit)
     }
     func resumeItems(limit: Int = 20) async throws -> [Item] { try await resumeItems(limit: limit) }
-    func nextUp(limit: Int = 20) async throws -> [Item] { try await nextUp(limit: limit) }
+    func nextUp(limit: Int = 20) async throws -> [Item] {
+        try await nextUp(limit: limit, enableRewatching: true,
+                         dateCutoff: HomeLoader.nextUpDateCutoff(now: Date(), maxDays: 365))
+    }
     func lastAdded(in library: String? = nil, fetch: Int = 200, showItem: Int = 24,
                    genres: String = "Movie,Episode") async -> [Item]? {
         await lastAdded(in: library, fetch: fetch, showItem: showItem, genres: genres)

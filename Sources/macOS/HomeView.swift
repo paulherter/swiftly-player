@@ -324,7 +324,7 @@ struct HomeView: View {
         // Toggling it changes which rows exist at all, and that is only known after a
         // new request. Without this, users saw their own setting only on the next launch
         // and thought it had no effect.
-        .task(id: "\(model.newAccessDisconnected)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startLibraries.map(\.id).joined(separator: "|"))") {
+        .task(id: "\(model.newAccessDisconnected)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startLibraries.map(\.id).joined(separator: "|"))|\(model.nextUpRewatching)|\(model.nextUpMaxDays)") {
             // If an account switch is running, that one loads, not the appearance that
             // coincides with it (which would still fetch the old account).
             if AccountSwitchTransition.shared.waits { return }

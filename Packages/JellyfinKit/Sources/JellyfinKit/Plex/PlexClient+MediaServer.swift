@@ -133,7 +133,7 @@ extension PlexClient: MediaServer {
         try await continueWatching(limit: limit)
     }
 
-    public func nextUp(limit: Int = 20) async throws -> [Item] {
+    public func nextUp(limit: Int, enableRewatching: Bool, dateCutoff: String) async throws -> [Item] {
         try await onDeck(limit: limit)
     }
 

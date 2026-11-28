@@ -41,8 +41,13 @@ impl<S: HomePageSource> HomePageSource for ViewsOnce<'_, S> {
     ) -> impl Future<Output = Result<Vec<Item>, ErrorKind>> + Send {
         self.source.resume_items(limit)
     }
-    fn next_up(&self, limit: i64) -> impl Future<Output = Result<Vec<Item>, ErrorKind>> + Send {
-        self.source.next_up(limit)
+    fn next_up(
+        &self,
+        limit: i64,
+        enable_rewatching: bool,
+        date_cutoff: &str,
+    ) -> impl Future<Output = Result<Vec<Item>, ErrorKind>> + Send {
+        self.source.next_up(limit, enable_rewatching, date_cutoff)
     }
     fn last_added(
         &self,

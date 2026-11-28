@@ -351,6 +351,19 @@ fun PresentationPage(app: SwiftlyApplication, open: (Destination) -> Unit, back:
             SeparatorLine()
             ChoiceRow(Glyph.Shared, translated("Neuzugänge getrennt"), translated("Als eigene Reihen"),
                       e.newAccessDisconnected) { e.newAccessDisconnected = it }
+            SeparatorLine()
+            ChoiceRow(Glyph.Rewind, translated("Wiederholungen in „Nächste Folge“"), an = e.nextUpRewatching) {
+                e.nextUpRewatching = it
+            }
+            SeparatorLine()
+            val dayChoices = listOf(0, 7, 30, 90, 180, 365, 1000).map {
+                Choice(it.toString(), translated("%lld Tage", it))
+            }
+            ValueRow(Glyph.Clock, translated("Maximale Tage in „Nächste Folge“"),
+                     value = translated("%lld Tage", e.nextUpMaxDays)) {
+                app.sheet.value = SheetRequest(translated("Maximale Tage in „Nächste Folge“"), dayChoices,
+                    e.nextUpMaxDays.toString(), select = { e.nextUpMaxDays = it.toInt() })
+            }
         }
         Footer(translated("Zum Umsortieren an den Griffen rechts ziehen."))
 

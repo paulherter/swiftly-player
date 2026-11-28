@@ -366,7 +366,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
             withContext(Dispatchers.IO) {
                 app.rk.home(e.newAccessDisconnected, e.startRails.toTypedArray(), e.startOut.toTypedArray(),
                                     app.store.rememberValue("bibliothek-movies").orEmpty(), app.store.rememberValue("bibliothek-tvshows").orEmpty(),
-                                    e.startGenres.toTypedArray(), e.genreChips, e.startLibrariesJson()).await()
+                                    e.startGenres.toTypedArray(), e.genreChips, e.startLibrariesJson(), e.nextUpRewatching, e.nextUpMaxDays).await()
             }
         }.onSuccess { json ->
             // A reload the core started (`followListsStale`) never takes an answer that says the server is away: the rows stay.

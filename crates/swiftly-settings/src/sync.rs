@@ -64,12 +64,14 @@ const fn e(name: &'static str, kind: Kind, per_server: bool) -> Entry {
 /// The synced settings, in the order of `SettingsSync.entries` (`SettingsSync.swift:59-79`).
 /// **Per user and independent of the device, nothing else:** Wi-Fi only, volume, fill screen,
 /// buffer, counters, debug and everything about downloads stay on the device.
-pub const ENTRIES: [Entry; 22] = [
+pub const ENTRIES: [Entry; 24] = [
     e("tonSprache", Kind::Text, false),
     e("utSprache", Kind::Text, false),
     e("utAuto", Kind::Bool, false),
     e("utAussehen", Kind::Json, false),
     e("naechsteAuto", Kind::Bool, false),
+    e("naechsteFolgeRewatching", Kind::Bool, false),
+    e("naechsteFolgeTage", Kind::Int, false),
     e("introAbspannAuto", Kind::Bool, false),
     e("restzeitAlsEnde", Kind::Bool, false),
     e("vorSek", Kind::Int, false),

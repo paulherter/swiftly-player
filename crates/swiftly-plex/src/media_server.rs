@@ -533,7 +533,12 @@ impl<T: HttpTransport + 'static> HomePageSource for PlexClient<T> {
         self.continue_watching(limit).await.map_err(kind)
     }
 
-    async fn next_up(&self, limit: i64) -> Result<Vec<Item>, ErrorKind> {
+    async fn next_up(
+        &self,
+        limit: i64,
+        _enable_rewatching: bool,
+        _date_cutoff: &str,
+    ) -> Result<Vec<Item>, ErrorKind> {
         self.on_deck(limit).await.map_err(kind)
     }
 

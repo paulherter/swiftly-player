@@ -40,9 +40,9 @@ class LegacyPlexParityTest {
             } else if (old == new) null else "text old '${old.take(80)}' new '${new.take(80)}'"
             if (diff != null) failures += "$name: $diff"
         }
-        same("plex-home-default") { core.legacyHome(a, "en", false, listOf(), listOf(), "", "", listOf(), false, "") }
+        same("plex-home-default") { core.legacyHome(a, "en", false, listOf(), listOf(), "", "", listOf(), false, "", true, 365) }
         same("plex-home-genres") { core.legacyHome(a, "en", false, listOf(), listOf(), "", "", listOf("Drama"), false,
-            """[{"id":"1","name":"Filme","sammlung":false},{"id":"2","name":"Serien","sammlung":false}]""") }
+            """[{"id":"1","name":"Filme","sammlung":false},{"id":"2","name":"Serien","sammlung":false}]""", true, 365) }
         same("plex-library-movies") { core.legacyLibraryPage(a, "en", "1", "movies", "name", "alle", 0, 50) }
         same("plex-library-shows") { core.legacyLibraryPage(a, "en", "2", "tvshows", "name", "alle", 0, 50) }
         same("plex-library-unwatched") { core.legacyLibraryPage(a, "en", "1", "movies", "erscheinung", "ungesehen", 0, 50) }

@@ -47,6 +47,8 @@ pub struct HomePrefs {
     pub disconnected: bool,
     pub genre_chips: bool,
     pub start_genres: Vec<String>,
+    pub next_up_rewatching: bool,
+    pub next_up_max_days: i64,
 }
 
 #[uniffi::remote(Enum)]

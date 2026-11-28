@@ -118,6 +118,8 @@ class Settings(store: Store) {
     /** "Skip intro and outro automatically"; off by default (iOS: `introAbspannAuto`). The pick is in the core (`SectionLogic.automatic`). */
     var introOutroAutomatic by RememberValue(a, "introAbspannAuto", bool("introAbspannAuto", false), yesNo)
     var newAccessDisconnected by RememberValue(a, "neuGetrennt", bool("neuGetrennt", true), yesNo)
+    var nextUpRewatching by RememberValue(a, "naechsteFolgeRewatching", bool("naechsteFolgeRewatching", true), yesNo)
+    var nextUpMaxDays by RememberValue(a, "naechsteFolgeTage", figure("naechsteFolgeTage", 365).coerceIn(0, 1000)) { it.coerceIn(0, 1000).toString() }
     var startRails by RememberValue(a, "startReihen", list("startReihen"), asList)
     var startOut by RememberValue(a, "startAus", list("startAus"), asList)
     var startGenres by RememberValue(a, "startGenres", list("startGenres"), asList)
@@ -215,6 +217,8 @@ class Settings(store: Store) {
         bool("utAuto")?.let { subtitleAutomatic = it }
         values["utAussehen"]?.let { subtitleLook = KernRules.subtitleLookNormalise(it) }
         bool("naechsteAuto")?.let { nextAutomatic = it }
+        bool("naechsteFolgeRewatching")?.let { nextUpRewatching = it }
+        values["naechsteFolgeTage"]?.toIntOrNull()?.let { nextUpMaxDays = it.coerceIn(0, 1000) }
         bool("introAbspannAuto")?.let { introOutroAutomatic = it }
         bool("endzeitImPlayer")?.let { endTimeInPlayer = it }
         values["vorSek"]?.toIntOrNull()?.let { forwardSeconds = it }

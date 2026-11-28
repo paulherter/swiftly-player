@@ -248,6 +248,8 @@ final class SettingsRowsFeed {
         put(\.subtitleAutomatic, bool("utAuto") ?? automaticSubtitlesDefault())
         if let own = bool("naechsteAuto"), app.nextAutomatic != own { app.nextAutomatic = own }
         put(\.newAccessDisconnected, bool("neuGetrennt") ?? true)
+        put(\.nextUpRewatching, bool("naechsteFolgeRewatching") ?? true)
+        put(\.nextUpMaxDays, max(0, min(1000, int("naechsteFolgeTage") ?? 365)))
         put(\.genreChips, bool("genreChips") ?? false)
         put(\.bufferLevel, text("pufferstufe").flatMap(JellyfinKit.BufferLevel.init(rawValue:)) ?? .normal)
         put(\.backSeconds, int("zurueckSek") ?? 10)
@@ -273,6 +275,7 @@ final class SettingsRowsFeed {
         "leereSerienAusblenden": "rectangle.stack.badge.minus",
         "downloadsAn": "arrow.down.circle", "nurUeberWLAN": "wifi",
         "naechsteFolgeLaden": "play.square.stack", "downloadsSpeicher": "internaldrive",
+        "naechsteFolgeRewatching": "arrow.counterclockwise", "naechsteFolgeTage": "calendar",
         "eigeneHeader": "key", "seerr": "sparkle.magnifyingglass",
         "einstellungenSync": "arrow.triangle.2.circlepath", "loeschenSperren": "trash.slash",
     ]

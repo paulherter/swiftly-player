@@ -296,6 +296,8 @@ fn symbol(f: &Fm, key: &str) -> &'static str {
         "alphabetAn" => "text-abc",
         "titelAlsLogo" => "text-t",
         "neuGetrennt" => "columns",
+        "naechsteFolgeRewatching" => "arrow-counter-clockwise",
+        "naechsteFolgeTage" => "calendar-blank",
         "genreChips" => "rows",
         "downloadsAn" => "arrow-circle-down",
         "nurUeberWLAN" => "wifi-high",

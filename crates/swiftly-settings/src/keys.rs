@@ -69,6 +69,10 @@ keys! {
     UT_SPRACHE: String = "", "utSprache", Synced, "Sources/Shared/AppModel.swift:681";
     /// Next episode automatically; **unset** follows the account (`AppModel.swift:696`). Synced.
     NAECHSTE_AUTO: Option<bool> = (), "naechsteAuto", Synced, "Sources/Shared/AppModel.swift:696";
+    /// Include already watched episodes in Next Up. Synced.
+    NAECHSTE_FOLGE_REWATCHING: bool = true, "naechsteFolgeRewatching", Synced, "Sources/Shared/AppModel.swift:1 (new in Rust, no Swift key)";
+    /// Maximum age in days of a series' last watched episode in Next Up. Synced.
+    NAECHSTE_FOLGE_TAGE: i64 = 365, "naechsteFolgeTage", Synced, "Sources/Shared/AppModel.swift:1 (new in Rust, no Swift key)";
     /// Remembered subtitle choice per title (dictionary keyed by `account|seriesId ?? id`). The
     /// value shape is not documented (see NOTES.md); held as a string map.
     UT_JE_TITEL: Option<BTreeMap<String, String>> = (), "utJeTitel", Device, "Packages/JellyfinKit/Sources/JellyfinKit/TrackRule.swift:180";

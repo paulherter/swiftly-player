@@ -924,7 +924,11 @@ impl<T: HttpTransport + 'static> RunCtx<T> {
         };
         let (wish, names) = {
             let live = inner.live();
-            let mut wish = LoadRequest::new(prefs.disconnected);
+            let mut wish = LoadRequest::new(prefs.disconnected).next_up(
+                prefs.next_up_rewatching,
+                prefs.next_up_max_days,
+                inner.host.clock.now(),
+            );
             wish.until_from_continue_watching = live.state.continue_watching.clone();
             (wish, prefs.start_genres.clone())
         };

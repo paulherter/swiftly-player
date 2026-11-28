@@ -326,7 +326,7 @@ struct MethodDifferentialTests {
         await record("state_s1", &r) { try await c.stateInSeriesChecked("s1").map(Self.sig) }
         await record("state_none", &r) { try await c.stateInSeriesChecked("nope").map(Self.sig) }
         await record("resume", &r) { Self.sigs(try await c.resumeItems(limit: 20)) }
-        await record("next_up", &r) { Self.sigs(try await c.nextUp(limit: 20)) }
+        await record("next_up", &r) { Self.sigs(try await c.nextUp(limit: 20, enableRewatching: true, dateCutoff: "2025-11-26")) }
 
         // similar, extras, trailers
         let own = try await c.item(id: "m00")

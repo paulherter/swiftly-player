@@ -62,11 +62,19 @@ impl<S: HomePageSource> HomePageSource for FailFast<'_, S> {
         self.note(&answer);
         answer
     }
-    async fn next_up(&self, limit: i64) -> Result<Vec<Item>, ErrorKind> {
+    async fn next_up(
+        &self,
+        limit: i64,
+        enable_rewatching: bool,
+        date_cutoff: &str,
+    ) -> Result<Vec<Item>, ErrorKind> {
         if let Some(refused) = self.refused() {
             return Err(refused);
         }
-        let answer = self.source.next_up(limit).await;
+        let answer = self
+            .source
+            .next_up(limit, enable_rewatching, date_cutoff)
+            .await;
         self.note(&answer);
         answer
     }
@@ -158,7 +166,12 @@ mod tests {
             self.hit();
             self.resume.clone()
         }
-        async fn next_up(&self, _limit: i64) -> Result<Vec<Item>, ErrorKind> {
+        async fn next_up(
+            &self,
+            _limit: i64,
+            _enable_rewatching: bool,
+            _date_cutoff: &str,
+        ) -> Result<Vec<Item>, ErrorKind> {
             self.hit();
             Ok(Vec::new())
         }
@@ -201,7 +214,10 @@ mod tests {
         assert!(source.is_down());
         assert_eq!(inner.reached(), 1);
         // Every later call of the run is answered at once, with the same failure, without reaching the source.
-        assert_eq!(block_on(source.next_up(20)), Err(REFUSED));
+        assert_eq!(
+            block_on(source.next_up(20, true, "2025-11-26")),
+            Err(REFUSED)
+        );
         assert_eq!(block_on(source.last_added(None, 200, 24)), None);
         assert_eq!(block_on(source.title("Drama", 24)), None);
         assert_eq!(block_on(source.libraries()), None);
@@ -225,7 +241,10 @@ mod tests {
             let source = FailFast::new(&inner);
             assert!(block_on(source.resume_items(20)).is_err());
             assert!(!source.is_down());
-            assert_eq!(block_on(source.next_up(20)), Ok(Vec::new()));
+            assert_eq!(
+                block_on(source.next_up(20, true, "2025-11-26")),
+                Ok(Vec::new())
+            );
             assert_eq!(block_on(source.libraries()), Some(Vec::new()));
             assert_eq!(inner.reached(), 3);
         }

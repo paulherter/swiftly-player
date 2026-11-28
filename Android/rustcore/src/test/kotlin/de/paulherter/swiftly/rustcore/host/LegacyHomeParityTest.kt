@@ -34,7 +34,7 @@ class LegacyHomeParityTest {
         val core = Core(AndroidPlatform("Golden", null) {}, AndroidSecretStore(Mem, GcmSealer { SecretKeySpec(ByteArray(32), "AES") }),
             AndroidKeyValueStore(Mem), AndroidHttpClient())
         val account = AccountRef(url!!, "u1", "fixture-token", ServerKind.JELLYFIN, "golden-device")
-        val new = core.legacyHome(account, "en", disconnected, stored, hidden, film, series, genres, chips, libs)
+        val new = core.legacyHome(account, "en", disconnected, stored, hidden, film, series, genres, chips, libs, true, 365)
         File("/tmp/andscr-new-$name.json").writeText(new)
         assertNull(name, JsonParity.diff(File(golden!!, "$name.json").readText(), new))
     }

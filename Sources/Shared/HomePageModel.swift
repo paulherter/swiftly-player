@@ -177,7 +177,9 @@ final class HomeModel {
             filmLibrary: model.startLibrary(art: "movies")?.id,
             seriesLibrary: model.startLibrary(art: "tvshows")?.id,
             genres: nil,
-            untilFromContinueWatching: continueWatching))
+            untilFromContinueWatching: continueWatching,
+            nextUpRewatching: model.nextUpRewatching,
+            nextUpMaxDays: model.nextUpMaxDays))
         guard applies() else { return }
         // **Cancelled does not mean "server silent".** Otherwise all fetches would
         // count as `nil`: `loaded = true`, empty rows and "Nothing here yet" until
@@ -464,7 +466,8 @@ extension HomeModel {
         rustFeed = feed
         let prefs = HomePrefs(
             disconnected: model.newAccessDisconnected, genreChips: model.genreChips,
-            startGenres: model.startGenres)
+            startGenres: model.startGenres, nextUpRewatching: model.nextUpRewatching,
+            nextUpMaxDays: Int64(model.nextUpMaxDays))
         guard let home = try? feed.model(for: account, prefs: prefs) else {
             disrupted = true
             loaded = true

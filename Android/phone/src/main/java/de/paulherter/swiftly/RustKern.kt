@@ -285,8 +285,9 @@ class RustKern(private val app: SwiftlyApplication) {
     // ---- Home ----------------------------------------------------------------------------------------------------
 
     fun home(disconnected: Boolean, stored: Array<String>, from: Array<String>, filmLibrary: String, seriesLibrary: String,
-             genres: Array<String>, asChips: Boolean, libraries: String): CompletableFuture<String> =
-        acct({ c, a -> c.legacyHome(a, language, disconnected, stored.toList(), from.toList(), filmLibrary, seriesLibrary, genres.toList(), asChips, libraries) },
+             genres: Array<String>, asChips: Boolean, libraries: String, nextUpRewatching: Boolean, nextUpMaxDays: Int): CompletableFuture<String> =
+        acct({ c, a -> c.legacyHome(a, language, disconnected, stored.toList(), from.toList(), filmLibrary, seriesLibrary, genres.toList(), asChips, libraries,
+            nextUpRewatching, nextUpMaxDays.toLong()) },
             { noCore("home") })
 
     /**

@@ -567,6 +567,10 @@ struct ProfileView: View {
                       select: { model.startLibraries.append(StartLibrary($0)) })
             SeparatorLine()
             coreToggle("neuGetrennt", icon: "square.split.2x1")
+            SeparatorLine()
+            coreToggle("naechsteFolgeRewatching", icon: "arrow.counterclockwise")
+            SeparatorLine()
+            coreValueRow("naechsteFolgeTage", icon: "calendar")
             }
 
             // **One list, two forms.** Which genres is set once; whether they show as rows

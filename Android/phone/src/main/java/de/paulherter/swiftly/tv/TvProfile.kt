@@ -415,6 +415,16 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                 SeparatorLine()
                             }
                             TvToggleRow(translated("Neuzugänge getrennt"), e.newAccessDisconnected, Glyph.Shared) { e.newAccessDisconnected = !e.newAccessDisconnected }
+                            SeparatorLine()
+                            TvToggleRow(translated("Wiederholungen in „Nächste Folge“"), e.nextUpRewatching, Glyph.Rewind) {
+                                e.nextUpRewatching = !e.nextUpRewatching
+                            }
+                            SeparatorLine()
+                            TvValueRow(translated("Maximale Tage in „Nächste Folge“"), Glyph.Clock,
+                                translated("%lld Tage", e.nextUpMaxDays), opened, setOpened, reportRow,
+                                listOf(0, 7, 30, 90, 180, 365, 1000).map {
+                                    Choice(it.toString(), translated("%lld Tage", it))
+                                }, e.nextUpMaxDays.toString()) { e.nextUpMaxDays = it.toInt() }
                             }
                             TvGroup(translated("Bibliotheken und Sammlungen")) {
                             TvValueRow(translated("Bibliothek hinzufügen"), Glyph.Plus, if (freeLibraries.isEmpty()) translated("Keins offen") else "",

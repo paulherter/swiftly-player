@@ -641,7 +641,7 @@ fn shelves_come_from_their_plex_routes() {
     let (c, stub) = healthy();
     let resume = block_on(HomePageSource::resume_items(&c, 12)).expect("resume");
     assert_eq!(ids(&resume), ["5"]);
-    let deck = block_on(HomePageSource::next_up(&c, 7)).expect("deck");
+    let deck = block_on(HomePageSource::next_up(&c, 7, false, "1900-01-01")).expect("deck");
     assert_eq!(ids(&deck), ["6"]);
     let r = stub.requests();
     assert_eq!(
@@ -666,7 +666,7 @@ fn shelf_failures_are_error_kinds_or_none() {
         500
     ));
     assert_eq!(
-        block_on(HomePageSource::next_up(&c, 5)).unwrap_err(),
+        block_on(HomePageSource::next_up(&c, 5, true, "9999-12-31")).unwrap_err(),
         ErrorKind::NotAuthenticated
     );
     assert!(block_on(HomePageSource::libraries(&c)).is_none());

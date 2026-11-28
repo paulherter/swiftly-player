@@ -746,10 +746,10 @@ fn home_rows() {
         &last(&c),
         "https://tv.example.de/UserItems/Resume?userId=u1&Limit=20&Fields=Overview,PrimaryImageAspectRatio,ProviderIds&MediaTypes=Video",
     );
-    block_on(c.next_up(20)).expect("ok"); // :1024
+    block_on(c.next_up(20, true, "2025-11-26")).expect("ok"); // :1024
     assert_get(
         &last(&c),
-        "https://tv.example.de/Shows/NextUp?userId=u1&Limit=20&Fields=Overview,PrimaryImageAspectRatio,ProviderIds",
+        "https://tv.example.de/Shows/NextUp?userId=u1&Limit=20&Fields=Overview,PrimaryImageAspectRatio,ProviderIds&EnableRewatching=true&EnableResumable=false&NextUpDateCutoff=2025-11-26",
     );
     block_on(c.newly_joined(None, 20, false, "Movie,Episode")).expect("ok"); // :1073
     assert_get(
@@ -820,7 +820,11 @@ fn emby_user_bound_paths_on_the_wire() {
     assert_eq!(last(&c).url.path(), "/Users/u1/FavoriteItems/9");
     block_on(c.set_watched("9", false)).expect("ok");
     assert_eq!(last(&c).url.path(), "/Users/u1/PlayedItems/9");
-    block_on(c.next_up(5)).expect("ok");
+    block_on(c.next_up(5, false, "2026-11-19")).expect("ok");
+    assert_get(
+        &last(&c),
+        "https://tv.example.de/Shows/NextUp?userId=u1&Limit=5&Fields=Overview,PrimaryImageAspectRatio,ProviderIds&EnableRewatching=false&EnableResumable=false&NextUpDateCutoff=2026-11-19",
+    );
     assert_eq!(last(&c).url.path(), "/Shows/NextUp", "unchanged");
 }
 
