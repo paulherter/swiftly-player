@@ -481,7 +481,18 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
             &collections,
             &StartLibraries::read(Some(selected.as_bytes())),
         );
-        json(&free.iter().map(StartLibrary::from_item).collect::<Vec<_>>())
+        let offered: Vec<serde_json::Value> = free
+            .iter()
+            .map(|item| {
+                let library = StartLibrary::from_item(item);
+                serde_json::json!({
+                    "id": library.id,
+                    "name": library.name,
+                    "sammlung": library.collection,
+                })
+            })
+            .collect();
+        json(&offered)
     }
 
     pub async fn section_offering(&self, art: &str, remembered: &str) -> Result<String, ErrorKind> {

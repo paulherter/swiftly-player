@@ -414,7 +414,8 @@ fn chosen_libraries_are_rails_after_the_fixed_ones_and_default_prefs_have_none()
     vm.send(HomeIntent::Load);
     until(vm, "ready", common::ready);
     let rails = vm.rails();
-    // The fixed rows first, then the chosen library, titled with its stored name; it reuses the genre kind.
+    // The fixed rows first, then the chosen library, titled with its freshly resolved name.
+    assert_eq!(vm.start_libraries()[0].item().name, "Filme aktuell");
     assert_eq!(
         rails
             .rails
@@ -425,7 +426,7 @@ fn chosen_libraries_are_rails_after_the_fixed_ones_and_default_prefs_have_none()
             "Weiterschauen",
             "Nächste Folge",
             "Zuletzt hinzugefügt",
-            "Meine Filme"
+            "Filme aktuell"
         ]
     );
     let lib = rails.rails.last().unwrap();
@@ -443,6 +444,16 @@ fn chosen_libraries_are_rails_after_the_fixed_ones_and_default_prefs_have_none()
             .unwrap()
             .iter()
             .any(|r| r.url.as_str().contains("ParentId=lib-1"))
+    );
+    assert_eq!(
+        rig.net
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r.url.as_str().contains("Ids=lib-1"))
+            .count(),
+        1
     );
 }
 
@@ -475,7 +486,7 @@ fn one_stored_order_places_fixed_and_library_rows_together() {
     assert_eq!(
         titles(vm),
         [
-            "Meine Filme",
+            "Filme aktuell",
             "Zuletzt hinzugefügt",
             "Weiterschauen",
             "Nächste Folge"
@@ -489,7 +500,7 @@ fn one_stored_order_places_fixed_and_library_rows_together() {
             "Weiterschauen",
             "Nächste Folge",
             "Zuletzt hinzugefügt",
-            "Meine Filme"
+            "Filme aktuell"
         ]
     );
 }

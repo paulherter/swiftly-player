@@ -372,6 +372,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
             // A reload the core started (`followListsStale`) never takes an answer that says the server is away: the rows stay.
             if (quiet && de.paulherter.swiftly.homeDisturbed(json)) return@onSuccess
             val answered = railsRead(json)
+            adoptResolvedLibraryNames(e, answered)
             val why = de.paulherter.swiftly.homeFailure(json)
             // **A silent server over rows that are already there**: an answer that says "no answer" has no rows of its own, and
             // taking it blanked the page. The rows stay (as on tvOS) and the notice stands above them.

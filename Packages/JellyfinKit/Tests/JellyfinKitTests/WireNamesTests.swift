@@ -50,8 +50,8 @@ import Testing
     @Test("A start library keeps `sammlung`")
     func startLibrary() throws {
         let library = try decode(StartLibrary.self, #"{"id":"a","name":"Filme","sammlung":true}"#)
-        #expect(library.collection)
-        #expect(try keys(library) == ["id", "name", "sammlung"])
+        #expect(library.name.isEmpty && library.collection)
+        #expect(try keys(library) == ["id", "sammlung"])
     }
 
     @Test("A Seerr season keeps `nummer`, `folgen` and `stand`")

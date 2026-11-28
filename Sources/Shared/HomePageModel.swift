@@ -40,6 +40,16 @@ final class HomeModel {
         return choice.compactMap { je[$0.id] }
     }
 
+    private func adoptLibraryNames(_ model: AppModel) {
+        for rail in libraryRails where !rail.name.isEmpty {
+            guard let at = model.startLibraries.firstIndex(where: { $0.id == rail.id }),
+                  model.startLibraries[at].name != rail.name else { continue }
+            let old = model.startLibraries[at]
+            model.startLibraries[at] = StartLibrary(id: old.id, name: rail.name,
+                                                    collection: old.collection)
+        }
+    }
+
     struct GenreRail: Identifiable {
         let name: String
         let items: [Item]
@@ -234,6 +244,7 @@ final class HomeModel {
             guard applies() else { return }
             if !freshOnes.isEmpty || change || choice.isEmpty { libraryRails = freshOnes }
         }
+        adoptLibraryNames(model)
         // **Not on TV.** Prefetching fills the cache that
         // `SeriesCache.series(fuer:with:)` reads - and only iPhone, iPad and Mac do
         // that, on the way from an episode to its series. tvOS goes via
@@ -482,6 +493,7 @@ extension HomeModel {
         await viewsLoad?.value
         guard applies(), !Task.isCancelled else { return }
         adoptRust(home, itAccount)
+        adoptLibraryNames(model)
         if home.status.status == .ready {
             lastLoaded = Date()
             loadedServer = true

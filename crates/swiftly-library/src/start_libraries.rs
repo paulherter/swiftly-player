@@ -8,16 +8,24 @@ use swiftly_model::Item;
 
 use crate::list_rules::ListRules;
 
-/// A library or collection the user pulled onto the home page (:7-34). Both id and name are
-/// remembered. Serialised keys are `id`, `name`, `sammlung` (already in sorted order).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// The comparison form of a Jellyfin id, insensitive to dash formatting and casing.
+pub fn normalized_id(id: &str) -> String {
+    crate::list_rules::canon(id)
+        .chars()
+        .filter(|c| *c != '-')
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// A library or collection the user pulled onto the home page (:7-34). Only the stable selection
+/// is persisted; the name is resolved from the server for each Home load.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartLibrary {
     /// Library or collection id.
     pub id: String,
-    /// Name, kept so the settings can name the row while the server is silent.
+    /// Current runtime name, empty until the server resolves it.
     pub name: String,
     /// A collection (`BoxSet`) instead of a library.
-    #[serde(rename = "sammlung")]
     pub collection: bool,
 }
 
@@ -52,10 +60,9 @@ impl StartLibrary {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct Record {
     id: Option<String>,
-    name: Option<String>,
     sammlung: Option<bool>,
 }
 
@@ -76,8 +83,8 @@ impl StartLibraries {
     }
 
     /// Reads a stored choice. Never fails: missing or damaged storage means "no rows". An
-    /// entry without an id is skipped; a wrongly typed field fails the whole list, as in
-    /// Swift (:60-68).
+    /// entry without an id is skipped; a wrongly typed `id` or `sammlung` fails the whole list.
+    /// Legacy `name` fields are ignored.
     pub fn read(data: Option<&[u8]>) -> Vec<StartLibrary> {
         let Some(data) = data else { return Vec::new() };
         let Ok(raw) = serde_json::from_slice::<Vec<Record>>(data) else {
@@ -89,7 +96,7 @@ impl StartLibraries {
                     let id = e.id?;
                     Some(StartLibrary {
                         id,
-                        name: e.name.unwrap_or_default(),
+                        name: String::new(),
                         collection: e.sammlung.unwrap_or(false),
                     })
                 })
@@ -101,7 +108,14 @@ impl StartLibraries {
     /// choices give equal text (:73-77).
     pub fn data(choice: &[StartLibrary]) -> Option<Vec<u8>> {
         // Foundation's JSONEncoder writes `/` as `\/`; equal text across platforms keeps the sync quiet.
-        let text = serde_json::to_string(&Self::clean(choice)).ok()?;
+        let records: Vec<Record> = Self::clean(choice)
+            .into_iter()
+            .map(|library| Record {
+                id: Some(library.id),
+                sammlung: Some(library.collection),
+            })
+            .collect();
+        let text = serde_json::to_string(&records).ok()?;
         Some(text.replace('/', "\\/").into_bytes())
     }
 
@@ -147,29 +161,43 @@ mod tests {
         assert!(StartLibraries::read(Some(b"kaputt")).is_empty());
     }
     #[test]
-    fn entry_without_name_keeps_the_choice() {
+    fn legacy_names_load_but_are_not_authoritative() {
         let d = br#"[{"id":"a"},{"name":"ohne Kennung"},{"id":"b","name":"B"},{"id":"a","name":"doppelt"}]"#;
-        let ids: Vec<String> = StartLibraries::read(Some(d))
-            .into_iter()
-            .map(|l| l.id)
-            .collect();
-        assert_eq!(ids, ["a", "b"]);
+        let libraries = StartLibraries::read(Some(d));
+        assert_eq!(
+            libraries,
+            [
+                StartLibrary::new("a", "", false),
+                StartLibrary::new("b", "", false),
+            ]
+        );
+        assert_eq!(
+            String::from_utf8(StartLibraries::data(&libraries).unwrap_or_default())
+                .unwrap_or_default(),
+            r#"[{"id":"a","sammlung":false},{"id":"b","sammlung":false}]"#
+        );
     }
     #[test]
     fn write_and_read_round_trip() {
         let w = [
             StartLibrary::new("x", "Filme", false),
-            StartLibrary::new("y", "Marvel", false),
+            StartLibrary::new("y", "Marvel", true),
         ];
         let data = StartLibraries::data(&w);
-        assert_eq!(StartLibraries::read(data.as_deref()), w);
+        assert_eq!(
+            StartLibraries::read(data.as_deref()),
+            [
+                StartLibrary::new("x", "", false),
+                StartLibrary::new("y", "", true),
+            ]
+        );
     }
     #[test]
     fn keys_are_sorted_and_stable() {
         let w = [StartLibrary::new("x", "Filme", true)];
         let text =
             String::from_utf8(StartLibraries::data(&w).unwrap_or_default()).unwrap_or_default();
-        assert_eq!(text, r#"[{"id":"x","name":"Filme","sammlung":true}]"#);
+        assert_eq!(text, r#"[{"id":"x","sammlung":true}]"#);
     }
     #[test]
     fn pick_leaves_out_the_chosen() {

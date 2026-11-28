@@ -11,6 +11,8 @@ public protocol HomePageSource: Sendable {
     func title(genre: String, limit: Int) async -> [Item]?
     /// The account's libraries, or `nil` if the fetch failed.
     func libraries() async -> [Item]?
+    /// Current items for a batch of ids, or `nil` if the fetch failed.
+    func itemsByIDs(_ ids: [String]) async -> [Item]?
     /// New additions across all libraries, only of this kind (`Movie`, `Episode`).
     func newArrivals(genre: String, fetch: Int, showItem: Int) async -> [Item]?
     /// The most recently updated **series** themselves (`IncludeItemTypes=Series`);
@@ -27,6 +29,7 @@ public protocol HomePageSource: Sendable {
 public extension HomePageSource {
     var mergesLibraries: Bool { false }
     func latestTitle(in library: String, collection: Bool, showItem: Int) async -> [Item]? { nil }
+    func itemsByIDs(_ ids: [String]) async -> [Item]? { nil }
 }
 
 extension JellyfinClient: HomePageSource {
@@ -39,6 +42,9 @@ extension JellyfinClient: HomePageSource {
                          includeItemTypes: ["Movie", "Series", "Video"]).items
     }
     public func libraries() async -> [Item]? { try? await userViews() }
+    public func itemsByIDs(_ ids: [String]) async -> [Item]? {
+        try? await items(limit: ids.count, ids: ids).items
+    }
     public func lastAdded(in library: String?, fetch: Int, showItem: Int) async -> [Item]? {
         await lastAdded(in: library, fetch: fetch, showItem: showItem, genres: "Movie,Episode")
     }
@@ -51,6 +57,12 @@ extension JellyfinClient: HomePageSource {
         try? await items(parentID: library, limit: showItem,
                          sortBy: "DateLastContentAdded", sortOrder: "Descending",
                          recursive: true, includeItemTypes: ["Series"]).items
+    }
+}
+
+extension PlexClient {
+    public func itemsByIDs(_ ids: [String]) async -> [Item]? {
+        try? await items(limit: ids.count, ids: ids).items
     }
 }
 
@@ -148,6 +160,23 @@ public enum HomeLoader {
         }
     }
 
+    /// Resolves current selections in one request. Missing items drop out; an empty server name
+    /// never replaces a known runtime name.
+    public static func resolveLibraries(from source: some HomePageSource,
+                                        choice: [StartLibrary]) async -> [StartLibrary]? {
+        let choice = StartLibraries.clean(choice)
+        if choice.isEmpty { return [] }
+        guard let fetched = await source.itemsByIDs(choice.map(\.id)) else { return nil }
+        let byID = Dictionary(fetched.map { (StartLibraries.normalizedID($0.id), $0) },
+                              uniquingKeysWith: { first, _ in first })
+        return choice.compactMap { library in
+            guard let item = byID[StartLibraries.normalizedID(library.id)] else { return nil }
+            let name = item.name.isEmpty ? library.name : item.name
+            return name.isEmpty ? nil : StartLibrary(id: library.id, name: name,
+                                                     collection: library.collection)
+        }
+    }
+
     /// **The chosen libraries as rows, all at once, not one after the other.**
     ///
     /// In the chosen order. A row whose fetch fails (library deleted, not accessible to the
@@ -156,7 +185,8 @@ public enum HomeLoader {
     /// its own library.
     public static func libraryRails(from source: some HomePageSource,
                                          choice: [StartLibrary]) async -> [Home.LibraryRail] {
-        let choice = StartLibraries.clean(choice)
+        let stored = StartLibraries.clean(choice)
+        let choice = await resolveLibraries(from: source, choice: stored) ?? stored
         let fetched = await withTaskGroup(of: (Int, [Item]?).self) { group in
             for (i, w) in choice.enumerated() {
                 group.addTask { (i, await source.latestTitle(in: w.id, collection: w.collection, showItem: 24)) }
@@ -166,7 +196,7 @@ public enum HomeLoader {
             return je
         }
         return choice.indices.compactMap { i in
-            guard let title = fetched[i], !title.isEmpty else { return nil }
+            guard !choice[i].name.isEmpty, let title = fetched[i], !title.isEmpty else { return nil }
             return .init(id: choice[i].id, name: choice[i].name,
                          items: ListRules.withoutDouble(title))
         }
@@ -197,12 +227,11 @@ public enum HomeLoader {
     /// the log.
     static func new(from source: some HomePageSource, in library: String?,
                     art: String) async -> [Item]? {
-        // **The same in reverse:** in the movie row, episodes and series that the mixed
-        // fallback brings along drop out.
+        // Only movies belong in the movie row, including every fallback and merged response.
         guard art == "tvshows" else {
             let fetched = await newLevels(from: source, in: library, art: art)
             guard art == "movies" else { return fetched }
-            return fetched?.filter { !["Episode", "Series", "Season"].contains($0.type ?? "") }
+            return fetched?.filter { $0.type == "Movie" }
         }
         // **The series row asks for series, not libraries.**
         // If a user's series are not cleanly in libraries of type “tvshows”, the last

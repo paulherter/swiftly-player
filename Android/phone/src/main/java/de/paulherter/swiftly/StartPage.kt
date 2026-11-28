@@ -149,6 +149,14 @@ internal fun SwiftlyApplication.continueHiddenAfterLoad(fresh: List<Rail>) {
 internal fun startKey(e: Settings): String =
     listOf(e.newAccessDisconnected, e.startRails, e.startOut, e.startGenres, e.genreChips, e.startLibraries.map { it.id }).joinToString("|")
 
+internal fun adoptResolvedLibraryNames(e: Settings, answered: List<Rail>) {
+    val renamed = e.startLibraries.map { library ->
+        answered.firstOrNull { it.library == library.id && it.title.isNotEmpty() }
+            ?.let { library.copy(name = it.title) } ?: library
+    }
+    if (renamed != e.startLibraries) e.startLibraries = renamed
+}
+
 /**
  * **Coming back to the home page** (section change, a page closing): fetch only when what is on hand is
  * older than the grace period or was built with other settings, as `needsRefresh` does on Apple.
@@ -210,6 +218,7 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
             // A reload the core started (`followListsStale`) never takes an answer that says the server is away: the rows stay.
             if (quiet && homeDisturbed(json)) return
             val answered = railsRead(json)
+            adoptResolvedLibraryNames(e, answered)
             val why = homeFailure(json)
             // **A silent server over rows that are already there**: an answer that says "no answer" has no rows of its own, and
             // taking it blanked the page. The rows stay (the same as the iPhone's stored page) and the notice stands above them.

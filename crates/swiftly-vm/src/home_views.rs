@@ -58,6 +58,9 @@ impl<S: HomePageSource> HomePageSource for ViewsOnce<'_, S> {
     fn libraries(&self) -> impl Future<Output = Option<Vec<Item>>> + Send {
         self.libraries.clone()
     }
+    fn items_by_ids(&self, ids: &[String]) -> impl Future<Output = Option<Vec<Item>>> + Send {
+        self.source.items_by_ids(ids)
+    }
     fn new_arrivals(
         &self,
         genre: &str,

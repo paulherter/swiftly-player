@@ -2,7 +2,8 @@ import Foundation
 import Testing
 @testable import JellyfinKit
 
-/// **Data written before the identifier rename still reads, and is written back the same way.**
+/// **Data written before the identifier rename still reads; persisted keys stay stable.**
+/// Runtime-only fields such as the pinned library's display name are intentionally not written back.
 ///
 /// Every JSON below uses the key names of the last version before the rename (tag
 /// `pre-english-umstellung`), taken from that source. Each test decodes it with today's types,
@@ -184,11 +185,13 @@ import Testing
 
     @Test("Start libraries keep `sammlung`, through the store helpers as well")
     func startLibraries() throws {
-        try roundTrip(StartLibrary.self, #"{"id":"a","name":"Filme","sammlung":true}"#)
+        let old = Data(#"{"id":"a","name":"Filme","sammlung":true}"#.utf8)
+        let decoded = try JSONDecoder().decode(StartLibrary.self, from: old)
+        #expect(decoded.name.isEmpty && decoded.collection)
         let read = StartLibraries.read(Data(#"[{"id":"a","name":"Filme","sammlung":true}]"#.utf8))
-        #expect(read.first?.collection == true)
+        #expect(read.first?.name.isEmpty == true && read.first?.collection == true)
         let written = try #require(StartLibraries.data(read))
-        #expect(try Self.paths(of: written) == ["[].id", "[].name", "[].sammlung"])
+        #expect(try Self.paths(of: written) == ["[].id", "[].sammlung"])
     }
 
     @Test("The device profile sent to the server keeps its keys")

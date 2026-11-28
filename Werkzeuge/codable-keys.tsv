@@ -167,9 +167,7 @@ Kit	ServerCapability	raw	chapters,collections,downloads,extras,favorites,genres,
 Kit	ServerKind	raw	emby,jellyfin,plex
 Kit	Session.CodingKeys	codingkey	accessToken,kind,plex,serverURL,userID,userName
 Kit	Sorting	raw	bewertung,erscheinung,name,neueste
-Kit	StartLibraries.Record.Keys	codingkey	id,name,sammlung
-Kit	StartLibrary	codable	id,name,sammlung
-Kit	StartLibrary.CodingKeys	codingkey	id,name,sammlung
+Kit	StartLibraries.Record.Keys	codingkey	id,sammlung
 Kit	StartRail	raw	naechsteFolge,neueFilme,neueSerien,neuzugaenge,weiterschauen
 Kit	SubtitleLook	codable	background,colour,keepFileStyle,outline,position,shadow,size
 Kit	SubtitleLook.Colour	raw	grey,white,yellow

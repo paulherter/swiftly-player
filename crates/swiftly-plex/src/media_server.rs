@@ -557,6 +557,13 @@ impl<T: HttpTransport + 'static> HomePageSource for PlexClient<T> {
         self.views().await.ok()
     }
 
+    async fn items_by_ids(&self, ids: &[String]) -> Option<Vec<Item>> {
+        self.items_by_id(ids)
+            .await
+            .ok()
+            .map(|response| response.items)
+    }
+
     async fn new_arrivals(&self, genre: &str, fetch: i64, show_item: i64) -> Option<Vec<Item>> {
         self.last_added_kinds(None, fetch, show_item, genre).await
     }

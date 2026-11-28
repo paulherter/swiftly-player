@@ -57,7 +57,7 @@ struct HomePageLoaderTests {
 
     @Test("Getrennt holt je Bibliothek, gemeinsam nur eine Reihe")
     func disconnectedOrShared() async {
-        let q = Source(new: ["": [t("x")], "filme": [t("f")], "serien": [t("s")]])
+        let q = Source(new: ["": [t("x")], "filme": [film("f")], "serien": [episode("s")]])
         let disconnected = await HomeLoader.load(from: q, .init(disconnected: true, filmLibrary: "filme", seriesLibrary: "serien"))
         #expect(disconnected.recent == nil)
         #expect(disconnected.newMovies?.map(\.id) == ["f"])
@@ -74,7 +74,7 @@ struct HomePageLoaderTests {
         let review = [Item(id: "mix", name: "Gemischt"),
                        Item(id: "filme", name: "Filme", collectionType: "movies"),
                        Item(id: "serien", name: "Serien", collectionType: "tvshows")]
-        let q = Source(new: ["": [t("film")], "filme": [t("f")], "serien": [t("s")], "mix": [t("m")]],
+        let q = Source(new: ["": [t("film")], "filme": [film("f")], "serien": [episode("s")], "mix": [t("m")]],
                        review: review)
         let s = await HomeLoader.load(from: q, .init(disconnected: true))
         #expect(s.newMovies?.map(\.id) == ["f"])
@@ -106,6 +106,23 @@ struct HomePageLoaderTests {
         let s = await HomeLoader.load(from: q, .init(disconnected: true))
         #expect(s.newMovies?.map(\.id) == ["f"])
         #expect(s.newSeries?.map(\.id) == ["e1", "e2"])
+    }
+
+    @Test("Neue Filme enthalten auch bei gemischten Antworten nur Filme")
+    func moviesAllowOnlyMovies() async {
+        let mixed = [film("f1"), Item(id: "collection", name: "Sammlung", type: "BoxSet"),
+                     episode("e1"), Item(id: "series", name: "Serie", type: "Series"),
+                     Item(id: "season", name: "Staffel", type: "Season"),
+                     Item(id: "video", name: "Video", type: "Video"), t("unknown"), film("f2")]
+        let selected = Source(new: ["filme": mixed])
+        let s = await HomeLoader.load(from: selected,
+                                      .init(disconnected: true, filmLibrary: "filme"))
+        #expect(s.newMovies?.map(\.id) == ["f1", "f2"])
+
+        let fallback = Source(new: ["filme": [], "": mixed], typed: ["Movie": []])
+        let f = await HomeLoader.load(from: fallback,
+                                      .init(disconnected: true, filmLibrary: "filme"))
+        #expect(f.newMovies?.map(\.id) == ["f1", "f2"])
     }
 
     @Test("Mehrere Filmbibliotheken, die erste leer: die naechste mit Neuzugaengen")
