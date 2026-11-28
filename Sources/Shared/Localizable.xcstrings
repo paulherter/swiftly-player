@@ -31766,7 +31766,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ещё %lld мин."
+            "value": "Осталось %lld мин."
           }
         }
       }
